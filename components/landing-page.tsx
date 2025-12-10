@@ -8,7 +8,6 @@ import {
   ArrowUp,
   ChevronDown,
   MessageSquare,
-  Palette,
   X,
   ArrowRight,
   Menu,
@@ -18,6 +17,7 @@ import {
   CreditCard,
 } from "lucide-react"
 import { IridescenceBackground } from "./iridescence-background"
+import { MODEL_DISPLAY_NAMES, type ModelProvider } from "@/lib/ai/agent"
 
 const myProjects = [
   { id: 1, title: "saas-dashboard", image: "/modern-web-dashboard-dark.jpg", lastEdited: "2 hours ago" },
@@ -52,8 +52,9 @@ export function LandingPage({ onNavigateToEditor }: LandingPageProps) {
   const [inputValue, setInputValue] = useState("")
   const [selectedTab, setSelectedTab] = useState("My projects")
   const [uploadedImages, setUploadedImages] = useState<string[]>([])
-  const [chatEnabled, setChatEnabled] = useState(true)
-  const [themeOpen, setThemeOpen] = useState(false)
+  const [chatEnabled, setChatEnabled] = useState(false)
+  const [modelOpen, setModelOpen] = useState(false)
+  const [selectedModel, setSelectedModel] = useState<ModelProvider>("anthropic")
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -303,28 +304,48 @@ export function LandingPage({ onNavigateToEditor }: LandingPageProps) {
                       Attach
                     </button>
 
-                    {/* Theme dropdown */}
+                    {/* Model selector */}
                     <div className="relative">
                       <button
-                        onClick={() => setThemeOpen(!themeOpen)}
+                        onClick={() => setModelOpen(!modelOpen)}
                         className="flex items-center gap-1.5 text-zinc-400 hover:text-white text-sm px-3 py-2 rounded-xl hover:bg-white/10 transition-colors"
                       >
-                        <Palette className="w-4 h-4" />
-                        Theme
+                        <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4" stroke="currentColor" strokeWidth="2">
+                          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                        </svg>
+                        {MODEL_DISPLAY_NAMES[selectedModel]}
                         <ChevronDown className="w-3.5 h-3.5" />
                       </button>
-                      {themeOpen && (
-                        <div className="absolute top-full left-0 mt-1 bg-zinc-800/90 backdrop-blur-xl rounded-xl py-1 min-w-[120px] shadow-xl border border-white/10">
-                          <button className="w-full px-3 py-2 text-left text-sm text-zinc-300 hover:bg-white/10">
-                            Light
-                          </button>
-                          <button className="w-full px-3 py-2 text-left text-sm text-zinc-300 hover:bg-white/10">
-                            Dark
-                          </button>
-                          <button className="w-full px-3 py-2 text-left text-sm text-zinc-300 hover:bg-white/10">
-                            System
-                          </button>
-                        </div>
+                      {modelOpen && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setModelOpen(false)} />
+                          <div className="absolute top-full left-0 mt-1 bg-zinc-800/90 backdrop-blur-xl rounded-xl py-1 min-w-[160px] shadow-xl border border-white/10 z-50">
+                            <button
+                              onClick={() => {
+                                setSelectedModel("anthropic")
+                                setModelOpen(false)
+                              }}
+                              className={`w-full px-3 py-2 text-left text-sm hover:bg-white/10 flex items-center gap-2 ${
+                                selectedModel === "anthropic" ? "text-white bg-white/5" : "text-zinc-300"
+                              }`}
+                            >
+                              <div className="h-2 w-2 rounded-full bg-orange-400" />
+                              {MODEL_DISPLAY_NAMES.anthropic}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedModel("google")
+                                setModelOpen(false)
+                              }}
+                              className={`w-full px-3 py-2 text-left text-sm hover:bg-white/10 flex items-center gap-2 ${
+                                selectedModel === "google" ? "text-white bg-white/5" : "text-zinc-300"
+                              }`}
+                            >
+                              <div className="h-2 w-2 rounded-full bg-blue-400" />
+                              {MODEL_DISPLAY_NAMES.google}
+                            </button>
+                          </div>
+                        </>
                       )}
                     </div>
                   </div>

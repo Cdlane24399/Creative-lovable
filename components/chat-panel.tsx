@@ -36,7 +36,7 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState("")
   const [isChatEnabled, setIsChatEnabled] = useState(false)
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([])
-  const [selectedModel, setSelectedModel] = useState<ModelProvider>("google")
+  const [selectedModel, setSelectedModel] = useState<ModelProvider>("anthropic")
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
