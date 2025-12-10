@@ -1,11 +1,11 @@
 import { tool } from "ai"
 import { z } from "zod"
-import { createSandbox, executeCode, executeCommand, writeFile, readFile } from "@/lib/e2b/sandbox"
+import { createSandbox, executeCode, executeCommand, writeFile, readFile } from "@/lib/sandbox/bun-sandbox"
 
-// Tool to execute Python/JavaScript code in E2B sandbox
+// Tool to execute Python/JavaScript code in local Bun sandbox
 export const executeCodeTool = tool({
   description:
-    "Execute Python or JavaScript code in a secure sandbox environment. Use this to run code, analyze data, or test implementations.",
+    "Execute Python or JavaScript code in a local sandbox environment. Use this to run code, analyze data, or test implementations.",
   inputSchema: z.object({
     code: z.string().describe("The code to execute"),
     language: z.enum(["python", "javascript"]).describe("The programming language"),

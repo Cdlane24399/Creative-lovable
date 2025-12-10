@@ -8,7 +8,7 @@ import {
   writeFile as writeFileToSandbox,
   readFile as readFileFromSandbox,
   executeCommand,
-} from "@/lib/e2b/sandbox"
+} from "@/lib/sandbox/bun-sandbox"
 
 export const maxDuration = 60
 
@@ -34,7 +34,7 @@ const tools = {
 
   executeCode: tool({
     description:
-      "Execute Python or JavaScript code in a secure E2B sandbox. Use for data processing, calculations, or testing logic.",
+      "Execute Python or JavaScript code in a local sandbox. Use for data processing, calculations, or testing logic.",
     parameters: z.object({
       code: z.string().describe("Code to execute"),
       language: z.enum(["python", "javascript"]).default("python"),
