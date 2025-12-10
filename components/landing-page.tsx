@@ -45,7 +45,7 @@ const templates = [
 ]
 
 interface LandingPageProps {
-  onNavigateToEditor: () => void
+  onNavigateToEditor: (prompt?: string, model?: ModelProvider) => void
 }
 
 export function LandingPage({ onNavigateToEditor }: LandingPageProps) {
@@ -61,7 +61,7 @@ export function LandingPage({ onNavigateToEditor }: LandingPageProps) {
 
   const handleSubmit = () => {
     if (inputValue.trim()) {
-      onNavigateToEditor()
+      onNavigateToEditor(inputValue.trim(), selectedModel)
     }
   }
 
@@ -420,7 +420,7 @@ export function LandingPage({ onNavigateToEditor }: LandingPageProps) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {currentProjects.map((project) => (
-                <button key={project.id} onClick={onNavigateToEditor} className="group cursor-pointer text-left">
+                <button key={project.id} onClick={() => onNavigateToEditor()} className="group cursor-pointer text-left">
                   <div className="relative rounded-xl overflow-hidden mb-2 bg-zinc-800 border border-zinc-700/80 shadow-lg">
                     <img
                       src={project.image || "/placeholder.svg"}

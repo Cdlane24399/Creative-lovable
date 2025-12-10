@@ -4,7 +4,6 @@ import type React from "react"
 import { useState, useRef, useEffect } from "react"
 import {
   Plus,
-  Sparkles,
   MessageSquare,
   AudioLines,
   ArrowUp,
@@ -30,13 +29,16 @@ interface UploadedImage {
 interface ChatPanelProps {
   projectId?: string
   onPreviewUpdate?: (content: string) => void
+  initialPrompt?: string
+  initialModel?: ModelProvider
 }
 
-export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
+export function ChatPanel({ projectId, onPreviewUpdate, initialPrompt, initialModel }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState("")
   const [isChatEnabled, setIsChatEnabled] = useState(false)
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([])
-  const [selectedModel, setSelectedModel] = useState<ModelProvider>("anthropic")
+  const [selectedModel, setSelectedModel] = useState<ModelProvider>(initialModel || "anthropic")
+  const [initialPromptSent, setInitialPromptSent] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -48,9 +50,48 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
     },
   })
 
+  // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
+
+  // Send initial prompt when component mounts
+  useEffect(() => {
+    if (initialPrompt && !initialPromptSent && !isWorking) {
+      setInitialPromptSent(true)
+      sendMessage({ text: initialPrompt })
+    }
+  }, [initialPrompt, initialPromptSent, isWorking, sendMessage])
+
+  // Watch for generated website content and update preview
+  useEffect(() => {
+    if (!onPreviewUpdate) return
+
+    // Look through all messages for completed generateWebsite tool results
+    for (const message of messages) {
+      if (message.role === "assistant" && message.parts) {
+        for (const part of message.parts as any[]) {
+          // Debug: log tool parts to understand structure
+          if (part.type?.startsWith("tool-")) {
+            console.log("[ChatPanel] Tool part found:", {
+              type: part.type,
+              state: part.state,
+              hasOutput: !!part.output,
+              outputKeys: part.output ? Object.keys(part.output) : [],
+              hasHtml: !!part.output?.html
+            })
+          }
+
+          // Tool parts have type "tool-{toolName}" in AI SDK v6
+          // Check for both 'result' state and the output having html
+          if (part.type === "tool-generateWebsite" && part.output?.html) {
+            console.log("[ChatPanel] Found generated HTML, updating preview")
+            onPreviewUpdate(part.output.html)
+          }
+        }
+      }
+    }
+  }, [messages, onPreviewUpdate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -94,15 +135,21 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
 
   const renderToolPart = (part: any, index: number) => {
     const toolName = part.type.replace("tool-", "")
+    const isWebsiteTool = toolName === "generateWebsite"
+
+    // Determine the state - AI SDK uses 'result' for completed, 'call' for in progress
+    const isComplete = part.state === "result"
+    const isRunning = part.state === "call" || part.state === "partial-call"
+    const hasError = part.state === "error"
 
     return (
       <div key={index} className="my-2 rounded-xl border border-zinc-700/50 bg-zinc-800/50 p-3">
         <div className="flex items-center gap-2 text-xs text-zinc-400">
-          {part.state === "running" || part.state === "generating" || part.state === "writing" ? (
+          {isRunning ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : part.state === "complete" ? (
+          ) : isComplete ? (
             <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
-          ) : part.state === "error" ? (
+          ) : hasError ? (
             <AlertCircle className="h-3.5 w-3.5 text-red-400" />
           ) : (
             <Code className="h-3.5 w-3.5" />
@@ -110,20 +157,28 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
           <span className="font-medium capitalize">{toolName.replace(/([A-Z])/g, " $1").trim()}</span>
         </div>
 
-        {part.state === "complete" && part.output && (
+        {isComplete && part.output && (
           <div className="mt-2 text-xs text-zinc-300">
-            {typeof part.output === "string" ? part.output : JSON.stringify(part.output, null, 2)}
+            {isWebsiteTool ? (
+              <div className="space-y-1">
+                <p className="font-medium text-emerald-400">{part.output.title}</p>
+                <p>{part.output.description}</p>
+                <p className="text-zinc-500 italic">Preview available in the right panel →</p>
+              </div>
+            ) : (
+              typeof part.output === "string" ? part.output : JSON.stringify(part.output, null, 2)
+            )}
           </div>
         )}
 
-        {part.state === "error" && part.error && <div className="mt-2 text-xs text-red-400">{part.error}</div>}
+        {hasError && part.errorText && <div className="mt-2 text-xs text-red-400">{part.errorText}</div>}
       </div>
     )
   }
 
   return (
-    <div className="flex h-full flex-col bg-[#111111]">
-      <div className="flex-1 overflow-y-auto px-4 py-6">
+    <div className="flex h-full flex-col bg-[#111111] min-h-0">
+      <div className="flex-1 overflow-y-auto px-4 py-6 min-h-0">
         <div className="flex flex-col gap-4">
           {messages.length === 0 ? (
             <div className="flex h-full items-center justify-center text-zinc-500">
@@ -182,7 +237,7 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
         </div>
       </div>
 
-      <div className="p-4">
+      <div className="flex-shrink-0 p-4">
         <form onSubmit={handleSubmit}>
           <div className="rounded-2xl bg-zinc-800 p-3">
             {uploadedImages.length > 0 && (
@@ -219,8 +274,8 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
                 }
               }}
               placeholder="Ask Lovable..."
-              className="min-h-[60px] w-full resize-none bg-transparent text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
-              rows={2}
+              className="min-h-[44px] w-full resize-none bg-transparent text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
+              rows={1}
               disabled={isWorking}
             />
 
@@ -243,15 +298,6 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1.5 rounded-lg px-2.5 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300"
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span className="text-xs">Visual edits</span>
-                </Button>
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -259,7 +305,7 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-8 gap-1.5 rounded-lg px-2.5 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300"
+                      className="h-8 gap-1 rounded-lg px-2 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300"
                     >
                       <svg
                         viewBox="0 0 24 24"
@@ -270,8 +316,8 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
                       >
                         <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
                       </svg>
-                      <span className="text-xs">{MODEL_DISPLAY_NAMES[selectedModel]}</span>
-                      <ChevronDown className="h-3 w-3" />
+                      <span className="text-xs truncate max-w-[80px]">{MODEL_DISPLAY_NAMES[selectedModel]}</span>
+                      <ChevronDown className="h-3 w-3 flex-shrink-0" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="bg-zinc-800 border-zinc-700">
@@ -299,18 +345,6 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
                         <span>{MODEL_DISPLAY_NAMES.google}</span>
                       </div>
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setSelectedModel("openai")}
-                      className={cn(
-                        "text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 cursor-pointer",
-                        selectedModel === "openai" && "bg-zinc-700",
-                      )}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full bg-emerald-400" />
-                        <span>{MODEL_DISPLAY_NAMES.openai}</span>
-                      </div>
-                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -322,7 +356,7 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
                   size="sm"
                   onClick={() => setIsChatEnabled(!isChatEnabled)}
                   className={cn(
-                    "h-8 gap-1.5 rounded-lg px-2.5 transition-colors",
+                    "h-8 gap-1 rounded-lg px-2 transition-colors",
                     isChatEnabled
                       ? "bg-blue-600 text-white hover:bg-blue-700"
                       : "text-zinc-500 hover:bg-zinc-700 hover:text-zinc-400",
@@ -344,7 +378,7 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
                   size="sm"
                   disabled={isWorking || (!inputValue.trim() && uploadedImages.length === 0)}
                   className={cn(
-                    "h-8 w-8 rounded-lg p-0 transition-all",
+                    "h-8 w-8 rounded-lg p-0 transition-all flex-shrink-0",
                     inputValue.trim() || uploadedImages.length > 0
                       ? "bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/25"
                       : "bg-zinc-700 text-zinc-400",
