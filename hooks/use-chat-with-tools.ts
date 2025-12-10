@@ -1,23 +1,20 @@
 "use client"
 
 import { useChat } from "@ai-sdk/react"
-import { DefaultChatTransport } from "ai"
-import type { ChatMessage } from "@/app/api/chat/route"
+import type { ModelProvider } from "@/lib/ai/agent"
 
 interface UseChatWithToolsOptions {
   projectId?: string
-  model?: "anthropic" | "google" | "openai"
+  model?: ModelProvider
   onError?: (error: Error) => void
 }
 
 export function useChatWithTools({ projectId, model = "anthropic", onError }: UseChatWithToolsOptions = {}) {
-  const chat = useChat<ChatMessage>({
-    transport: new DefaultChatTransport({
-      api: "/api/chat",
-      body: { projectId, model },
-    }),
+  const chat = useChat({
+    api: "/api/chat",
+    body: { projectId, model },
     onError: (error) => {
-      console.error("Chat error:", error)
+      console.error("[v0] Chat hook error:", error)
       onError?.(error)
     },
   })
@@ -25,8 +22,14 @@ export function useChatWithTools({ projectId, model = "anthropic", onError }: Us
   return {
     ...chat,
     // Helper to check if AI is currently working
-    isWorking: chat.status === "in_progress",
+    isWorking: chat.status === "streaming" || chat.status === "submitted",
     // Helper to get the last message
     lastMessage: chat.messages[chat.messages.length - 1],
+    sendMessage: async ({ text }: { text: string }) => {
+      return chat.append({
+        role: "user",
+        content: text,
+      })
+    },
   }
 }
