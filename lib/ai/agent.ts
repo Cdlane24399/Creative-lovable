@@ -30,15 +30,13 @@ When generating code:
 Remember: You're building real, working applications. Make them beautiful and functional.`
 
 export const MODEL_OPTIONS = {
-  anthropic: "claude-sonnet-4",
-  google: "gemini-2.5-flash",
-  openai: "gpt-4o",
+  anthropic: "claude-opus-4-5",
+  google: "gemini-2.5-pro-preview-06-05",
 } as const
 
 export const MODEL_DISPLAY_NAMES = {
-  anthropic: "Claude Sonnet 4",
-  google: "Gemini 2.5 Flash",
-  openai: "GPT-4o",
+  anthropic: "Claude Opus 4.5",
+  google: "Gemini 2.5 Pro",
 } as const
 
 export type ModelProvider = keyof typeof MODEL_OPTIONS
