@@ -7,7 +7,7 @@ export const maxDuration = 60
 const tools = {
   generateComponent: tool({
     description: "Generate a React/Next.js component. Returns the component code to be displayed to the user.",
-    parameters: z.object({
+    inputSchema: z.object({
       name: z.string().describe("Component name in PascalCase"),
       description: z.string().describe("What the component should do"),
       styling: z.string().optional().describe("Styling approach: 'tailwind' or 'css'"),
@@ -25,7 +25,7 @@ const tools = {
 
   searchWeb: tool({
     description: "Search the web for documentation, examples, or solutions.",
-    parameters: z.object({
+    inputSchema: z.object({
       query: z.string().describe("Search query"),
     }),
     execute: async function* ({ query }) {
@@ -61,7 +61,6 @@ export async function POST(req: Request) {
     const selectedModel = MODEL_OPTIONS[model] || MODEL_OPTIONS.anthropic
     console.log("[v0] Using model:", selectedModel)
 
-    // Convert messages for the model
     const modelMessages = convertToModelMessages(messages)
     console.log("[v0] Converted messages count:", modelMessages.length)
 

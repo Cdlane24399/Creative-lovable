@@ -2,7 +2,7 @@ import { tool } from "ai"
 import { z } from "zod"
 import { createSandbox, executeCode, executeCommand, writeFile, readFile } from "@/lib/sandbox/bun-sandbox"
 
-// Tool to execute Python/JavaScript code in local Bun sandbox
+// Tool to execute Python/JavaScript code in local sandbox
 export const executeCodeTool = tool({
   description:
     "Execute Python or JavaScript code in a local sandbox environment. Use this to run code, analyze data, or test implementations.",
@@ -10,13 +10,11 @@ export const executeCodeTool = tool({
     code: z.string().describe("The code to execute"),
     language: z.enum(["python", "javascript"]).describe("The programming language"),
   }),
-  async *execute({ code, language }, { messages }) {
+  async *execute({ code, language }) {
     yield { state: "running" as const, message: "Executing code..." }
 
     try {
-      // Get or create sandbox for this session
       const sandbox = await createSandbox("default-project")
-
       const result = await executeCode(sandbox, code)
 
       yield {
