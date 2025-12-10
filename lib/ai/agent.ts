@@ -31,12 +31,12 @@ Remember: You're building real, working applications. Make them beautiful and fu
 
 export const MODEL_OPTIONS = {
   anthropic: "claude-opus-4-5",
-  google: "gemini-2.5-pro-preview-06-05",
+  google: "gemini-3-pro-preview",
 } as const
 
 export const MODEL_DISPLAY_NAMES = {
   anthropic: "Claude Opus 4.5",
-  google: "Gemini 2.5 Pro",
+  google: "Gemini 3 Pro",
 } as const
 
 export type ModelProvider = keyof typeof MODEL_OPTIONS
