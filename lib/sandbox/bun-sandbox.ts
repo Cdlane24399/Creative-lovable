@@ -1,7 +1,7 @@
 import { mkdtemp, writeFile as fsWriteFile, readFile as fsReadFile, mkdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, dirname } from "node:path"
-import { spawn } from "bun"
+import { spawn } from "node:child_process"
 
 // Sandbox type definition
 export interface BunSandbox {
@@ -50,55 +50,80 @@ export async function closeSandbox(projectId: string): Promise<void> {
   }
 }
 
+function runProcess(
+  command: string,
+  args: string[],
+  cwd: string,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  return new Promise((resolve) => {
+    const proc = spawn(command, args, {
+      cwd,
+      shell: false,
+    })
+
+    let stdout = ""
+    let stderr = ""
+
+    proc.stdout?.on("data", (data) => {
+      stdout += data.toString()
+    })
+
+    proc.stderr?.on("data", (data) => {
+      stderr += data.toString()
+    })
+
+    proc.on("close", (code) => {
+      resolve({
+        stdout,
+        stderr,
+        exitCode: code ?? 1,
+      })
+    })
+
+    proc.on("error", (err) => {
+      resolve({
+        stdout,
+        stderr: err.message,
+        exitCode: 1,
+      })
+    })
+  })
+}
+
 export async function executeCode(sandbox: BunSandbox, code: string) {
   // Determine language from code (simple heuristic)
   const isPython = code.includes("import ") || code.includes("def ") || code.includes("print(")
-  const ext = isPython ? "py" : "ts"
-  const runner = isPython ? ["python3"] : ["bun", "run"]
+  const ext = isPython ? "py" : "js"
+  const runner = isPython ? "python3" : "node"
 
   // Write code to temp file
   const filename = `script.${ext}`
   const filepath = join(sandbox.dir, filename)
   await fsWriteFile(filepath, code, "utf-8")
 
-  // Execute the code
-  const proc = spawn([...runner, filepath], {
-    cwd: sandbox.dir,
-    stdout: "pipe",
-    stderr: "pipe",
-  })
-
-  const stdout = await new Response(proc.stdout).text()
-  const stderr = await new Response(proc.stderr).text()
-  const exitCode = await proc.exited
+  const result = await runProcess(runner, [filepath], sandbox.dir)
 
   return {
     logs: {
-      stdout: stdout.split("\n").filter(Boolean),
-      stderr: stderr.split("\n").filter(Boolean),
+      stdout: result.stdout.split("\n").filter(Boolean),
+      stderr: result.stderr.split("\n").filter(Boolean),
     },
     results: [],
-    error: exitCode !== 0 ? { message: stderr || "Execution failed" } : undefined,
+    error: result.exitCode !== 0 ? { message: result.stderr || "Execution failed" } : undefined,
   }
 }
 
 // Execute shell commands in sandbox
 export async function executeCommand(sandbox: BunSandbox, command: string) {
   const parts = command.split(" ")
-  const proc = spawn(parts, {
-    cwd: sandbox.dir,
-    stdout: "pipe",
-    stderr: "pipe",
-  })
+  const [cmd, ...args] = parts
 
-  const stdout = await new Response(proc.stdout).text()
-  const stderr = await new Response(proc.stderr).text()
-  const exitCode = await proc.exited
+  const result = await runProcess(cmd, args, sandbox.dir)
 
   return {
-    stdout,
-    stderr,
-    exitCode,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    exitCode: result.exitCode,
   }
 }
 
