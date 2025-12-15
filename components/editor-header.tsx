@@ -1,16 +1,24 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronDown, Home, RefreshCw, ExternalLink, Github } from "lucide-react"
+import { ChevronDown, Home, RefreshCw, ExternalLink, Github, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 interface EditorHeaderProps {
   onNavigateHome?: () => void
+  sandboxUrl?: string | null
+  onRefresh?: () => void
+  isPreviewLoading?: boolean
 }
 
-export function EditorHeader({ onNavigateHome }: EditorHeaderProps) {
+export function EditorHeader({ onNavigateHome, sandboxUrl, onRefresh, isPreviewLoading }: EditorHeaderProps) {
   const [projectName] = useState("saas-landing-page")
+
+  // Extract display URL from sandbox URL
+  const displayUrl = sandboxUrl 
+    ? sandboxUrl.replace(/^https?:\/\//, "").slice(0, 40) + (sandboxUrl.length > 50 ? "..." : "")
+    : null
 
   return (
     <header className="flex h-14 items-center justify-between px-4 bg-[#111111]">
@@ -44,18 +52,32 @@ export function EditorHeader({ onNavigateHome }: EditorHeaderProps) {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 rounded-full text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300"
+            onClick={onRefresh}
+            disabled={!sandboxUrl || isPreviewLoading}
+            className="h-7 w-7 rounded-full text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 disabled:opacity-50"
           >
-            <RefreshCw className="h-3.5 w-3.5" />
+            {isPreviewLoading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
           </Button>
-          <div className="flex items-center px-2">
-            <span className="text-xs text-zinc-500">lovable.dev/projects/</span>
-            <span className="text-xs text-zinc-400">{projectName}</span>
+          <div className="flex items-center px-2 min-w-[180px]">
+            {sandboxUrl ? (
+              <span className="text-xs text-zinc-400 truncate">{displayUrl}</span>
+            ) : (
+              <>
+                <span className="text-xs text-zinc-500">lovable.dev/projects/</span>
+                <span className="text-xs text-zinc-400">{projectName}</span>
+              </>
+            )}
           </div>
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 rounded-full text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300"
+            onClick={() => sandboxUrl && window.open(sandboxUrl, "_blank")}
+            disabled={!sandboxUrl}
+            className="h-7 w-7 rounded-full text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 disabled:opacity-50"
           >
             <ExternalLink className="h-3.5 w-3.5" />
           </Button>

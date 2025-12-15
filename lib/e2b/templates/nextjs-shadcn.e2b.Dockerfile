@@ -30,8 +30,9 @@ RUN npm install lucide-react @radix-ui/react-icons framer-motion class-variance-
 # Install development dependencies
 RUN npm install -D @types/node @types/react @types/react-dom typescript
 
-# Build the initial project to cache dependencies
-RUN npm run build || true
+# Build the initial project to cache dependencies, then remove .next to prevent stale content
+# The build populates npm cache but we don't want the compiled output served as default
+RUN npm run build || true && rm -rf .next
 
 # Expose Next.js dev server port
 EXPOSE 3000
