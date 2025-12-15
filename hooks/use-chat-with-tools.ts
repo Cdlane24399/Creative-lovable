@@ -25,7 +25,8 @@ export function useChatWithTools({ projectId, model = "anthropic", onError }: Us
   return {
     ...chat,
     // Helper to check if AI is currently working
-    isWorking: chat.status === "in_progress",
+    // Status can be 'submitted', 'streaming', 'ready', or 'error'
+    isWorking: chat.status === "submitted" || chat.status === "streaming",
     // Helper to get the last message
     lastMessage: chat.messages[chat.messages.length - 1],
   }

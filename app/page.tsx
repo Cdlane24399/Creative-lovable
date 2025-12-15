@@ -6,10 +6,24 @@ import { EditorLayout } from "@/components/editor-layout"
 
 export default function Home() {
   const [currentPage, setCurrentPage] = useState<"landing" | "editor">("landing")
+  const [initialPrompt, setInitialPrompt] = useState<string | null>(null)
 
-  if (currentPage === "editor") {
-    return <EditorLayout onNavigateHome={() => setCurrentPage("landing")} />
+  const handleNavigateToEditor = (prompt?: string) => {
+    setInitialPrompt(prompt || null)
+    setCurrentPage("editor")
   }
 
-  return <LandingPage onNavigateToEditor={() => setCurrentPage("editor")} />
+  if (currentPage === "editor") {
+    return (
+      <EditorLayout
+        onNavigateHome={() => {
+          setInitialPrompt(null)
+          setCurrentPage("landing")
+        }}
+        initialPrompt={initialPrompt}
+      />
+    )
+  }
+
+  return <LandingPage onNavigateToEditor={handleNavigateToEditor} />
 }

@@ -21,6 +21,23 @@ import { useChatWithTools } from "@/hooks/use-chat-with-tools"
 import { cn } from "@/lib/utils"
 import { MODEL_DISPLAY_NAMES, type ModelProvider } from "@/lib/ai/agent"
 
+// Type definitions for message parts
+interface TextPart {
+  type: "text"
+  text: string
+}
+
+interface ToolPart {
+  type: string
+  state?: "running" | "generating" | "writing" | "complete" | "error" | string
+  output?: string | unknown
+  error?: string
+  previewUrl?: string
+  [key: string]: unknown
+}
+
+type MessagePart = TextPart | ToolPart
+
 interface UploadedImage {
   id: string
   file: File
@@ -30,15 +47,18 @@ interface UploadedImage {
 interface ChatPanelProps {
   projectId?: string
   onPreviewUpdate?: (content: string) => void
+  onSandboxUrlUpdate?: (url: string | null) => void
+  initialPrompt?: string | null
 }
 
-export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
+export function ChatPanel({ projectId, onPreviewUpdate, onSandboxUrlUpdate, initialPrompt }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState("")
   const [isChatEnabled, setIsChatEnabled] = useState(false)
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([])
-  const [selectedModel, setSelectedModel] = useState<ModelProvider>("google")
+  const [selectedModel, setSelectedModel] = useState<ModelProvider>("anthropic")
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const hasAutoSentRef = useRef(false)
 
   const { messages, sendMessage, isWorking, status } = useChatWithTools({
     projectId,
@@ -51,6 +71,37 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
+
+  // Auto-send initial prompt from landing page
+  // Using a ref instead of state to prevent race conditions with effect re-runs
+  useEffect(() => {
+    if (initialPrompt && !hasAutoSentRef.current && messages.length === 0) {
+      hasAutoSentRef.current = true
+      sendMessage({ text: initialPrompt })
+    }
+  }, [initialPrompt, messages.length, sendMessage])
+
+  // Extract sandbox URL from createWebsite tool results
+  useEffect(() => {
+    if (!onSandboxUrlUpdate) return
+
+    // Look through all messages for completed createWebsite tool calls
+    for (const message of messages) {
+      if (message.role !== "assistant") continue
+
+      for (const part of message.parts as MessagePart[]) {
+        // Check if this is a tool result with previewUrl
+        if (
+          part.type === "tool-createWebsite" &&
+          (part as ToolPart).state === "complete" &&
+          (part as ToolPart).previewUrl
+        ) {
+          onSandboxUrlUpdate((part as ToolPart).previewUrl as string)
+          return // Only need the first/latest preview URL
+        }
+      }
+    }
+  }, [messages, onSandboxUrlUpdate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -92,8 +143,15 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
     })
   }
 
-  const renderToolPart = (part: any, index: number) => {
+  const renderToolPart = (part: ToolPart, index: number) => {
     const toolName = part.type.replace("tool-", "")
+
+    // Helper to safely convert output to string for display
+    const formatOutput = (output: unknown): string => {
+      if (typeof output === "string") return output
+      if (output === null || output === undefined) return ""
+      return JSON.stringify(output, null, 2)
+    }
 
     return (
       <div key={index} className="my-2 rounded-xl border border-zinc-700/50 bg-zinc-800/50 p-3">
@@ -110,13 +168,13 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
           <span className="font-medium capitalize">{toolName.replace(/([A-Z])/g, " $1").trim()}</span>
         </div>
 
-        {part.state === "complete" && part.output && (
+        {part.state === "complete" && part.output !== undefined && part.output !== null ? (
           <div className="mt-2 text-xs text-zinc-300">
-            {typeof part.output === "string" ? part.output : JSON.stringify(part.output, null, 2)}
+            {formatOutput(part.output)}
           </div>
-        )}
+        ) : null}
 
-        {part.state === "error" && part.error && <div className="mt-2 text-xs text-red-400">{part.error}</div>}
+        {part.state === "error" && part.error ? <div className="mt-2 text-xs text-red-400">{part.error}</div> : null}
       </div>
     )
   }
@@ -130,31 +188,43 @@ export function ChatPanel({ projectId, onPreviewUpdate }: ChatPanelProps) {
               <p className="text-sm">Start a conversation to build something amazing</p>
             </div>
           ) : (
-            messages.map((message) => (
+            // Deduplicate messages by ID to prevent duplicate key errors
+            [...new Map(messages.map((m) => [m.id, m])).values()].map((message) => (
               <div key={message.id} className="flex flex-col gap-1">
                 {message.role === "user" ? (
                   <div className="max-w-[85%] self-end">
                     <div className="rounded-2xl bg-zinc-800 px-4 py-2.5 text-sm text-zinc-100">
-                      {message.parts.map((part, i) => (part.type === "text" ? <span key={i}>{part.text}</span> : null))}
+                      {(message.parts as MessagePart[]).map((part, i) => (part.type === "text" ? <span key={i}>{(part as TextPart).text}</span> : null))}
                     </div>
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2">
-                    {message.parts.map((part, index) => {
-                      if (part.type === "text") {
-                        return (
-                          <div key={index} className="text-sm text-zinc-300 leading-relaxed">
-                            {part.text}
-                          </div>
-                        )
-                      }
+                    {(message.parts as MessagePart[])
+                      .filter((part, index, arr) => {
+                        // Filter out duplicate consecutive text parts
+                        if (part.type === "text" && index > 0) {
+                          const prevPart = arr[index - 1]
+                          if (prevPart.type === "text" && (prevPart as TextPart).text === (part as TextPart).text) {
+                            return false
+                          }
+                        }
+                        return true
+                      })
+                      .map((part, index) => {
+                        if (part.type === "text") {
+                          return (
+                            <div key={index} className="text-sm text-zinc-300 leading-relaxed">
+                              {(part as TextPart).text}
+                            </div>
+                          )
+                        }
 
-                      if (part.type.startsWith("tool-")) {
-                        return renderToolPart(part, index)
-                      }
+                        if (part.type.startsWith("tool-")) {
+                          return renderToolPart(part as ToolPart, index)
+                        }
 
-                      return null
-                    })}
+                        return null
+                      })}
                   </div>
                 )}
               </div>
