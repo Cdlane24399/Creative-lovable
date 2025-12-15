@@ -9,8 +9,9 @@
     "start": "next start"
   },
   "dependencies": {
-    "@ai-sdk/react": "latest",
-    "@e2b/code-interpreter": "latest",
+    "@ai-sdk/anthropic": "^1.2.12",
+    "@ai-sdk/google": "^1.2.8",
+    "@ai-sdk/react": "^1.2.12",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "1.2.2",
     "@radix-ui/react-alert-dialog": "1.1.4",
@@ -42,9 +43,8 @@
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
     "@vercel/analytics": "latest",
-    "ai": "latest",
+    "ai": "^4.3.16",
     "autoprefixer": "^10.4.20",
-    "bun": "latest",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "1.0.4",
@@ -52,12 +52,12 @@
     "embla-carousel-react": "8.5.1",
     "input-otp": "1.4.1",
     "lucide-react": "^0.454.0",
-    "next": "16.0.7",
+    "next": "15.3.4",
     "next-themes": "latest",
     "ogl": "latest",
-    "react": "19.2.0",
+    "react": "^19.0.0",
     "react-day-picker": "9.8.0",
-    "react-dom": "19.2.0",
+    "react-dom": "^19.0.0",
     "react-hook-form": "^7.60.0",
     "react-resizable-panels": "^2.1.7",
     "recharts": "2.15.4",
@@ -65,7 +65,7 @@
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
-    "zod": "3.25.76"
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.9",

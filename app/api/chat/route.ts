@@ -1,56 +1,14 @@
-import { convertToModelMessages, streamText, type UIMessage, tool } from "ai"
+import { streamText, type Message } from "ai"
 import { z } from "zod"
 import { SYSTEM_PROMPT, MODEL_OPTIONS, type ModelProvider } from "@/lib/ai/agent"
 
 export const maxDuration = 60
 
-const tools = {
-  generateComponent: tool({
-    description: "Generate a React/Next.js component. Returns the component code to be displayed to the user.",
-    parameters: z.object({
-      name: z.string().describe("Component name in PascalCase"),
-      description: z.string().describe("What the component should do"),
-      styling: z.string().optional().describe("Styling approach: 'tailwind' or 'css'"),
-    }),
-    execute: async function* ({ name, description, styling = "tailwind" }) {
-      yield { state: "generating" as const, message: `Creating ${name} component...` }
-      yield {
-        state: "complete" as const,
-        componentName: name,
-        description,
-        styling,
-      }
-    },
-  }),
-
-  searchWeb: tool({
-    description: "Search the web for documentation, examples, or solutions.",
-    parameters: z.object({
-      query: z.string().describe("Search query"),
-    }),
-    execute: async function* ({ query }) {
-      yield { state: "searching" as const, query }
-      yield {
-        state: "complete" as const,
-        query,
-        results: `Search results for: ${query}`,
-      }
-    },
-  }),
-}
-
-export type ChatMessage = UIMessage<never, Record<string, unknown>, typeof tools>
-
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const {
-      messages,
-      projectId,
-      model = "anthropic",
-    } = body as {
-      messages: UIMessage[]
-      projectId?: string
+    const { messages, model = "anthropic" } = body as {
+      messages: Message[]
       model?: ModelProvider
     }
 
@@ -61,18 +19,25 @@ export async function POST(req: Request) {
     const selectedModel = MODEL_OPTIONS[model] || MODEL_OPTIONS.anthropic
     console.log("[v0] Using model:", selectedModel)
 
-    // Convert messages for the model
-    const modelMessages = convertToModelMessages(messages)
-    console.log("[v0] Converted messages count:", modelMessages.length)
-
-    // Stream the response
+    // Stream the response with tools
     const result = streamText({
       model: selectedModel,
       system: SYSTEM_PROMPT,
-      messages: modelMessages,
-      tools,
-      maxSteps: 10,
-      abortSignal: req.signal,
+      messages,
+      tools: {
+        generateWebsite: {
+          description:
+            "Generate a complete HTML website with Tailwind CSS styling. Use this tool whenever the user asks for any visual UI, website, landing page, or component.",
+          parameters: z.object({
+            title: z.string().describe("The title of the website or component"),
+            description: z.string().describe("Brief description of what was created"),
+            html: z
+              .string()
+              .describe("Complete HTML code including DOCTYPE, head with Tailwind CDN, and body with all content"),
+          }),
+        },
+      },
+      maxSteps: 5,
     })
 
     console.log("[v0] Stream started successfully")
