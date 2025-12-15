@@ -30,19 +30,12 @@ export interface SandboxMetadata {
  * @param templateId - Optional custom template ID (overrides E2B_TEMPLATE_ID env var)
  */
 export async function createSandbox(projectId: string, templateId?: string): Promise<Sandbox> {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sandbox.ts:createSandbox:entry',message:'createSandbox called',data:{projectId,templateId,hasExisting:activeSandboxes.has(projectId),envTemplateId:CUSTOM_TEMPLATE_ID},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
-  // #endregion
-
   // Check if sandbox already exists for this project
   const existing = activeSandboxes.get(projectId)
   if (existing) {
     try {
       // Verify sandbox is still alive by extending timeout
       await existing.setTimeout(DEFAULT_TIMEOUT_MS)
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sandbox.ts:createSandbox:reuse',message:'Reusing existing sandbox',data:{projectId,sandboxId:existing.sandboxId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
       return existing
     } catch {
       // Sandbox expired or errored, remove from cache
@@ -74,10 +67,6 @@ export async function createSandbox(projectId: string, templateId?: string): Pro
         })
 
     activeSandboxes.set(projectId, sandbox)
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sandbox.ts:createSandbox:created',message:'New sandbox created',data:{projectId,sandboxId:sandbox.sandboxId,template:template||'default'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
-    // #endregion
 
     // Log template usage for debugging
     if (template) {
@@ -389,9 +378,6 @@ export async function startBackgroundProcess(
   workingDir?: string
 ) {
   const fullCommand = workingDir ? `cd ${workingDir} && ${command}` : command
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sandbox.ts:startBackgroundProcess:entry',message:'Starting background process',data:{command,workingDir,fullCommand},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
-  // #endregion
 
   // Run in background with nohup to prevent termination
   // The & at the end makes it a background job, but we use timeout:0 to fire-and-forget
@@ -402,16 +388,10 @@ export async function startBackgroundProcess(
     await sandbox.commands.run(`nohup sh -c "${fullCommand}" > /tmp/server.log 2>&1 &`, {
       timeoutMs: 5_000,
     })
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sandbox.ts:startBackgroundProcess:success',message:'Background process started',data:{fullCommand},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
-    // #endregion
     return { started: true }
   } catch (error) {
     // Even if the command times out, the background process may have started
     // Log the error but still return started: true since the process likely began
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sandbox.ts:startBackgroundProcess:timeout',message:'Command timed out but process may have started',data:{error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
-    // #endregion
     console.warn(`Background process command timed out, but process may still be running: ${command}`)
     return { started: true }
   }

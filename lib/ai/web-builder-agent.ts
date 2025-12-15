@@ -328,7 +328,7 @@ export function createContextAwareTools(projectId: string) {
             return { success: false, error }
           }
 
-          const newContent = content.replace(search, replace)
+          const newContent = content.replaceAll(search, replace)
           await writeFileToSandbox(sandbox, fullPath, newContent)
 
           // Update context
@@ -619,9 +619,6 @@ export function createContextAwareTools(projectId: string) {
         const projectDir = `/home/user/${name}`
         const hasTemplate = !!process.env.E2B_TEMPLATE_ID
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:entry',message:'createWebsite called',data:{name,projectDir,pagesCount:pages.length,hasTemplate,templateId:process.env.E2B_TEMPLATE_ID},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
-        // #endregion
 
         try {
           const sandbox = await createSandbox(projectId)
@@ -642,18 +639,12 @@ export function createContextAwareTools(projectId: string) {
           const checkResult = await executeCommand(sandbox, `test -d ${projectDir} && echo "exists"`)
           const projectExists = checkResult.stdout.trim() === "exists"
 
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:projectCheck',message:'Project existence check',data:{projectDir,projectExists,hasTemplate,checkStdout:checkResult.stdout,checkStderr:checkResult.stderr,checkExitCode:checkResult.exitCode},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
-          // #endregion
 
           // Scaffold new project
           if (!projectExists) {
             if (hasTemplate) {
               // OPTIMIZED: Copy pre-built project from template (60x faster!)
               // Template has a fully configured Next.js project at /home/user/project
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:copyTemplate',message:'Copying pre-built project from template',data:{templateProjectPath:'/home/user/project',targetPath:projectDir},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-              // #endregion
 
               // Copy the entire pre-built Next.js project from template
               await executeCommand(sandbox, `cp -r /home/user/project ${projectDir}`)
@@ -682,9 +673,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 `
               await writeFileToSandbox(sandbox, `${projectDir}/${appDir}/layout.tsx`, layoutContent)
 
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:templateCopied',message:'Template project copied and configured',data:{projectDir,copyDuration:Date.now()-startTime.getTime()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-              // #endregion
             } else {
               // FALLBACK: Manual scaffolding (slower, for non-template usage)
               await executeCommand(sandbox, `mkdir -p ${projectDir}/app ${projectDir}/components ${projectDir}/public`)
@@ -796,20 +784,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
           // Install deps for new projects (only if not using template)
           if (!projectExists && !hasTemplate) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:npmInstall:start',message:'Starting npm install (no template)',data:{projectDir},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2,H5'})}).catch(()=>{});
-            // #endregion
             const installResult = await executeCommand(sandbox, `cd ${projectDir} && npm install`)
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:npmInstall:done',message:'npm install completed',data:{exitCode:installResult.exitCode,stderr:installResult.stderr?.slice(0,500),stdout:installResult.stdout?.slice(-500)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2,H5'})}).catch(()=>{});
-            // #endregion
             if (installResult.exitCode !== 0) {
               throw new Error(`npm install failed: ${installResult.stderr}`)
             }
           } else if (!projectExists && hasTemplate) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:npmInstall:SKIPPED',message:'npm install SKIPPED - using template with pre-installed dependencies',data:{projectDir,templateId:process.env.E2B_TEMPLATE_ID,timeSaved:'~180-300s'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
-            // #endregion
           }
 
           // Ensure the correct dev server is running.
@@ -824,9 +803,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
           await executeCommand(sandbox, `rm -f /tmp/server.log 2>/dev/null || true`)
 
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:startServer',message:'Starting dev server',data:{projectDir,hasTemplate,waitTime},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3,H4'})}).catch(()=>{});
-          // #endregion
 
           await startBackgroundProcess(sandbox, "npm run dev", projectDir)
 
@@ -845,9 +821,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           const code = (statusCheck.stdout || "").trim()
           const serverReady = code.length === 3 && (code.startsWith("2") || code.startsWith("3"))
 
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:afterWait',message:`After wait - checking server status`,data:{hasTemplate,serverReady,detectedPort,httpStatus:code,serverLogTail:logTail?.slice(-1200)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3,H4,H5'})}).catch(()=>{});
-          // #endregion
 
           if (!serverReady) {
             throw new Error(`Dev server did not become reachable (detected port ${detectedPort}, status ${code}). Logs:\n${logTail}`)
@@ -861,9 +834,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
           recordToolExecution(projectId, "createWebsite", { name, description }, { previewUrl }, true, undefined, startTime)
 
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:success',message:'createWebsite completed successfully',data:{previewUrl,projectName:name,isNewProject:!projectExists},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2,H3,H4,H5'})}).catch(()=>{});
-          // #endregion
 
           const totalTime = Date.now() - startTime.getTime()
           const performanceNote = hasTemplate && !projectExists
@@ -884,9 +854,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : "Failed to create website"
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:error',message:'createWebsite failed',data:{error:errorMsg},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2,H3,H4,H5'})}).catch(()=>{});
-          // #endregion
           recordToolExecution(projectId, "createWebsite", { name, description }, undefined, false, errorMsg, startTime)
           return { success: false, error: errorMsg }
         }
