@@ -1,36 +1,48 @@
 "use client"
 
-import { useState } from "react"
-import { ChevronDown, Home, RefreshCw, ExternalLink, Github, Loader2 } from "lucide-react"
+import { ChevronDown, Home, RefreshCw, ExternalLink, Github, Loader2, Save, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { cn } from "@/lib/utils"
 
 interface EditorHeaderProps {
   onNavigateHome?: () => void
   sandboxUrl?: string | null
   onRefresh?: () => void
   isPreviewLoading?: boolean
+  projectName?: string
+  hasUnsavedChanges?: boolean
+  onSave?: () => void
 }
 
-export function EditorHeader({ onNavigateHome, sandboxUrl, onRefresh, isPreviewLoading }: EditorHeaderProps) {
-  const [projectName] = useState("saas-landing-page")
-
+export function EditorHeader({
+  onNavigateHome,
+  sandboxUrl,
+  onRefresh,
+  isPreviewLoading,
+  projectName = "Untitled Project",
+  hasUnsavedChanges = false,
+  onSave,
+}: EditorHeaderProps) {
   // Extract display URL from sandbox URL
-  const displayUrl = sandboxUrl 
+  const displayUrl = sandboxUrl
     ? sandboxUrl.replace(/^https?:\/\//, "").slice(0, 40) + (sandboxUrl.length > 50 ? "..." : "")
     : null
 
   return (
     <header className="flex h-14 items-center justify-between px-4 bg-[#111111]">
       {/* Left - Project Title Dropdown */}
-      <div className="flex items-center">
+      <div className="flex items-center gap-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               className="h-9 gap-2 rounded-xl px-3 text-zinc-300 hover:bg-zinc-800/70 hover:text-zinc-100"
             >
-              <span className="text-sm font-medium">{projectName}</span>
+              <span className="text-sm font-medium max-w-[200px] truncate">{projectName}</span>
+              {hasUnsavedChanges && (
+                <span className="w-2 h-2 rounded-full bg-amber-500" title="Unsaved changes" />
+              )}
               <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
             </Button>
           </DropdownMenuTrigger>
@@ -42,8 +54,29 @@ export function EditorHeader({ onNavigateHome, sandboxUrl, onRefresh, isPreviewL
               <Home className="h-4 w-4" />
               <span>Home</span>
             </DropdownMenuItem>
+            {onSave && (
+              <DropdownMenuItem
+                onClick={onSave}
+                disabled={!hasUnsavedChanges}
+                className={cn(
+                  "gap-2 rounded-lg text-zinc-300 focus:bg-zinc-800 focus:text-zinc-100 cursor-pointer",
+                  !hasUnsavedChanges && "opacity-50"
+                )}
+              >
+                <Save className="h-4 w-4" />
+                <span>Save Project</span>
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {/* Save status indicator */}
+        {!hasUnsavedChanges && sandboxUrl && (
+          <div className="flex items-center gap-1 text-xs text-zinc-500">
+            <Check className="h-3 w-3 text-emerald-500" />
+            <span>Saved</span>
+          </div>
+        )}
       </div>
 
       {/* Center - URL Bar (pill shaped) */}
@@ -68,7 +101,7 @@ export function EditorHeader({ onNavigateHome, sandboxUrl, onRefresh, isPreviewL
             ) : (
               <>
                 <span className="text-xs text-zinc-500">lovable.dev/projects/</span>
-                <span className="text-xs text-zinc-400">{projectName}</span>
+                <span className="text-xs text-zinc-400 truncate max-w-[120px]">{projectName.toLowerCase().replace(/\s+/g, "-")}</span>
               </>
             )}
           </div>

@@ -12,8 +12,10 @@ import {
   Footer,
 } from "./landing"
 
+import { type ModelProvider } from "@/lib/ai/agent"
+
 interface LandingPageProps {
-  onNavigateToEditor: (prompt?: string) => void
+  onNavigateToEditor: (projectId?: string, prompt?: string, model?: ModelProvider) => void
 }
 
 export function LandingPage({ onNavigateToEditor }: LandingPageProps) {
@@ -27,14 +29,14 @@ export function LandingPage({ onNavigateToEditor }: LandingPageProps) {
       {/* Content */}
       <div className="relative z-10">
         <Header />
-        
+
         <main>
-          <HeroSection onSubmit={onNavigateToEditor} />
-          
+          <HeroSection onSubmit={(prompt, model) => onNavigateToEditor(undefined, prompt, model)} />
+
           <div className="relative">
             {/* Divider */}
             <div className="h-px bg-gradient-to-r from-transparent via-zinc-800 to-transparent max-w-7xl mx-auto" />
-            
+
             <div id="features">
               <FeaturesSection />
             </div>

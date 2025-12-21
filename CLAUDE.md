@@ -14,7 +14,7 @@ Creative-lovable is an AI-powered web development assistant that builds real, wo
 - AI SDK providers: @ai-sdk/anthropic (^2.0.56), @ai-sdk/openai (^2.0.86), @ai-sdk/google (^2.0.46)
 - shadcn/ui + Tailwind CSS v4 (^4.1.18) for UI components
 - TypeScript 5.9+ throughout
-- Supabase (@supabase/ssr ^0.8.0) for optional persistence
+- Neon Serverless PostgreSQL (@neondatabase/serverless) for persistence
 - Framer Motion (^12.23.26) for animations
 - Zod 4.2.0 for schema validation
 - Lucide React (^0.561.0) for icons
@@ -172,7 +172,7 @@ The system prompt in `SYSTEM_PROMPT` defines the agent's behavior, capabilities,
 - **Tool Loops**: Uses `streamText()` with `stopWhen: stepCountIs(15)` for up to 15 agentic steps
 - **Context-Aware**: Generates enhanced system prompt with project state via `generateAgenticSystemPrompt()`
 - **Returns**: `UIMessageStreamResponse` with streaming tool call results
-- **Persistence**: Optionally saves messages to Supabase if projectId provided
+- **Persistence**: Optionally saves messages to Neon PostgreSQL if projectId provided
 - **Error Handling**: Returns 500 status with error JSON on failure
 
 ## Key Implementation Patterns
@@ -237,9 +237,8 @@ ANTHROPIC_API_KEY=sk-ant-***
 OPENAI_API_KEY=sk-***
 GOOGLE_GENERATIVE_AI_API_KEY=***
 
-# Supabase (Optional)
-NEXT_PUBLIC_SUPABASE_URL=***
-NEXT_PUBLIC_SUPABASE_ANON_KEY=***
+# Neon PostgreSQL (Required for persistence)
+DATABASE_URL=postgresql://neondb_owner:***@***.neon.tech/neondb?sslmode=require
 ```
 
 ## Generated Project Specifications
@@ -313,34 +312,142 @@ The project follows E2B SDK v2 best practices for optimal performance and reliab
    }
    ```
 
-3. **Batch File Operations**: Implements `writeFiles()` for efficient multi-file writes (lib/e2b/sandbox.ts:314-342)
-4. **Dynamic Timeouts**: Commands get appropriate timeouts (10 min for npm install, 5 min default) (lib/e2b/sandbox.ts:253-255)
-5. **Proper Resource Cleanup**: `cleanupAllSandboxes()` handles both regular and code interpreter sandboxes (lib/e2b/sandbox.ts:440-453)
-6. **Monitoring**: `getSandboxStats()` provides real-time sandbox statistics (lib/e2b/sandbox.ts:458-466)
+3. **Batch File Operations**: Implements `writeFiles()` for efficient multi-file writes with optional native API support (lib/e2b/sandbox.ts:303-331)
+   ```typescript
+   // Use native API for better performance
+   await writeFiles(sandbox, files, { useNativeApi: true })
+   ```
+
+4. **Dynamic Timeouts**: Commands get appropriate timeouts (10 min for npm install, 5 min default) (lib/e2b/sandbox.ts:234-271)
+   - Default timeout extended to 10 minutes for npm install without templates (3-5 minutes)
+   - Supports complex build processes and multiple iterative operations
+
+5. **Background Process Control**: `startBackgroundProcess()` uses native `background: true` API for better process control (lib/e2b/sandbox.ts:375-398)
+   ```typescript
+   const result = await startBackgroundProcess(sandbox, "npm run dev", {
+     workingDir: projectDir,
+     projectId,
+     onStdout: (data) => console.log(data),
+   })
+   // Returns process handle for cleanup: result.process
+   ```
+
+6. **Command Streaming**: `executeCommand()` supports `onStdout`/`onStderr` callbacks for real-time feedback (lib/e2b/sandbox.ts:234-271)
+   ```typescript
+   await executeCommand(sandbox, "npm install", {
+     onStdout: (data) => console.log(data),
+     onStderr: (data) => console.error(data),
+     cwd: "/home/user/project",
+   })
+   ```
+
+7. **Process Cleanup**: `killBackgroundProcess(projectId)` properly terminates dev servers before restart or cleanup (lib/e2b/sandbox.ts:399-414)
+   - `closeSandbox()` automatically kills associated background processes
+   - Process handles tracked in `backgroundProcesses` Map for proper cleanup
+
+8. **Proper Resource Cleanup**: `cleanupAllSandboxes()` handles both regular and code interpreter sandboxes
+9. **Monitoring**: `getSandboxStats()` provides real-time sandbox statistics including paused sandboxes
+10. **Backward Compatibility**: All new features maintain backward compatibility (e.g., `executeCommand` accepts number timeout for legacy code)
+
+11. **Sandbox Persistence (Beta)**: Pause and resume sandboxes to preserve state and reduce costs
+    ```typescript
+    // Pause sandbox (saves filesystem and memory state)
+    await pauseSandbox(projectId)
+    
+    // Resume sandbox (restores to previous state)
+    const sandbox = await resumeSandbox(projectId)
+    
+    // Create with auto-pause (sandbox pauses on timeout instead of being killed)
+    const sandbox = await createSandboxWithAutoPause(projectId, true)
+    ```
+
+12. **Progress Callbacks**: `executeCommand` and `writeFiles` support progress callbacks for streaming
+    ```typescript
+    await executeCommand(sandbox, "npm install", {
+      onProgress: (phase, msg, detail) => console.log(`${phase}: ${msg}`)
+    })
+    
+    await writeFiles(sandbox, files, {
+      onProgress: (phase, msg) => console.log(`${phase}: ${msg}`),
+      concurrency: 5
+    })
+    ```
+
+13. **Enhanced Batch Operations**: `writeFiles` with concurrency control and detailed error tracking
 
 ### AI SDK 6 Beta Best Practices
 
 The project leverages AI SDK v6 (beta 150) advanced features:
 
-1. **Multi-Step Tool Calling**: Uses `stopWhen: stepCountIs(15)` for agentic workflows (app/api/chat/route.ts:57)
-2. **Step Tracking**: `onStepFinish` callback logs each step's completion (app/api/chat/route.ts:60-89)
+1. **Multi-Step Tool Calling**: Uses `stopWhen: stepCountIs(15)` for agentic workflows (app/api/chat/route.ts)
+2. **Step Tracking**: `onStepFinish` callback logs each step's completion
    ```typescript
    onStepFinish: async ({ text, toolCalls, toolResults, finishReason, usage }) => {
      // Log and optionally save to database
    }
    ```
 
-3. **Dynamic Step Configuration**: `prepareStep` compresses conversation history for long loops (app/api/chat/route.ts:92-107)
+3. **Dynamic Step Configuration with activeTools**: `prepareStep` supports dynamic tool filtering based on context
    ```typescript
    prepareStep: async ({ stepNumber, messages }) => {
+     const context = getAgentContext(projectId)
+     // Compress conversation for long loops
      if (messages.length > 30) {
        return { messages: [messages[0], ...messages.slice(-20)] }
+     }
+     // Dynamic tool activation based on build status
+     if (context.buildStatus?.hasErrors) {
+       return { activeTools: [...FILE_TOOLS, ...BUILD_TOOLS] }
      }
    }
    ```
 
-4. **Context-Aware Tools**: All tools update AgentContext after execution (lib/ai/web-builder-agent.ts)
-5. **Structured Outputs**: Ready for answer tools pattern with `toolChoice: 'required'`
+4. **Preliminary Tool Results (AsyncIterable)**: Tools can stream progress updates during execution
+   ```typescript
+   async *execute({ name, description, pages }) {
+     yield { status: "loading", phase: "init", message: "Creating website", progress: 0 }
+     // ... do work ...
+     yield { status: "progress", phase: "files", message: "Writing pages", progress: 50 }
+     // ... final result
+     yield { status: "success", success: true, previewUrl: url, progress: 100 }
+   }
+   ```
+
+5. **Tool Input Lifecycle Hooks**: Real-time progress during tool input generation
+   ```typescript
+   tool({
+     onInputStart: () => console.log("Tool input generation started"),
+     onInputDelta: ({ inputTextDelta }) => console.log(`Receiving: ${inputTextDelta}`),
+     onInputAvailable: ({ input }) => console.log("Input complete:", input),
+     execute: async (input) => { /* ... */ }
+   })
+   ```
+
+6. **Tool Call Repair**: Automatic error recovery for invalid tool inputs
+   ```typescript
+   experimental_repairToolCall: async ({ toolCall, error }) => {
+     if (InvalidToolInputError.isInstance(error)) {
+       // Fix common issues and retry
+       return { ...toolCall, input: fixedInput }
+     }
+     return null
+   }
+   ```
+
+7. **Custom Error Messages**: `toUIMessageStreamResponse` with `onError` for better UX
+   ```typescript
+   result.toUIMessageStreamResponse({
+     onError: (error) => {
+       if (NoSuchToolError.isInstance(error)) {
+         return "I tried to use an unknown tool. Let me try a different approach."
+       }
+       return error.message
+     }
+   })
+   ```
+
+8. **Context-Aware Tools**: All tools update AgentContext after execution (lib/ai/web-builder-agent.ts)
+9. **Structured Outputs**: Ready for answer tools pattern with `toolChoice: 'required'`
 
 ### Error Handling Best Practices
 
@@ -380,6 +487,11 @@ The agent should autonomously detect and fix build errors without requiring expl
 
 1. **E2B Template Usage**: 60x faster startup with custom templates (2-5s vs 3-5 minutes)
 2. **Sandbox Reuse**: Sandboxes are cached per projectId and reused across requests
-3. **Parallel File Writes**: Batch file operations for better performance
-4. **Conversation Compression**: Automatic message history pruning in long agentic loops (>30 messages)
-5. **Dynamic Timeouts**: Prevents unnecessary waiting for quick commands
+3. **Sandbox Persistence**: Pause/resume sandboxes to preserve state between sessions (reduces startup time)
+4. **Parallel File Writes**: Batch file operations with concurrency control for better performance
+5. **Conversation Compression**: Automatic message history pruning in long agentic loops (>30 messages)
+6. **Dynamic Timeouts**: Prevents unnecessary waiting for quick commands
+7. **Dynamic activeTools**: Reduces token usage by only including relevant tools per step
+8. **Tool Input Streaming**: Real-time progress updates during tool input generation
+9. **Preliminary Tool Results**: Stream progress updates during long-running tool executions
+10. **Auto-pause**: Sandboxes can auto-pause on timeout to save costs (beta feature)

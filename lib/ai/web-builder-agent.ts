@@ -3,6 +3,12 @@
  *
  * Provides deep context awareness and intelligent agentic flow for
  * building and iterating on web applications in E2B sandboxes.
+ *
+ * AI SDK v6 Features Used:
+ * - Preliminary Tool Results: AsyncIterable for streaming progress
+ * - Tool Input Lifecycle Hooks: onInputStart, onInputDelta, onInputAvailable
+ * - Tool Execution Options: toolCallId, messages, abortSignal
+ * - Context Awareness: Full project state tracking
  */
 
 import { tool } from "ai"
@@ -24,6 +30,9 @@ import {
 } from "./agent-context"
 import {
   createSandbox,
+  createSandboxWithAutoPause,
+  pauseSandbox,
+  resumeSandbox,
   getCodeInterpreterSandbox,
   executeCode,
   writeFile as writeFileToSandbox,
@@ -34,7 +43,19 @@ import {
   startBackgroundProcess,
   getSandboxStats,
   type CodeLanguage,
+  type ProgressCallback,
 } from "@/lib/e2b/sandbox"
+
+// Tool progress status type for streaming preliminary results
+type ToolStatus = "loading" | "progress" | "success" | "error"
+
+interface ToolProgressUpdate {
+  status: ToolStatus
+  phase: string
+  message: string
+  detail?: string
+  progress?: number // 0-100
+}
 
 // Types for step state tracking
 export interface StepState {
@@ -69,6 +90,11 @@ function normalizeSandboxRelativePath(rawPath: string, stripPrefix?: string) {
   return normalized
 }
 
+/**
+ * @deprecated This function is no longer used. Dev server management has been moved
+ * to the frontend via useDevServer hook and /api/sandbox/[projectId]/dev-server API.
+ * Kept for reference but should not be called.
+ */
 async function waitForNextDevServerFromLogs(
   sandbox: any,
   {
@@ -541,57 +567,22 @@ export function createContextAwareTools(projectId: string) {
       },
     }),
 
+    // NOTE: startDevServer is DEPRECATED - dev server is now managed automatically by the frontend
+    // This tool is kept for backward compatibility but should not be called by the AI
     startDevServer: tool({
-      description: "Start the Next.js development server. Returns the preview URL when ready.",
+      description: "DEPRECATED: Do not use this tool. The dev server is started automatically by the application. Use createWebsite to write files instead.",
       inputSchema: z.object({
         projectName: z.string().describe("Project name in /home/user/"),
         port: z.number().optional().describe("Port number (default: 3000)"),
       }),
-      execute: async ({ projectName, port = 3000 }) => {
-        const startTime = new Date()
-        const projectDir = `/home/user/${projectName}`
+      execute: async ({ projectName }) => {
+        // Just update context - the frontend will start the server
+        setProjectInfo(projectId, { projectName, projectDir: `/home/user/${projectName}` })
 
-        try {
-          const sandbox = await createSandbox(projectId)
-
-          await executeCommand(sandbox, `rm -f /tmp/server.log 2>/dev/null || true`)
-
-          // Start server
-          await startBackgroundProcess(sandbox, `PORT=${port} npm run dev`, projectDir)
-
-          // Wait for server
-          const { port: detectedPort, logTail } = await waitForNextDevServerFromLogs(sandbox, {
-            maxWaitMs: 30_000,
-            fallbackPort: port,
-          })
-          // If we never saw a successful curl response, treat it as a failure.
-          const statusCheck = await executeCommand(
-            sandbox,
-            `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:${detectedPort} || echo "000"`
-          )
-          const code = (statusCheck.stdout || "").trim()
-          if (!(code.length === 3 && (code.startsWith("2") || code.startsWith("3")))) {
-            throw new Error(`Dev server failed to start (expected port ${port}, detected ${detectedPort}). Logs:\n${logTail}`)
-          }
-
-          const previewUrl = getHostUrl(sandbox, detectedPort)
-          updateServerState(projectId, { isRunning: true, port: detectedPort, url: previewUrl })
-          setProjectInfo(projectId, { projectName, projectDir })
-
-          recordToolExecution(projectId, "startDevServer", { projectName, requestedPort: port, detectedPort }, { previewUrl }, true, undefined, startTime)
-
-          return {
-            success: true,
-            alreadyRunning: false,
-            previewUrl,
-            port: detectedPort,
-            message: `Development server started at ${previewUrl}`,
-          }
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : "Failed to start server"
-          recordToolExecution(projectId, "startDevServer", { projectName, port }, undefined, false, errorMsg, startTime)
-          updateServerState(projectId, { isRunning: false })
-          return { success: false, error: errorMsg }
+        return {
+          success: true,
+          message: "Dev server is managed automatically by the application. Files are ready - the preview will appear shortly.",
+          note: "This tool is deprecated. Use createWebsite to write files instead.",
         }
       },
     }),
@@ -614,17 +605,43 @@ export function createContextAwareTools(projectId: string) {
           action: z.enum(["create", "update", "delete"]).optional(),
         })).optional().describe("Optional reusable components"),
       }),
-      execute: async ({ name, description, pages, components }) => {
+      // AI SDK v6: Tool input lifecycle hooks for streaming progress
+      onInputStart: () => {
+        console.log("[createWebsite] Tool input generation started")
+      },
+      onInputDelta: ({ inputTextDelta }) => {
+        // Log delta for debugging (could be used for UI updates)
+        if (inputTextDelta.length > 100) {
+          console.log(`[createWebsite] Receiving input: ${inputTextDelta.slice(0, 50)}...`)
+        }
+      },
+      onInputAvailable: ({ input }) => {
+        console.log(`[createWebsite] Input complete: ${(input as { name?: string })?.name || "unknown"}`)
+      },
+      // AI SDK v6: Use async generator for preliminary results (streaming progress)
+      async *execute({ name, description, pages, components }) {
         const startTime = new Date()
         const projectDir = `/home/user/${name}`
         const hasTemplate = !!process.env.E2B_TEMPLATE_ID
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:entry',message:'createWebsite called',data:{name,projectDir,pagesCount:pages.length,hasTemplate,templateId:process.env.E2B_TEMPLATE_ID},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
-        // #endregion
+        // Yield initial progress
+        yield {
+          status: "loading" as const,
+          phase: "init",
+          message: `Creating website: ${name}`,
+          detail: description,
+        }
 
         try {
-          const sandbox = await createSandbox(projectId)
+          // Use sandbox with auto-pause for cost savings
+          const sandbox = await createSandboxWithAutoPause(projectId)
+
+          yield {
+            status: "progress" as const,
+            phase: "sandbox",
+            message: "Sandbox ready",
+            progress: 10,
+          }
 
           const resolveAppDir = async () => {
             // Support both template styles:
@@ -642,12 +659,15 @@ export function createContextAwareTools(projectId: string) {
           const checkResult = await executeCommand(sandbox, `test -d ${projectDir} && echo "exists"`)
           const projectExists = checkResult.stdout.trim() === "exists"
 
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:projectCheck',message:'Project existence check',data:{projectDir,projectExists,hasTemplate,checkStdout:checkResult.stdout,checkStderr:checkResult.stderr,checkExitCode:checkResult.exitCode},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
-          // #endregion
-
           // Scaffold new project
           if (!projectExists) {
+            yield {
+              status: "progress" as const,
+              phase: "scaffold",
+              message: hasTemplate ? "Using template (60x faster)" : "Creating project structure",
+              progress: 20,
+            }
+
             if (hasTemplate) {
               // OPTIMIZED: Copy pre-built project from template (60x faster!)
               // Template has a fully configured Next.js project at /home/user/project
@@ -657,6 +677,11 @@ export function createContextAwareTools(projectId: string) {
 
               // Copy the entire pre-built Next.js project from template
               await executeCommand(sandbox, `cp -r /home/user/project ${projectDir}`)
+
+              // #region agent log - check what template's page.tsx contains (before we overwrite it)
+              const templatePageCheck = await readFileFromSandbox(sandbox, `${projectDir}/app/page.tsx`).catch(() => ({ content: "NOT_FOUND" }))
+              fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:templatePageCheck',message:'Template page.tsx content after copy',data:{hasDefaultContent:templatePageCheck.content?.includes('next.svg')||templatePageCheck.content?.includes('vercel.svg'),contentLength:templatePageCheck.content?.length,preview:templatePageCheck.content?.slice(0,300)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H10,H11'})}).catch(()=>{});
+              // #endregion
 
               // Update package.json with project name and description
               const updatePkgCmd = `cd ${projectDir} && node -e "const pkg=require('./package.json');pkg.name='${name}';require('fs').writeFileSync('package.json',JSON.stringify(pkg,null,2))"`
@@ -758,6 +783,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
           const appDir = await resolveAppDir()
 
+          yield {
+            status: "progress" as const,
+            phase: "files",
+            message: `Writing ${pages.length} pages${components?.length ? ` and ${components.length} components` : ""}`,
+            progress: 40,
+          }
+
           // Write pages
           for (const page of pages) {
             const action = page.action || "create"
@@ -796,99 +828,84 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
           // Install deps for new projects (only if not using template)
           if (!projectExists && !hasTemplate) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:npmInstall:start',message:'Starting npm install (no template)',data:{projectDir},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2,H5'})}).catch(()=>{});
-            // #endregion
-            const installResult = await executeCommand(sandbox, `cd ${projectDir} && npm install`)
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:npmInstall:done',message:'npm install completed',data:{exitCode:installResult.exitCode,stderr:installResult.stderr?.slice(0,500),stdout:installResult.stdout?.slice(-500)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2,H5'})}).catch(()=>{});
-            // #endregion
+            yield {
+              status: "progress" as const,
+              phase: "install",
+              message: "Installing dependencies (this may take a few minutes)",
+              progress: 50,
+            }
+
+            const installResult = await executeCommand(sandbox, `cd ${projectDir} && npm install`, {
+              onProgress: (phase, msg) => {
+                // Progress updates logged but not yielded to avoid excessive updates
+                console.log(`[npm install] ${phase}: ${msg}`)
+              },
+            })
             if (installResult.exitCode !== 0) {
               throw new Error(`npm install failed: ${installResult.stderr}`)
             }
-          } else if (!projectExists && hasTemplate) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:npmInstall:SKIPPED',message:'npm install SKIPPED - using template with pre-installed dependencies',data:{projectDir,templateId:process.env.E2B_TEMPLATE_ID,timeSaved:'~180-300s'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
-            // #endregion
+
+            yield {
+              status: "progress" as const,
+              phase: "install",
+              message: "Dependencies installed",
+              progress: 70,
+            }
           }
 
-          // Ensure the correct dev server is running.
-          // Sandboxes are reused per projectId and may have a different Next.js app already listening on 3000.
-          // Restarting guarantees the preview shows THIS project (and avoids showing the default Next page).
-          const waitTime = hasTemplate ? 6_000 : 12_000
-
-          // FIX: Delete stale .next cache from template to ensure fresh build
-          if (hasTemplate) {
-            await executeCommand(sandbox, `rm -rf ${projectDir}/.next 2>/dev/null || true`)
+          yield {
+            status: "progress" as const,
+            phase: "files",
+            message: "Files written successfully",
+            progress: 90,
           }
 
-          await executeCommand(sandbox, `rm -f /tmp/server.log 2>/dev/null || true`)
-
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:startServer',message:'Starting dev server',data:{projectDir,hasTemplate,waitTime},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3,H4'})}).catch(()=>{});
-          // #endregion
-
-          await startBackgroundProcess(sandbox, "npm run dev", projectDir)
-
-          // Give Next a head start to write its initial logs
-          await new Promise((resolve) => setTimeout(resolve, waitTime))
-
-          const { port: detectedPort, logTail } = await waitForNextDevServerFromLogs(sandbox, {
-            maxWaitMs: hasTemplate ? 30_000 : 45_000,
-            fallbackPort: 3000,
-          })
-
-          const statusCheck = await executeCommand(
-            sandbox,
-            `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:${detectedPort} || echo "000"`
-          )
-          const code = (statusCheck.stdout || "").trim()
-          const serverReady = code.length === 3 && (code.startsWith("2") || code.startsWith("3"))
-
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:afterWait',message:`After wait - checking server status`,data:{hasTemplate,serverReady,detectedPort,httpStatus:code,serverLogTail:logTail?.slice(-1200)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3,H4,H5'})}).catch(()=>{});
-          // #endregion
-
-          if (!serverReady) {
-            throw new Error(`Dev server did not become reachable (detected port ${detectedPort}, status ${code}). Logs:\n${logTail}`)
-          }
-
-          const previewUrl = getHostUrl(sandbox, detectedPort)
-
-          // Update context
+          // Update context with project info
+          // NOTE: Dev server is now started automatically by the frontend via useDevServer hook
+          // This avoids the tool execution hanging issue
           setProjectInfo(projectId, { projectName: name, projectDir, sandboxId: sandbox.sandboxId })
-          updateServerState(projectId, { isRunning: true, port: detectedPort, url: previewUrl })
 
-          recordToolExecution(projectId, "createWebsite", { name, description }, { previewUrl }, true, undefined, startTime)
-
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:success',message:'createWebsite completed successfully',data:{previewUrl,projectName:name,isNewProject:!projectExists},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2,H3,H4,H5'})}).catch(()=>{});
-          // #endregion
+          recordToolExecution(projectId, "createWebsite", { name, description }, { projectName: name, projectDir }, true, undefined, startTime)
 
           const totalTime = Date.now() - startTime.getTime()
           const performanceNote = hasTemplate && !projectExists
             ? ` (⚡ Template-optimized: ${(totalTime / 1000).toFixed(1)}s vs ~180s without template)`
             : ""
 
-          return {
+          // AI SDK v6: Final yield is the actual tool result
+          // NOTE: previewUrl is no longer returned here - the frontend will start the server
+          // and get the URL automatically via the useDevServer hook
+          yield {
+            status: "success" as const,
+            phase: "complete",
+            message: `Website ${projectExists ? "updated" : "created"}! Starting preview...`,
+            progress: 100,
+            // Include full result data (without previewUrl - that comes from useDevServer)
             success: true,
             projectName: name,
-            previewUrl,
-            port: detectedPort,
+            projectDir,
             pagesCreated: pages.map(p => p.path),
             componentsCreated: components?.map(c => c.name) || [],
             isNewProject: !projectExists,
             usedTemplate: hasTemplate && !projectExists,
             totalTimeMs: totalTime,
-            message: `Website ${projectExists ? "updated" : "created"}! Preview: ${previewUrl}${performanceNote}`,
+            detail: `Files written successfully${performanceNote}. Dev server starting automatically...`,
+            // Signal to frontend that files are ready and server should be started
+            filesReady: true,
           }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : "Failed to create website"
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:error',message:'createWebsite failed',data:{error:errorMsg},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2,H3,H4,H5'})}).catch(()=>{});
-          // #endregion
           recordToolExecution(projectId, "createWebsite", { name, description }, undefined, false, errorMsg, startTime)
-          return { success: false, error: errorMsg }
+
+          // AI SDK v6: Yield error as final result
+          yield {
+            status: "error" as const,
+            phase: "error",
+            message: "Failed to create website",
+            detail: errorMsg,
+            success: false,
+            error: errorMsg,
+          }
         }
       },
     }),

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import {
   CheckCircle,
   AlertCircle,
@@ -10,52 +10,99 @@ import {
   Globe,
   FileCode,
   Wrench,
-  Sparkles,
+  Loader2,
+  Package,
+  Terminal,
+  FolderSearch,
+  Download,
+  Server,
+  Clipboard,
+  FileText,
+  Pencil,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getContextualMessage } from "@/lib/ai/stream-progress"
+import type { ToolProgress } from "@/hooks/use-chat-with-tools"
 
 // AI SDK v5 tool states
 type ToolState = "input-streaming" | "input-available" | "output-available" | "output-error"
 
 interface ToolCallDisplayProps {
   toolName: string
+  toolCallId?: string
   state?: ToolState
   input?: Record<string, unknown>
   output?: Record<string, unknown> | string
   errorText?: string
+  progress?: ToolProgress
 }
 
 // Tool display configurations
-const TOOL_CONFIG: Record<string, { icon: React.ElementType; label: string; color: string }> = {
+const TOOL_CONFIG: Record<string, { icon: React.ElementType; label: string; actionVerb: string }> = {
   createWebsite: {
     icon: Globe,
     label: "Creating Website",
-    color: "text-emerald-400",
+    actionVerb: "website created",
   },
-  updateFile: {
+  writeFile: {
     icon: FileCode,
-    label: "Updating File",
-    color: "text-blue-400",
+    label: "Writing File",
+    actionVerb: "file written",
   },
-  createFile: {
-    icon: FileCode,
-    label: "Creating File",
-    color: "text-violet-400",
+  editFile: {
+    icon: Pencil,
+    label: "Editing File",
+    actionVerb: "edit made",
   },
-  runCode: {
+  readFile: {
+    icon: FolderSearch,
+    label: "Reading File",
+    actionVerb: "file read",
+  },
+  runCommand: {
+    icon: Terminal,
+    label: "Running Command",
+    actionVerb: "command run",
+  },
+  executeCode: {
     icon: Code,
-    label: "Running Code",
-    color: "text-amber-400",
+    label: "Executing Code",
+    actionVerb: "code executed",
   },
-  generateCode: {
-    icon: Sparkles,
-    label: "Generating Code",
-    color: "text-pink-400",
+  installPackage: {
+    icon: Download,
+    label: "Installing Package",
+    actionVerb: "package installed",
+  },
+  startDevServer: {
+    icon: Server,
+    label: "Starting Server",
+    actionVerb: "server started",
+  },
+  getProjectStructure: {
+    icon: FolderSearch,
+    label: "Analyzing Structure",
+    actionVerb: "structure analyzed",
+  },
+  getBuildStatus: {
+    icon: Package,
+    label: "Checking Build",
+    actionVerb: "build checked",
+  },
+  planChanges: {
+    icon: Clipboard,
+    label: "Planning Changes",
+    actionVerb: "plan created",
+  },
+  analyzeProjectState: {
+    icon: FolderSearch,
+    label: "Analyzing Project",
+    actionVerb: "project analyzed",
   },
   default: {
     icon: Wrench,
     label: "Tool",
-    color: "text-zinc-400",
+    actionVerb: "action completed",
   },
 }
 
@@ -63,12 +110,15 @@ function getToolConfig(toolName: string) {
   return TOOL_CONFIG[toolName] || { ...TOOL_CONFIG.default, label: toolName }
 }
 
+// Single tool call display (compact version)
 export function ToolCallDisplay({
   toolName,
+  toolCallId,
   state,
   input,
   output,
   errorText,
+  progress,
 }: ToolCallDisplayProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const config = getToolConfig(toolName)
@@ -95,26 +145,18 @@ export function ToolCallDisplay({
     }
   }
 
-  // Get status message based on tool and state
-  const getStatusMessage = () => {
-    if (isLoading) {
-      switch (toolName) {
-        case "createWebsite":
-          return "Setting up sandbox environment..."
-        case "updateFile":
-          return "Applying changes..."
-        case "createFile":
-          return "Writing file..."
-        case "runCode":
-          return "Executing code..."
-        default:
-          return "Processing..."
-      }
+  // Get contextual status message
+  const statusMessage = useMemo(() => {
+    if (progress && isLoading) {
+      return progress.message
+    }
+    if (isLoading && input) {
+      return getContextualMessage(toolName, input)
     }
     if (isSuccess) return "Completed"
-    if (isError) return "Failed"
+    if (isError) return errorText?.slice(0, 50) || "Failed"
     return "Pending"
-  }
+  }, [toolName, input, progress, isLoading, isSuccess, isError, errorText])
 
   // Extract preview URL if available
   const previewUrl =
@@ -123,83 +165,52 @@ export function ToolCallDisplay({
       : null
 
   return (
-    <div
-      className={cn(
-        "my-2 overflow-hidden rounded-xl border transition-all duration-200",
-        isError
-          ? "border-red-500/30 bg-red-950/20"
-          : isSuccess
-            ? "border-emerald-500/30 bg-emerald-950/10"
-            : "border-zinc-700/50 bg-zinc-800/30"
-      )}
-    >
-      {/* Header */}
+    <div className="my-1">
+      {/* Compact header row */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex w-full items-center justify-between px-3 py-2.5 text-left hover:bg-zinc-800/50 transition-colors"
+        className={cn(
+          "flex w-full items-center gap-2 px-2 py-1.5 text-left rounded-lg transition-colors",
+          "hover:bg-zinc-800/50",
+          isError && "text-red-400"
+        )}
       >
-        <div className="flex items-center gap-2.5">
-          {/* Status indicator */}
-          <div className="relative">
-            {isLoading ? (
-              <div className="relative">
-                <div className={cn("h-5 w-5 rounded-full bg-zinc-800", config.color)}>
-                  <Icon className="h-5 w-5 p-0.5" />
-                </div>
-              </div>
-            ) : isSuccess ? (
-              <div className="relative">
-                <div className={cn("h-5 w-5 rounded-full", config.color)}>
-                  <Icon className="h-5 w-5 p-0.5" />
-                </div>
-                <CheckCircle className="absolute -right-0.5 -bottom-0.5 h-3 w-3 text-emerald-400" />
-              </div>
-            ) : isError ? (
-              <div className="relative">
-                <div className="h-5 w-5 rounded-full text-red-400">
-                  <Icon className="h-5 w-5 p-0.5" />
-                </div>
-                <AlertCircle className="absolute -right-0.5 -bottom-0.5 h-3 w-3 text-red-400" />
-              </div>
-            ) : (
-              <Icon className={cn("h-5 w-5", config.color)} />
-            )}
-          </div>
-
-          {/* Tool name and status */}
-          <div className="flex flex-col">
-            <span className="text-xs font-medium text-zinc-200">{displayName}</span>
-            <span className="text-[10px] text-zinc-500">{getStatusMessage()}</span>
-          </div>
+        {/* Status icon */}
+        <div className="flex-shrink-0">
+          {isLoading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-500" />
+          ) : isSuccess ? (
+            <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
+          ) : isError ? (
+            <AlertCircle className="h-3.5 w-3.5 text-red-500" />
+          ) : (
+            <Icon className="h-3.5 w-3.5 text-zinc-500" />
+          )}
         </div>
+
+        {/* Tool name and status */}
+        <span className="flex-1 text-xs text-zinc-400 truncate">
+          {isLoading ? statusMessage : displayName}
+        </span>
 
         {/* Expand indicator */}
-        <div className="flex items-center gap-2">
-          {isLoading && (
-            <div className="flex gap-0.5">
-              <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-zinc-500 [animation-delay:-0.3s]" />
-              <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-zinc-500 [animation-delay:-0.15s]" />
-              <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-zinc-500" />
-            </div>
-          )}
-          {isExpanded ? (
-            <ChevronDown className="h-4 w-4 text-zinc-500" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-zinc-500" />
-          )}
-        </div>
+        {isExpanded ? (
+          <ChevronDown className="h-3 w-3 text-zinc-600" />
+        ) : (
+          <ChevronRight className="h-3 w-3 text-zinc-600" />
+        )}
       </button>
 
       {/* Expanded content */}
       {isExpanded && (
-        <div className="border-t border-zinc-700/30 px-3 py-2.5 space-y-2">
+        <div className="ml-6 mt-1 space-y-2 text-xs">
           {/* Input preview */}
           {input && Object.keys(input).length > 0 && (
             <div>
-              <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">
                 Input
               </span>
-              <pre className="mt-1 overflow-x-auto rounded-lg bg-zinc-900/50 p-2 text-[10px] text-zinc-400">
+              <pre className="mt-1 overflow-x-auto rounded-md bg-zinc-900/50 p-2 text-[10px] text-zinc-500 max-h-32">
                 {formatOutput(input)}
               </pre>
             </div>
@@ -208,18 +219,18 @@ export function ToolCallDisplay({
           {/* Output preview */}
           {isSuccess && output !== undefined && output !== null && (
             <div>
-              <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">
                 Output
               </span>
               {previewUrl ? (
-                <div className="mt-1 flex items-center gap-2 rounded-lg bg-emerald-900/20 px-2 py-1.5">
-                  <Globe className="h-3.5 w-3.5 text-emerald-400" />
-                  <span className="text-xs text-emerald-300 truncate">
-                    Preview ready: {previewUrl as string}
+                <div className="mt-1 flex items-center gap-2 rounded-md bg-emerald-900/20 px-2 py-1.5">
+                  <Globe className="h-3 w-3 text-emerald-400" />
+                  <span className="text-[10px] text-emerald-300 truncate">
+                    {previewUrl as string}
                   </span>
                 </div>
               ) : (
-                <pre className="mt-1 overflow-x-auto rounded-lg bg-zinc-900/50 p-2 text-[10px] text-zinc-400 max-h-32">
+                <pre className="mt-1 overflow-x-auto rounded-md bg-zinc-900/50 p-2 text-[10px] text-zinc-500 max-h-24">
                   {formatOutput(output)}
                 </pre>
               )}
@@ -228,15 +239,137 @@ export function ToolCallDisplay({
 
           {/* Error message */}
           {isError && errorText && (
-            <div>
-              <span className="text-[10px] font-medium uppercase tracking-wider text-red-400">
-                Error
-              </span>
-              <div className="mt-1 rounded-lg bg-red-950/30 p-2 text-xs text-red-300">
-                {errorText}
-              </div>
+            <div className="rounded-md bg-red-950/30 p-2 text-[10px] text-red-400">
+              {errorText}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Grouped tool calls summary component
+interface ToolCallData {
+  toolName: string
+  toolCallId: string
+  state?: ToolState
+  input?: Record<string, unknown>
+  output?: Record<string, unknown> | string
+  errorText?: string
+  progress?: ToolProgress
+}
+
+interface ToolCallsGroupProps {
+  toolCalls: ToolCallData[]
+  getToolProgress?: (toolCallId: string) => ToolProgress | undefined
+}
+
+export function ToolCallsGroup({ toolCalls, getToolProgress }: ToolCallsGroupProps) {
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  // Analyze the tool calls
+  const analysis = useMemo(() => {
+    const hasLoading = toolCalls.some(
+      (t) => t.state === "input-streaming" || t.state === "input-available"
+    )
+    const hasError = toolCalls.some((t) => t.state === "output-error")
+    const completedCount = toolCalls.filter((t) => t.state === "output-available").length
+    const totalCount = toolCalls.length
+
+    // Count by type for summary
+    const typeCounts: Record<string, number> = {}
+    for (const tool of toolCalls) {
+      const config = getToolConfig(tool.toolName)
+      typeCounts[config.actionVerb] = (typeCounts[config.actionVerb] || 0) + 1
+    }
+
+    // Generate summary text
+    let summaryText = ""
+    const entries = Object.entries(typeCounts)
+    
+    if (entries.length === 1) {
+      const [verb, count] = entries[0]
+      summaryText = `${count} ${count === 1 ? verb : verb.replace(" made", "s made").replace(" created", "s created").replace(" written", "s written")}`
+    } else {
+      summaryText = `${totalCount} actions`
+    }
+
+    return {
+      hasLoading,
+      hasError,
+      completedCount,
+      totalCount,
+      summaryText,
+      isComplete: completedCount === totalCount && !hasLoading,
+    }
+  }, [toolCalls])
+
+  // If only one tool call, show the simple version
+  if (toolCalls.length === 1) {
+    const tool = toolCalls[0]
+    return (
+      <ToolCallDisplay
+        toolName={tool.toolName}
+        toolCallId={tool.toolCallId}
+        state={tool.state}
+        input={tool.input}
+        output={tool.output}
+        errorText={tool.errorText}
+        progress={getToolProgress?.(tool.toolCallId)}
+      />
+    )
+  }
+
+  return (
+    <div className="my-2">
+      {/* Summary row */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className={cn(
+          "flex w-full items-center gap-3 px-3 py-2 text-left rounded-xl transition-all",
+          "bg-zinc-800/40 hover:bg-zinc-800/60 border border-zinc-700/30"
+        )}
+      >
+        {/* Icon */}
+        <div className="flex-shrink-0">
+          {analysis.hasLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
+          ) : analysis.hasError ? (
+            <AlertCircle className="h-4 w-4 text-red-400" />
+          ) : (
+            <FileText className="h-4 w-4 text-zinc-400" />
+          )}
+        </div>
+
+        {/* Summary text */}
+        <span className="flex-1 text-sm text-zinc-300">
+          {analysis.hasLoading
+            ? `Working... (${analysis.completedCount}/${analysis.totalCount})`
+            : analysis.summaryText}
+        </span>
+
+        {/* Show all button */}
+        <span className="text-xs text-zinc-500 hover:text-zinc-400 transition-colors">
+          {isExpanded ? "Hide" : "Show all"}
+        </span>
+      </button>
+
+      {/* Expanded list */}
+      {isExpanded && (
+        <div className="mt-1 ml-2 border-l border-zinc-700/30 pl-2">
+          {toolCalls.map((tool) => (
+            <ToolCallDisplay
+              key={tool.toolCallId}
+              toolName={tool.toolName}
+              toolCallId={tool.toolCallId}
+              state={tool.state}
+              input={tool.input}
+              output={tool.output}
+              errorText={tool.errorText}
+              progress={getToolProgress?.(tool.toolCallId)}
+            />
+          ))}
         </div>
       )}
     </div>

@@ -1,12 +1,13 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
-import { ArrowUp, AudioLines, ChevronDown, X, Sparkles, Zap, Code2 } from "lucide-react"
+import { useState, useRef, useEffect } from "react"
+import { ArrowUp, AudioLines, ChevronDown, X, Sparkles, Zap, Code2, Wand2, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { MODEL_DISPLAY_NAMES, type ModelProvider } from "@/lib/ai/agent"
 import { cn } from "@/lib/utils"
+import { motion, AnimatePresence } from "framer-motion"
 
 const AnthropicIcon = ({ className }: { className?: string }) => (
   <svg role="img" viewBox="0 0 24 24" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
@@ -35,17 +36,20 @@ const GoogleIcon = ({ className }: { className?: string }) => (
 )
 
 interface HeroSectionProps {
-  onSubmit: (prompt: string) => void
+  onSubmit: (prompt: string, model: ModelProvider) => void
 }
 
 export function HeroSection({ onSubmit }: HeroSectionProps) {
   const [inputValue, setInputValue] = useState("")
   const [uploadedImages, setUploadedImages] = useState<string[]>([])
   const [selectedModel, setSelectedModel] = useState<ModelProvider>("anthropic")
+  const [isImproving, setIsImproving] = useState(false)
+  const [showImproveEffect, setShowImproveEffect] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const handleSubmit = () => {
     if (inputValue.trim()) {
-      onSubmit(inputValue.trim())
+      onSubmit(inputValue.trim(), selectedModel)
     }
   }
 
@@ -60,9 +64,56 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
     setUploadedImages((prev) => prev.filter((_, i) => i !== index))
   }
 
+  // Typewriter effect for improved prompt
+  const typewriterEffect = async (text: string) => {
+    setShowImproveEffect(true)
+    setInputValue("")
+    
+    // Wait a moment before starting to type
+    await new Promise(r => setTimeout(r, 200))
+    
+    // Type out the text character by character
+    for (let i = 0; i <= text.length; i++) {
+      setInputValue(text.slice(0, i))
+      // Vary the typing speed for natural feel
+      const delay = Math.random() * 20 + 10
+      await new Promise(r => setTimeout(r, delay))
+    }
+    
+    setShowImproveEffect(false)
+  }
+
+  const handleImprovePrompt = async () => {
+    if (!inputValue.trim() || isImproving) return
+    
+    setIsImproving(true)
+    
+    try {
+      const response = await fetch("/api/improve-prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: inputValue }),
+      })
+      
+      if (!response.ok) throw new Error("Failed to improve prompt")
+      
+      const { improvedPrompt } = await response.json()
+      
+      // Animate the text replacement
+      await typewriterEffect(improvedPrompt)
+      
+      // Focus the textarea after improvement
+      textareaRef.current?.focus()
+    } catch (error) {
+      console.error("Failed to improve prompt:", error)
+    } finally {
+      setIsImproving(false)
+    }
+  }
+
   const suggestions = [
-    { icon: Code2, text: "Build a SaaS dashboard" },
-    { icon: Sparkles, text: "Create a landing page" },
+    { icon: Code2, text: "Build a SaaS dashboard with analytics" },
+    { icon: Sparkles, text: "Create a startup landing page" },
     { icon: Zap, text: "Design an e-commerce store" },
   ]
 
@@ -70,29 +121,54 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
     <div className="min-h-[calc(100vh-80px)] flex flex-col items-center justify-center px-4 sm:px-6 lg:px-8 pt-20 pb-32">
       <div className="w-full max-w-4xl mx-auto text-center">
         {/* Badge */}
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#18181B] border border-zinc-800 mb-8 shadow-sm">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#18181B] border border-zinc-800 mb-8 shadow-sm"
+        >
           <Sparkles className="w-4 h-4 text-emerald-500" />
           <span className="text-sm font-medium text-zinc-300">AI-Powered Web Development</span>
-        </div>
+        </motion.div>
 
         {/* Main Headline */}
-        <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6 text-white">
-          <span>Build websites</span>
+        <motion.h1 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6 text-white"
+        >
+          <span>Build web apps</span>
           <br />
           <span className="text-emerald-500">
             in seconds
           </span>
-        </h1>
+        </motion.h1>
 
         {/* Subheadline */}
-        <p className="text-lg sm:text-xl text-zinc-400 max-w-2xl mx-auto mb-10 leading-relaxed font-light">
-          Describe what you want to build and watch as AI creates a fully functional
-          Next.js application with live preview, ready to deploy.
-        </p>
+        <motion.p 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+          className="text-lg sm:text-xl text-zinc-400 max-w-2xl mx-auto mb-10 leading-relaxed font-light"
+        >
+          Describe what you want to build and watch as AI creates a fully interactive
+          Next.js application with multiple pages, components, and live preview.
+        </motion.p>
 
         {/* Chat Input */}
-        <div className="relative max-w-3xl mx-auto">
-          <div className="bg-[#18181B] rounded-2xl p-4 border border-zinc-800 shadow-xl shadow-black/20 transition-all hover:border-zinc-700 focus-within:border-zinc-600 focus-within:ring-1 focus-within:ring-zinc-600">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+          className="relative max-w-3xl mx-auto"
+        >
+          <div className={cn(
+            "bg-zinc-900/50 backdrop-blur-2xl rounded-2xl p-4 border shadow-2xl shadow-black/50 transition-all",
+            showImproveEffect 
+              ? "border-violet-500/50 ring-2 ring-violet-500/20" 
+              : "border-white/10 hover:border-white/20 focus-within:border-white/20"
+          )}>
             {uploadedImages.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-3">
                 {uploadedImages.map((image, index) => (
@@ -100,7 +176,7 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
                     <img
                       src={image || "/placeholder.svg"}
                       alt={`Upload ${index + 1}`}
-                      className="h-16 w-16 object-cover rounded-xl border border-zinc-700"
+                      className="h-16 w-16 object-cover rounded-xl border border-white/10"
                     />
                     <button
                       onClick={() => removeImage(index)}
@@ -113,16 +189,63 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
               </div>
             )}
 
-            <textarea
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Describe the website you want to build..."
-              className="w-full bg-transparent text-white placeholder:text-zinc-600 resize-none outline-none text-base min-h-[80px] px-1 font-medium"
-              rows={3}
-            />
+            <div className="relative">
+              <textarea
+                ref={textareaRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Describe the web app you want to build..."
+                className={cn(
+                  "w-full bg-transparent text-white placeholder:text-zinc-500 resize-none outline-none text-base min-h-[80px] px-1 font-medium transition-colors",
+                  showImproveEffect && "text-violet-300"
+                )}
+                rows={3}
+                disabled={isImproving}
+              />
+              
+              {/* Sparkle effect overlay during improvement */}
+              <AnimatePresence>
+                {showImproveEffect && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 pointer-events-none"
+                  >
+                    {[...Array(6)].map((_, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ 
+                          opacity: 0, 
+                          scale: 0,
+                          x: Math.random() * 100 + "%",
+                          y: Math.random() * 100 + "%"
+                        }}
+                        animate={{ 
+                          opacity: [0, 1, 0],
+                          scale: [0, 1, 0],
+                        }}
+                        transition={{
+                          duration: 1.5,
+                          delay: i * 0.2,
+                          repeat: Infinity,
+                          repeatDelay: 0.5,
+                        }}
+                        className="absolute w-1 h-1 bg-violet-400 rounded-full"
+                        style={{ 
+                          left: `${Math.random() * 100}%`,
+                          top: `${Math.random() * 100}%`,
+                          boxShadow: "0 0 8px 2px rgba(167, 139, 250, 0.6)"
+                        }}
+                      />
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
-            <div className="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800/50">
+            <div className="flex items-center justify-between mt-3 pt-3">
               <div className="flex items-center gap-2">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -130,9 +253,10 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-9 gap-2 rounded-xl px-3 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors border border-transparent hover:border-zinc-700"
+                      className="h-9 gap-2 rounded-xl px-3 text-zinc-400 hover:bg-white/10 hover:text-zinc-200 transition-colors border border-transparent hover:border-white/5"
                     >
                       {selectedModel === "anthropic" && <AnthropicIcon className="h-4 w-4" />}
+                      {selectedModel === "sonnet" && <AnthropicIcon className="h-4 w-4" />}
                       {selectedModel === "google" && <GoogleIcon className="h-4 w-4" />}
                       {selectedModel === "openai" && <OpenAIIcon className="h-4 w-4" />}
                       <span className="text-sm hidden sm:inline">{MODEL_DISPLAY_NAMES[selectedModel]}</span>
@@ -151,7 +275,22 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
                         <AnthropicIcon className="h-5 w-5" />
                         <div>
                           <div className="font-medium">{MODEL_DISPLAY_NAMES.anthropic}</div>
-                          <div className="text-xs text-zinc-500">Best for complex tasks</div>
+                          <div className="text-xs text-zinc-500">Latest & most capable</div>
+                        </div>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setSelectedModel("sonnet")}
+                      className={cn(
+                        "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer py-2.5 focus:bg-zinc-800 focus:text-zinc-100",
+                        selectedModel === "sonnet" && "bg-zinc-800 text-zinc-100",
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <AnthropicIcon className="h-5 w-5" />
+                        <div>
+                          <div className="font-medium">{MODEL_DISPLAY_NAMES.sonnet}</div>
+                          <div className="text-xs text-zinc-500">Fast & reliable</div>
                         </div>
                       </div>
                     </DropdownMenuItem>
@@ -187,16 +326,43 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+
+                {/* Improve Prompt Button */}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleImprovePrompt}
+                  disabled={!inputValue.trim() || isImproving}
+                  className={cn(
+                    "h-9 gap-2 rounded-xl px-3 transition-all border border-transparent",
+                    inputValue.trim() && !isImproving
+                      ? "text-violet-400 hover:bg-violet-500/10 hover:text-violet-300 hover:border-violet-500/20"
+                      : "text-zinc-600 cursor-not-allowed"
+                  )}
+                >
+                  {isImproving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="text-sm hidden sm:inline">Improving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="h-4 w-4" />
+                      <span className="text-sm hidden sm:inline">Improve</span>
+                    </>
+                  )}
+                </Button>
               </div>
 
               <div className="flex items-center gap-2">
-                <button className="text-zinc-500 hover:text-zinc-300 h-9 w-9 flex items-center justify-center rounded-xl hover:bg-zinc-800 transition-colors border border-transparent hover:border-zinc-700">
+                <button className="text-zinc-500 hover:text-zinc-300 h-9 w-9 flex items-center justify-center rounded-xl hover:bg-white/10 transition-colors border border-transparent hover:border-white/5">
                   <AudioLines className="w-4 h-4" />
                 </button>
 
                 <button
                   onClick={handleSubmit}
-                  disabled={!inputValue.trim()}
+                  disabled={!inputValue.trim() || isImproving}
                   className="bg-emerald-600 text-white disabled:bg-zinc-800 disabled:text-zinc-600 h-9 px-4 flex items-center justify-center gap-2 rounded-xl transition-all hover:bg-emerald-500 active:scale-[0.98] font-medium text-sm shadow-sm"
                 >
                   <span className="hidden sm:inline">Generate</span>
@@ -219,23 +385,28 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
               </button>
             ))}
           </div>
-        </div>
+        </motion.div>
 
         {/* Trust Indicators */}
-        <div className="flex flex-wrap items-center justify-center gap-6 mt-12 text-zinc-500 text-sm font-medium">
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.5 }}
+          className="flex flex-wrap items-center justify-center gap-6 mt-12 text-zinc-500 text-sm font-medium"
+        >
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500" />
             <span>Live preview in seconds</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-amber-500" />
-            <span>Production-ready code</span>
+            <span>Full app architecture</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-cyan-500" />
-            <span>E2B sandbox powered</span>
+            <span>Interactive components</span>
           </div>
-        </div>
+        </motion.div>
       </div>
     </div>
   )

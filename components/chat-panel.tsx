@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useImperativeHandle, forwardRef } from "react"
 import {
   MessageSquare,
   AudioLines,
@@ -9,13 +9,20 @@ import {
   X,
   Loader2,
   ChevronDown,
+  Wand2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useChatWithTools } from "@/hooks/use-chat-with-tools"
 import { cn } from "@/lib/utils"
 import { MODEL_DISPLAY_NAMES, type ModelProvider } from "@/lib/ai/agent"
-import { ChatMarkdown, ToolCallDisplay, StreamingStatus, ChatError, ChatEmptyState } from "@/components/chat"
+import { ChatMarkdown, ToolCallsGroup, StreamingStatus, ChatError, ChatEmptyState } from "@/components/chat"
+import { motion, AnimatePresence } from "framer-motion"
+
+// Exported handle type for programmatic control
+export interface ChatPanelHandle {
+  sendMessage: (text: string) => void
+}
 
 const AnthropicIcon = ({ className }: { className?: string }) => (
   <svg role="img" viewBox="0 0 24 24" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
@@ -68,18 +75,27 @@ interface ChatPanelProps {
   projectId?: string
   onPreviewUpdate?: (content: string) => void
   onSandboxUrlUpdate?: (url: string | null) => void
+  /** Called when AI reports files are ready (triggers dev server start) */
+  onFilesReady?: (projectName: string) => void
   initialPrompt?: string | null
+  initialModel?: ModelProvider
 }
 
-export function ChatPanel({ projectId, onPreviewUpdate, onSandboxUrlUpdate, initialPrompt }: ChatPanelProps) {
+export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel(
+  { projectId, onPreviewUpdate, onSandboxUrlUpdate, onFilesReady, initialPrompt, initialModel },
+  ref
+) {
   const [inputValue, setInputValue] = useState("")
   const [isChatEnabled, setIsChatEnabled] = useState(true)
-  const [selectedModel, setSelectedModel] = useState<ModelProvider>("anthropic")
+  const [selectedModel, setSelectedModel] = useState<ModelProvider>(initialModel || "anthropic")
   const [lastError, setLastError] = useState<Error | null>(null)
+  const [isImproving, setIsImproving] = useState(false)
+  const [showImproveEffect, setShowImproveEffect] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const hasAutoSentRef = useRef(false)
 
-  const { messages, sendMessage, isWorking, status, isCallingTools } = useChatWithTools({
+  const { messages, sendMessage, isWorking, status, isCallingTools, getToolProgress } = useChatWithTools({
     projectId,
     model: selectedModel,
     onError: (error) => {
@@ -87,6 +103,13 @@ export function ChatPanel({ projectId, onPreviewUpdate, onSandboxUrlUpdate, init
       setLastError(error)
     },
   })
+
+  // Expose sendMessage via ref for programmatic control (e.g., auto-fix)
+  useImperativeHandle(ref, () => ({
+    sendMessage: (text: string) => {
+      sendMessage({ text })
+    },
+  }), [sendMessage])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -108,49 +131,64 @@ export function ChatPanel({ projectId, onPreviewUpdate, onSandboxUrlUpdate, init
     }
   }, [initialPrompt, messages.length, sendMessage])
 
-  // Extract sandbox URL from createWebsite tool results
+  // Track which tool outputs we've already processed
+  const processedToolOutputsRef = useRef<Set<string>>(new Set())
+
+  // Extract previewUrl from createWebsite tool results
+  // Simplified approach: just look for previewUrl in any tool output
   useEffect(() => {
-    if (!onSandboxUrlUpdate) return
-
-    // Walk messages in chronological order and keep the most recent previewUrl we see.
-    // This is more robust than early-return when there are multiple preview URLs over time.
-    let latestPreviewUrl: string | null = null
-
     for (const message of messages) {
       if (message.role !== "assistant") continue
 
       for (const part of message.parts as MessagePart[]) {
-        if (
-          (part.type === "tool-createWebsite" || part.type === "tool-startDevServer") &&
-          (part as ToolPart).state === "output-available" &&
-          (part as ToolPart).output
-        ) {
-          const rawOutput = (part as ToolPart).output
-
-          let previewUrl: unknown = undefined
-          if (typeof rawOutput === "string") {
-            try {
-              const parsed = JSON.parse(rawOutput) as Record<string, unknown>
-              previewUrl = parsed.previewUrl ?? parsed.url
-            } catch {
-              // ignore non-JSON tool outputs
-            }
-          } else if (typeof rawOutput === "object" && rawOutput !== null) {
-            const output = rawOutput as Record<string, unknown>
-            previewUrl = output.previewUrl ?? output.url
+        const partType = part.type
+        
+        // Only process tool parts
+        if (!partType.startsWith("tool-")) continue
+        
+        const anyPart = part as any
+        const toolCallId = anyPart.toolCallId || `${message.id}-${partType}`
+        
+        // Skip if already processed
+        if (processedToolOutputsRef.current.has(toolCallId)) continue
+        
+        // Get output from various possible locations (AI SDK v5 uses 'output')
+        const outputData = anyPart.output || anyPart.result
+        if (!outputData) continue
+        
+        // Parse output if it's a string
+        let output: Record<string, unknown> = {}
+        if (typeof outputData === "string") {
+          try {
+            output = JSON.parse(outputData) as Record<string, unknown>
+          } catch {
+            continue
           }
-
-          if (typeof previewUrl === "string" && previewUrl.length > 0) {
-            latestPreviewUrl = previewUrl
-          }
+        } else if (typeof outputData === "object" && outputData !== null) {
+          output = outputData as Record<string, unknown>
+        }
+        
+        // Only process successful outputs
+        if (output.success !== true) continue
+        
+        // Mark as processed
+        processedToolOutputsRef.current.add(toolCallId)
+        
+        // Extract and emit previewUrl
+        const previewUrl = output.previewUrl ?? output.url
+        if (typeof previewUrl === "string" && previewUrl.length > 0) {
+          console.log("[ChatPanel] Got previewUrl from tool:", previewUrl)
+          onSandboxUrlUpdate?.(previewUrl)
+        }
+        
+        // Also notify about project name for display
+        const projName = output.projectName as string | undefined
+        if (projName) {
+          onFilesReady?.(projName)
         }
       }
     }
-
-    if (latestPreviewUrl) {
-      onSandboxUrlUpdate(latestPreviewUrl)
-    }
-  }, [messages, onSandboxUrlUpdate])
+  }, [messages, onSandboxUrlUpdate, onFilesReady])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -189,6 +227,53 @@ export function ChatPanel({ projectId, onPreviewUpdate, onSandboxUrlUpdate, init
     }
   }
 
+  // Typewriter effect for improved prompt
+  const typewriterEffect = async (text: string) => {
+    setShowImproveEffect(true)
+    setInputValue("")
+    
+    // Wait a moment before starting to type
+    await new Promise(r => setTimeout(r, 200))
+    
+    // Type out the text character by character
+    for (let i = 0; i <= text.length; i++) {
+      setInputValue(text.slice(0, i))
+      // Vary the typing speed for natural feel
+      const delay = Math.random() * 20 + 10
+      await new Promise(r => setTimeout(r, delay))
+    }
+    
+    setShowImproveEffect(false)
+  }
+
+  const handleImprovePrompt = async () => {
+    if (!inputValue.trim() || isImproving || isWorking) return
+    
+    setIsImproving(true)
+    
+    try {
+      const response = await fetch("/api/improve-prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: inputValue }),
+      })
+      
+      if (!response.ok) throw new Error("Failed to improve prompt")
+      
+      const { improvedPrompt } = await response.json()
+      
+      // Animate the text replacement
+      await typewriterEffect(improvedPrompt)
+      
+      // Focus the textarea after improvement
+      textareaRef.current?.focus()
+    } catch (error) {
+      console.error("Failed to improve prompt:", error)
+    } finally {
+      setIsImproving(false)
+    }
+  }
+
   return (
     <div className="flex h-full flex-col bg-[#111111]">
       <div className="flex-1 overflow-y-auto px-4 py-6">
@@ -207,8 +292,9 @@ export function ChatPanel({ projectId, onPreviewUpdate, onSandboxUrlUpdate, init
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2">
-                    {(message.parts as MessagePart[])
-                      .filter((part, index, arr) => {
+                    {(() => {
+                      // Group consecutive tool calls together
+                      const parts = (message.parts as MessagePart[]).filter((part, index, arr) => {
                         // Filter out duplicate consecutive text parts
                         if (part.type === "text" && index > 0) {
                           const prevPart = arr[index - 1]
@@ -218,31 +304,59 @@ export function ChatPanel({ projectId, onPreviewUpdate, onSandboxUrlUpdate, init
                         }
                         return true
                       })
-                      .map((part, index) => {
+
+                      const elements: React.ReactNode[] = []
+                      let currentToolGroup: Array<{
+                        toolName: string
+                        toolCallId: string
+                        state?: ToolState
+                        input?: Record<string, unknown>
+                        output?: Record<string, unknown> | string
+                        errorText?: string
+                      }> = []
+                      let groupKey = 0
+
+                      const flushToolGroup = () => {
+                        if (currentToolGroup.length > 0) {
+                          elements.push(
+                            <ToolCallsGroup
+                              key={`tool-group-${groupKey++}`}
+                              toolCalls={currentToolGroup}
+                              getToolProgress={getToolProgress}
+                            />
+                          )
+                          currentToolGroup = []
+                        }
+                      }
+
+                      parts.forEach((part, index) => {
                         if (part.type === "text") {
-                          return (
-                            <div key={index} className="text-sm text-zinc-300">
+                          flushToolGroup()
+                          elements.push(
+                            <div key={`text-${index}`} className="text-sm text-zinc-300">
                               <ChatMarkdown content={(part as TextPart).text} />
                             </div>
                           )
-                        }
-
-                        if (part.type.startsWith("tool-")) {
+                        } else if (part.type.startsWith("tool-")) {
                           const toolPart = part as ToolPart
-                          return (
-                            <ToolCallDisplay
-                              key={index}
-                              toolName={toolPart.type.replace("tool-", "")}
-                              state={toolPart.state}
-                              input={toolPart.input}
-                              output={toolPart.output as Record<string, unknown> | string}
-                              errorText={toolPart.errorText}
-                            />
-                          )
+                          const toolCallId = toolPart.toolCallId || `${toolPart.type}-${index}`
+                          const toolName = toolPart.type.replace("tool-", "")
+                          currentToolGroup.push({
+                            toolName,
+                            toolCallId,
+                            state: toolPart.state,
+                            input: toolPart.input,
+                            output: toolPart.output as Record<string, unknown> | string,
+                            errorText: toolPart.errorText,
+                          })
                         }
+                      })
 
-                        return null
-                      })}
+                      // Flush any remaining tool calls
+                      flushToolGroup()
+
+                      return elements
+                    })()}
                   </div>
                 )}
               </div>
@@ -269,25 +383,74 @@ export function ChatPanel({ projectId, onPreviewUpdate, onSandboxUrlUpdate, init
 
       <div className="p-4">
         <form onSubmit={handleSubmit}>
-          <div className="rounded-2xl bg-zinc-900/70 border border-white/5 p-3 shadow-xl backdrop-blur-xl">
-            <textarea
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (!isChatEnabled) return
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault()
-                  handleSubmit(e)
-                }
-              }}
-              placeholder="Ask Lovable..."
-              className="min-h-[60px] w-full resize-none bg-transparent text-sm text-zinc-100 placeholder:text-zinc-400 focus:outline-none"
-              rows={2}
-              disabled={isWorking || !isChatEnabled}
-            />
+          <div className={cn(
+            "rounded-2xl bg-zinc-900/70 border p-3 shadow-xl backdrop-blur-xl transition-all",
+            showImproveEffect 
+              ? "border-violet-500/50 ring-2 ring-violet-500/20" 
+              : "border-white/5"
+          )}>
+            <div className="relative">
+              <textarea
+                ref={textareaRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (!isChatEnabled) return
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSubmit(e)
+                  }
+                }}
+                placeholder="Ask Lovable..."
+                className={cn(
+                  "min-h-[60px] w-full resize-none bg-transparent text-sm text-zinc-100 placeholder:text-zinc-400 focus:outline-none transition-colors",
+                  showImproveEffect && "text-violet-300"
+                )}
+                rows={2}
+                disabled={isWorking || !isChatEnabled || isImproving}
+              />
+
+              {/* Sparkle effect overlay during improvement */}
+              <AnimatePresence>
+                {showImproveEffect && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 pointer-events-none"
+                  >
+                    {[...Array(4)].map((_, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ 
+                          opacity: 0, 
+                          scale: 0,
+                        }}
+                        animate={{ 
+                          opacity: [0, 1, 0],
+                          scale: [0, 1, 0],
+                        }}
+                        transition={{
+                          duration: 1.5,
+                          delay: i * 0.2,
+                          repeat: Infinity,
+                          repeatDelay: 0.5,
+                        }}
+                        className="absolute w-1 h-1 bg-violet-400 rounded-full"
+                        style={{ 
+                          left: `${20 + Math.random() * 60}%`,
+                          top: `${20 + Math.random() * 60}%`,
+                          boxShadow: "0 0 8px 2px rgba(167, 139, 250, 0.6)"
+                        }}
+                      />
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
             <div className="flex items-center justify-between pt-2">
-              <div className="flex items-center">
+              <div className="flex items-center gap-1">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -297,7 +460,7 @@ export function ChatPanel({ projectId, onPreviewUpdate, onSandboxUrlUpdate, init
                       className="h-8 gap-1.5 rounded-lg px-2.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300"
                       disabled={isWorking || !isChatEnabled}
                     >
-                      {selectedModel === "anthropic" && <AnthropicIcon className="h-3.5 w-3.5" />}
+                      {(selectedModel === "anthropic" || selectedModel === "sonnet") && <AnthropicIcon className="h-3.5 w-3.5" />}
                       {selectedModel === "google" && <GoogleIcon className="h-3.5 w-3.5" />}
                       {selectedModel === "openai" && <OpenAIIcon className="h-3.5 w-3.5" />}
                       <span className="text-xs">{MODEL_DISPLAY_NAMES[selectedModel]}</span>
@@ -315,6 +478,18 @@ export function ChatPanel({ projectId, onPreviewUpdate, onSandboxUrlUpdate, init
                       <div className="flex items-center gap-2">
                         <AnthropicIcon className="h-4 w-4" />
                         <span>{MODEL_DISPLAY_NAMES.anthropic}</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setSelectedModel("sonnet")}
+                      className={cn(
+                        "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer",
+                        selectedModel === "sonnet" && "bg-zinc-800",
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <AnthropicIcon className="h-4 w-4" />
+                        <span>{MODEL_DISPLAY_NAMES.sonnet}</span>
                       </div>
                     </DropdownMenuItem>
                     <DropdownMenuItem
@@ -343,6 +518,28 @@ export function ChatPanel({ projectId, onPreviewUpdate, onSandboxUrlUpdate, init
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+
+                {/* Improve Prompt Button */}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleImprovePrompt}
+                  disabled={!inputValue.trim() || isImproving || isWorking}
+                  className={cn(
+                    "h-8 gap-1.5 rounded-lg px-2.5 transition-all",
+                    inputValue.trim() && !isImproving && !isWorking
+                      ? "text-violet-400 hover:bg-violet-500/10 hover:text-violet-300"
+                      : "text-zinc-600 cursor-not-allowed"
+                  )}
+                >
+                  {isImproving ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Wand2 className="h-3.5 w-3.5" />
+                  )}
+                  <span className="text-xs">Improve</span>
+                </Button>
               </div>
 
               <div className="flex items-center gap-1">
@@ -358,10 +555,10 @@ export function ChatPanel({ projectId, onPreviewUpdate, onSandboxUrlUpdate, init
                 <Button
                   type="submit"
                   size="sm"
-                  disabled={isWorking || !isChatEnabled || !inputValue.trim()}
+                  disabled={isWorking || !isChatEnabled || !inputValue.trim() || isImproving}
                   className={cn(
                     "h-8 w-8 rounded-lg p-0 transition-all",
-                    inputValue.trim()
+                    inputValue.trim() && !isImproving
                       ? "bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/25"
                       : "bg-zinc-800 text-zinc-500",
                   )}
@@ -375,4 +572,4 @@ export function ChatPanel({ projectId, onPreviewUpdate, onSandboxUrlUpdate, init
       </div>
     </div>
   )
-}
+})

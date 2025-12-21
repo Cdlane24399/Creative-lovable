@@ -7,6 +7,8 @@ import { Loader2 } from "lucide-react"
 interface PreviewPanelProps {
   content?: string | null
   sandboxUrl?: string | null
+  /** External loading state (e.g., dev server starting) */
+  isLoading?: boolean
 }
 
 export interface PreviewPanelHandle {
@@ -15,11 +17,14 @@ export interface PreviewPanelHandle {
 }
 
 export const PreviewPanel = forwardRef<PreviewPanelHandle, PreviewPanelProps>(
-  function PreviewPanel({ content, sandboxUrl }, ref) {
+  function PreviewPanel({ content, sandboxUrl, isLoading: externalLoading }, ref) {
     const [iframeLoading, setIframeLoading] = useState(true)
     const [iframeKey, setIframeKey] = useState(0)
     const iframeSrc =
       sandboxUrl ? `${sandboxUrl}${sandboxUrl.includes("?") ? "&" : "?"}t=${iframeKey}` : null
+
+    // Combined loading state
+    const isLoading = externalLoading || (sandboxUrl && iframeLoading)
 
     // Reset loading state and force iframe refresh when sandbox URL changes
     useEffect(() => {
@@ -48,12 +53,17 @@ export const PreviewPanel = forwardRef<PreviewPanelHandle, PreviewPanelProps>(
       <div className="relative h-full w-full bg-[#111111] p-4">
         {/* Rounded preview container - styled like an iframe */}
         <div className="relative h-full w-full overflow-hidden rounded-2xl border border-zinc-800 bg-[#111111]">
-          {/* Loading indicator for iframe */}
-          {sandboxUrl && iframeLoading && (
+          {/* Loading indicator for iframe or dev server */}
+          {isLoading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-zinc-900/80">
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
-                <span className="text-sm text-zinc-400">Loading preview...</span>
+                <span className="text-sm text-zinc-400">
+                  {externalLoading ? "Starting dev server..." : "Loading preview..."}
+                </span>
+                {externalLoading && (
+                  <span className="text-xs text-zinc-500">This may take a few seconds</span>
+                )}
               </div>
             </div>
           )}

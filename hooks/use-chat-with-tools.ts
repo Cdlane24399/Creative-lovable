@@ -1,13 +1,25 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useCallback } from "react"
 import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
 import type { ChatMessage } from "@/app/api/chat/route"
 
+// Progress state for a single tool call (for future use with data streaming)
+export interface ToolProgress {
+  toolCallId: string
+  toolName: string
+  phase: string
+  message: string
+  detail?: string
+  progress?: number
+  timestamp: number
+  filesWritten: string[]
+}
+
 interface UseChatWithToolsOptions {
   projectId?: string
-  model?: "anthropic" | "google" | "openai"
+  model?: "anthropic" | "sonnet" | "google" | "openai"
   onError?: (error: Error) => void
 }
 
@@ -39,6 +51,12 @@ export function useChatWithTools({ projectId, model = "anthropic", onError }: Us
     },
   })
 
+  // Helper to get progress for a specific tool call (placeholder for future data streaming)
+  const getToolProgress = useCallback((_toolCallId: string): ToolProgress | undefined => {
+    // In a future version with data streaming, this would return real-time progress
+    return undefined
+  }, [])
+
   // Extract useful state from messages
   const lastMessage = chat.messages[chat.messages.length - 1]
   const isAssistantMessage = lastMessage?.role === "assistant"
@@ -61,5 +79,7 @@ export function useChatWithTools({ projectId, model = "anthropic", onError }: Us
     lastMessage,
     // Helper to get only assistant messages (for tool result extraction)
     assistantMessages: chat.messages.filter(m => m.role === "assistant"),
+    // Placeholder for future real-time progress
+    getToolProgress,
   }
 }

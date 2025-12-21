@@ -1,8 +1,11 @@
-import { updateSession } from "@/lib/supabase/middleware"
+import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
+// Placeholder proxy for future authentication middleware
+// When auth is implemented, this can be used to protect routes
 export async function proxy(request: NextRequest) {
-  return await updateSession(request)
+  // For now, just pass through all requests
+  return NextResponse.next()
 }
 
 export const config = {
