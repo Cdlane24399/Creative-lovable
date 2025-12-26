@@ -58,7 +58,7 @@ An AI-powered web development assistant that builds real, working applications i
 
 ### Installation
 
-```bash
+\`\`\`bash
 # Clone the repository
 git clone https://github.com/yourusername/Creative-lovable.git
 cd Creative-lovable
@@ -74,7 +74,7 @@ cp .env.example .env.local
 
 # Run development server
 npm run dev
-```
+\`\`\`
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
@@ -84,7 +84,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 Create a `.env.local` file with the following:
 
-```env
+\`\`\`env
 # Required: E2B API Key (get at https://e2b.dev)
 E2B_API_KEY=your_e2b_api_key
 
@@ -100,7 +100,7 @@ GOOGLE_GENERATIVE_AI_API_KEY=your_google_key
 # Optional: Supabase for persistence
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-```
+\`\`\`
 
 ---
 
@@ -109,29 +109,29 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 For **60x faster startup**, build a custom E2B template with all dependencies pre-installed:
 
 ### Step 1: Install E2B CLI
-```bash
+\`\`\`bash
 npm install -g @e2b/cli
-```
+\`\`\`
 
 ### Step 2: Login to E2B
-```bash
+\`\`\`bash
 e2b auth login
-```
+\`\`\`
 
 ### Step 3: Build the Template
-```bash
+\`\`\`bash
 e2b template build \
   --path ./lib/e2b/templates/nextjs-shadcn.e2b.Dockerfile \
   --name "nextjs-shadcn-v1"
-```
+\`\`\`
 
 This takes 5-10 minutes the first time but is a one-time cost.
 
 ### Step 4: Update Environment
 Add the template ID to your `.env.local`:
-```env
+\`\`\`env
 E2B_TEMPLATE_ID=nextjs-shadcn-v1
-```
+\`\`\`
 
 ### Performance Impact
 - **Without template**: 3-5 minutes cold start
@@ -166,7 +166,7 @@ The AI assistant has access to these tools:
 
 ## 🏗️ Architecture
 
-```
+\`\`\`
 Creative-lovable/
 ├── app/
 │   ├── api/chat/route.ts         # AI chat API with tool definitions
@@ -188,7 +188,7 @@ Creative-lovable/
 ├── IMPLEMENTATION_PLAN.md        # Original implementation plan
 ├── IMPLEMENTATION_SUMMARY.md     # What was implemented
 └── README.md                     # This file
-```
+\`\`\`
 
 ---
 
@@ -203,7 +203,7 @@ Creative-lovable/
 ## 🎬 Demo Workflow
 
 ### Example 1: Create a Landing Page
-```
+\`\`\`
 User: "Build me a landing page for a SaaS product"
 
 AI: 
@@ -216,10 +216,10 @@ AI:
 3. Returns live preview URL: https://xyz.e2b.dev
 
 Time: ~3 seconds (with custom template)
-```
+\`\`\`
 
 ### Example 2: Make Updates
-```
+\`\`\`
 User: "Make the CTA button purple"
 
 AI:
@@ -228,10 +228,10 @@ AI:
 3. Changes reflect instantly via HMR
 
 Time: ~2 seconds
-```
+\`\`\`
 
 ### Example 3: Add Features
-```
+\`\`\`
 User: "Add a pricing section with 3 tiers"
 
 AI:
@@ -241,10 +241,10 @@ AI:
 4. Browser auto-refreshes
 
 Time: ~3 seconds
-```
+\`\`\`
 
 ### Example 4: Debug Errors
-```
+\`\`\`
 User: "The site isn't loading, what's wrong?"
 
 AI:
@@ -255,7 +255,7 @@ AI:
 5. Site now works!
 
 Time: ~10 seconds total
-```
+\`\`\`
 
 ---
 

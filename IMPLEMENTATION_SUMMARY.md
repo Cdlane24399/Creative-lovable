@@ -17,7 +17,7 @@ This document summarizes the web app generation features implemented based on `I
 **Impact**: When configured, reduces cold start from **3-5 minutes to 2-5 seconds** (60x faster!)
 
 **How to Use**:
-```bash
+\`\`\`bash
 # 1. Install E2B CLI
 npm install -g @e2b/cli
 
@@ -31,7 +31,7 @@ e2b template build \
 
 # 4. Add to .env.local
 E2B_TEMPLATE_ID=nextjs-shadcn-v1
-```
+\`\`\`
 
 ---
 
@@ -52,7 +52,7 @@ E2B_TEMPLATE_ID=nextjs-shadcn-v1
    - Perfect for small bug fixes
 
 **Example Usage**:
-```typescript
+\`\`\`typescript
 // Update an existing page
 createWebsite({
   name: "my-project",
@@ -69,7 +69,7 @@ editFile({
   search: "old code",
   replace: "new code"
 })
-```
+\`\`\`
 
 ---
 
@@ -99,13 +99,13 @@ editFile({
    - AI can self-diagnose and fix errors
 
 **Example Usage**:
-```typescript
+\`\`\`typescript
 // Check for errors
 getBuildStatus({ projectId: "default" })
 // Returns: { hasErrors: true, recentLogs: "...", message: "Errors detected" }
 
 // AI can then fix the errors and rebuild
-```
+\`\`\`
 
 ---
 
@@ -140,14 +140,14 @@ getBuildStatus({ projectId: "default" })
    - Helps AI understand existing projects before making changes
 
 **Example Usage**:
-```typescript
+\`\`\`typescript
 getProjectStructure({
   projectId: "default",
   projectName: "my-app",
   includeContents: true
 })
 // Returns: { files: [...], contents: { "app/page.tsx": "..." } }
-```
+\`\`\`
 
 ---
 
@@ -161,14 +161,14 @@ getProjectStructure({
    - AI can add libraries as needed (axios, lodash, etc.)
 
 **Example Usage**:
-```typescript
+\`\`\`typescript
 installPackage({
   projectId: "default",
   projectName: "my-app",
   packages: ["axios", "date-fns"],
   dev: false
 })
-```
+\`\`\`
 
 ---
 
@@ -222,7 +222,7 @@ installPackage({
 
 Add these to `.env.local`:
 
-```env
+\`\`\`env
 # Required: E2B API Key
 E2B_API_KEY=your_e2b_api_key
 
@@ -237,41 +237,41 @@ GOOGLE_GENERATIVE_AI_API_KEY=your_google_key
 # Optional: Supabase (for persistence)
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-```
+\`\`\`
 
 ---
 
 ## 📝 How to Use the New Features
 
 ### 1. Create a Website
-```
+\`\`\`
 User: "Build me a portfolio website with a hero section and about page"
 AI: Uses createWebsite tool → Returns live preview URL in ~5 seconds
-```
+\`\`\`
 
 ### 2. Update Existing Website
-```
+\`\`\`
 User: "Change the hero background to blue"
 AI: Uses editFile or createWebsite with action: 'update' → Hot reloads instantly
-```
+\`\`\`
 
 ### 3. Check for Errors
-```
+\`\`\`
 User: "Why isn't my site working?"
 AI: Uses getBuildStatus → Reads logs → Diagnoses issue → Fixes automatically
-```
+\`\`\`
 
 ### 4. Install Libraries
-```
+\`\`\`
 User: "Add axios for API calls"
 AI: Uses installPackage → Installs axios → Updates code to use it
-```
+\`\`\`
 
 ### 5. Understand Project
-```
+\`\`\`
 User: "Show me all the files in my project"
 AI: Uses getProjectStructure → Lists all files → Can read specific ones
-```
+\`\`\`
 
 ---
 
@@ -334,7 +334,7 @@ AI: Uses getProjectStructure → Lists all files → Can read specific ones
 
 ## 🎬 Demo Workflow
 
-```
+\`\`\`
 1. User: "Build me a landing page for a SaaS product"
    → AI uses createWebsite
    → Creates Next.js project in ~3 seconds (with template)
@@ -360,7 +360,7 @@ AI: Uses getProjectStructure → Lists all files → Can read specific ones
 5. User: "Deploy this!"
    → AI uses runCommand to build production bundle
    → Provides instructions for deployment
-```
+\`\`\`
 
 ---
 

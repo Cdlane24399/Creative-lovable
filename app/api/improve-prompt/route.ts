@@ -1,5 +1,5 @@
+import { createAnthropic } from "@ai-sdk/anthropic"
 import { generateText } from "ai"
-import { anthropic } from "@ai-sdk/anthropic"
 
 export const maxDuration = 30
 
@@ -42,14 +42,15 @@ export async function POST(req: Request) {
     // Check if API key is available
     if (!process.env.ANTHROPIC_API_KEY) {
       console.error("ANTHROPIC_API_KEY is not set")
-      return Response.json(
-        { error: "API key not configured" },
-        { status: 500 }
-      )
+      return Response.json({ error: "API key not configured" }, { status: 500 })
     }
 
+    const anthropic = createAnthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    })
+
     const result = await generateText({
-      model: anthropic("claude-sonnet-4-5"),
+      model: anthropic("claude-sonnet-4-20250514"),
       system: PROMPT_IMPROVER_SYSTEM,
       prompt: prompt,
       maxTokens: 300,
@@ -58,12 +59,9 @@ export async function POST(req: Request) {
     return Response.json({ improvedPrompt: result.text.trim() })
   } catch (error) {
     console.error("Prompt improvement error:", error)
-    
+
     // Return more specific error message
     const errorMessage = error instanceof Error ? error.message : "Unknown error"
-    return Response.json(
-      { error: `Failed to improve prompt: ${errorMessage}` },
-      { status: 500 }
-    )
+    return Response.json({ error: `Failed to improve prompt: ${errorMessage}` }, { status: 500 })
   }
 }

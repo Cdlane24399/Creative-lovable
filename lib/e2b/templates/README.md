@@ -25,23 +25,23 @@ This project has been migrated to the **E2B Template v2** system which uses SDK-
    - Sign up/login and copy your API key
 
 2. **Add API Key to .env.local**:
-```bash
+\`\`\`bash
 E2B_API_KEY=e2b_***
-```
+\`\`\`
 
 ### Build the Template
 
 From the project root, run:
 
 **Development Build:**
-```bash
+\`\`\`bash
 npx tsx lib/e2b/templates/build.dev.ts
-```
+\`\`\`
 
 **Production Build:**
-```bash
+\`\`\`bash
 npx tsx lib/e2b/templates/build.prod.ts
-```
+\`\`\`
 
 This will:
 1. Read the Dockerfile content
@@ -55,10 +55,10 @@ This will:
 
 After building, update the environment variable in `.env.local`:
 
-```env
+\`\`\`env
 E2B_API_KEY=e2b_***
 E2B_TEMPLATE_ID=creative-lovable-nextjs
-```
+\`\`\`
 
 The `createSandbox()` function in `lib/e2b/sandbox.ts` will automatically use this template.
 

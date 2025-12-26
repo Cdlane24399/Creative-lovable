@@ -36,7 +36,7 @@ This plan outlines how to implement **actual web app generation** in the Creativ
 
 #### 1.1 Create Template Definition
 
-```typescript
+\`\`\`typescript
 // lib/e2b/templates/nextjs-shadcn.ts
 import { Template, waitForURL } from 'e2b'
 
@@ -49,21 +49,21 @@ export const nextjsShadcnTemplate = Template()
   .runCmd('npm install lucide-react @radix-ui/react-icons framer-motion')
   .setWorkdir('/home/user')
   .setStartCmd('cd project && npm run dev', waitForURL('http://localhost:3000'))
-```
+\`\`\`
 
 #### 1.2 Build and Deploy Template
 
-```bash
+\`\`\`bash
 # Install E2B CLI
 npm install -g @e2b/cli
 
 # Build template (creates template ID)
 npx e2b template build --alias "nextjs-shadcn" --cpu-count 4 --memory-mb 4096
-```
+\`\`\`
 
 #### 1.3 Update Sandbox Creation
 
-```typescript
+\`\`\`typescript
 // lib/e2b/sandbox.ts
 export async function createSandbox(projectId: string, templateId?: string): Promise<Sandbox> {
   const sandbox = await Sandbox.create({
@@ -73,7 +73,7 @@ export async function createSandbox(projectId: string, templateId?: string): Pro
   // Template already has dev server running, just return sandbox
   return sandbox
 }
-```
+\`\`\`
 
 **Expected Improvement**: Cold start reduced from ~3-5 minutes to ~2-5 seconds.
 
@@ -87,7 +87,7 @@ export async function createSandbox(projectId: string, templateId?: string): Pro
 
 The current implementation uses generator functions correctly. Enhance with more granular streaming:
 
-```typescript
+\`\`\`typescript
 // app/api/chat/route.ts
 createWebsite: {
   description: "Create or modify a web application with live preview",
@@ -132,11 +132,11 @@ createWebsite: {
     }
   },
 },
-```
+\`\`\`
 
 #### 2.2 Add File Edit Tool (Incremental Updates)
 
-```typescript
+\`\`\`typescript
 editFile: {
   description: "Edit specific sections of a file without rewriting the entire file",
   inputSchema: z.object({
@@ -167,7 +167,7 @@ editFile: {
     yield { state: 'complete' as const, path }
   },
 },
-```
+\`\`\`
 
 ---
 
@@ -181,7 +181,7 @@ Since Next.js Turbopack has built-in HMR, we just need to ensure files are writt
 
 For more control, add a `triggerReload` tool:
 
-```typescript
+\`\`\`typescript
 triggerReload: {
   description: "Force the preview to reload after significant changes",
   inputSchema: z.object({
@@ -193,11 +193,11 @@ triggerReload: {
     yield { state: 'complete' as const, shouldRefresh: true }
   },
 },
-```
+\`\`\`
 
 #### 3.2 Enhanced Preview Panel with Auto-Refresh
 
-```typescript
+\`\`\`typescript
 // components/preview-panel.tsx - Add refresh trigger from tool results
 useEffect(() => {
   // Listen for reload signals from tool results
@@ -210,7 +210,7 @@ useEffect(() => {
     handleRefresh()
   }
 }, [messages])
-```
+\`\`\`
 
 ---
 
@@ -220,7 +220,7 @@ useEffect(() => {
 
 #### 4.1 Add Build Error Streaming Tool
 
-```typescript
+\`\`\`typescript
 getBuildStatus: {
   description: "Check the build/compile status of the project and get any errors",
   inputSchema: z.object({
@@ -247,11 +247,11 @@ getBuildStatus: {
     }
   },
 },
-```
+\`\`\`
 
 #### 4.2 Add TypeScript Error Checking
 
-```typescript
+\`\`\`typescript
 checkTypes: {
   description: "Run TypeScript type checking and return any type errors",
   inputSchema: z.object({
@@ -272,7 +272,7 @@ checkTypes: {
     }
   },
 },
-```
+\`\`\`
 
 ---
 
@@ -282,7 +282,7 @@ checkTypes: {
 
 #### 5.1 Add Component Discovery Tool
 
-```typescript
+\`\`\`typescript
 listAvailableComponents: {
   description: "List all available shadcn/ui components that can be used",
   inputSchema: z.object({}),
@@ -293,11 +293,11 @@ listAvailableComponents: {
     }
   },
 },
-```
+\`\`\`
 
 #### 5.2 Update System Prompt with Component Knowledge
 
-```typescript
+\`\`\`typescript
 // lib/ai/agent.ts
 export const SYSTEM_PROMPT = `You are Lovable, an expert AI software engineer...
 
@@ -315,7 +315,7 @@ All Lucide icons are available: \`import { Icon } from "lucide-react"\`
 ## Animation (framer-motion)
 Framer Motion is pre-installed for animations.
 `
-```
+\`\`\`
 
 ---
 
@@ -325,7 +325,7 @@ Framer Motion is pre-installed for animations.
 
 #### 6.1 Add Project Structure Tool
 
-```typescript
+\`\`\`typescript
 getProjectStructure: {
   description: "Get the full file tree and key file contents of the project",
   inputSchema: z.object({
@@ -360,7 +360,7 @@ getProjectStructure: {
     }
   },
 },
-```
+\`\`\`
 
 ---
 
@@ -368,7 +368,7 @@ getProjectStructure: {
 
 **Goal**: Install npm packages when AI needs them.
 
-```typescript
+\`\`\`typescript
 installPackage: {
   description: "Install an npm package in the project",
   inputSchema: z.object({
@@ -393,7 +393,7 @@ installPackage: {
     }
   },
 },
-```
+\`\`\`
 
 ---
 
@@ -403,7 +403,7 @@ installPackage: {
 
 Add a file explorer that shows the project structure:
 
-```typescript
+\`\`\`typescript
 // components/file-explorer.tsx
 interface FileExplorerProps {
   files: string[]
@@ -419,11 +419,11 @@ export function FileExplorer({ files, onFileSelect, selectedFile }: FileExplorer
     </div>
   )
 }
-```
+\`\`\`
 
 #### 8.2 Code Editor Panel (Read-only initially)
 
-```typescript
+\`\`\`typescript
 // components/code-panel.tsx
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 
@@ -439,11 +439,11 @@ export function CodePanel({ code, language, path }: CodePanelProps) {
     </div>
   )
 }
-```
+\`\`\`
 
 #### 8.3 Three-Panel Layout
 
-```typescript
+\`\`\`typescript
 // components/editor-layout.tsx
 <ResizablePanelGroup direction="horizontal">
   <ResizablePanel defaultSize={15} minSize={10}>
@@ -473,7 +473,7 @@ export function CodePanel({ code, language, path }: CodePanelProps) {
     </Tabs>
   </ResizablePanel>
 </ResizablePanelGroup>
-```
+\`\`\`
 
 ---
 
@@ -496,7 +496,7 @@ export function CodePanel({ code, language, path }: CodePanelProps) {
 
 ### Tool Streaming Pattern (Current Best Practice)
 
-```typescript
+\`\`\`typescript
 // tools use async generators for streaming states
 execute: async function* (input) {
   yield { state: 'starting' }
@@ -505,11 +505,11 @@ execute: async function* (input) {
   // ... more work
   yield { state: 'complete', result: data }
 }
-```
+\`\`\`
 
 ### Client Tool Handling
 
-```typescript
+\`\`\`typescript
 // In chat component, render tool parts with streaming states
 {message.parts.map(part => {
   if (part.type.startsWith('tool-')) {
@@ -523,16 +523,16 @@ execute: async function* (input) {
     }
   }
 })}
-```
+\`\`\`
 
 ### Message Deduplication (Important!)
 
-```typescript
+\`\`\`typescript
 // In API route, pass originalMessages to prevent duplicate IDs
 return result.toUIMessageStreamResponse({
   originalMessages: messages, // From request body
 })
-```
+\`\`\`
 
 ---
 
@@ -540,7 +540,7 @@ return result.toUIMessageStreamResponse({
 
 ### Required Environment Variables
 
-```env
+\`\`\`env
 # .env.local
 E2B_API_KEY=your_e2b_api_key
 
@@ -552,11 +552,11 @@ GOOGLE_GENERATIVE_AI_API_KEY=your_google_key
 # Supabase (for persistence)
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-```
+\`\`\`
 
 ### E2B Template Build Commands
 
-```bash
+\`\`\`bash
 # Install E2B CLI
 npm install -g @e2b/cli
 
@@ -569,7 +569,7 @@ e2b template build \
   --cpu-count 4 \
   --memory-mb 4096 \
   --start-cmd "cd /home/user/project && npm run dev"
-```
+\`\`\`
 
 ---
 

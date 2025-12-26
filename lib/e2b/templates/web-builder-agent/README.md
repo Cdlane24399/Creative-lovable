@@ -21,24 +21,24 @@ AI-powered web development assistant using the Claude Agent SDK with E2B sandbox
 ## Setup
 
 1. **Install dependencies:**
-   ```bash
+   \`\`\`bash
    npm install
-   ```
+   \`\`\`
 
 2. **Configure environment:**
-   ```bash
+   \`\`\`bash
    cp .env.example .env
-   ```
+   \`\`\`
 
    Edit `.env` and add your API key:
-   ```
+   \`\`\`
    ANTHROPIC_API_KEY=your_api_key_here
-   ```
+   \`\`\`
 
 3. **Run the agent:**
-   ```bash
+   \`\`\`bash
    npm start "Build a landing page for a SaaS product"
-   ```
+   \`\`\`
 
 ## Available Scripts
 
@@ -52,7 +52,7 @@ AI-powered web development assistant using the Claude Agent SDK with E2B sandbox
 
 ## Usage Examples
 
-```bash
+\`\`\`bash
 # Build a landing page
 npm start "Create a modern landing page with a hero section, features grid, and contact form"
 
@@ -61,7 +61,7 @@ npm start "Build an admin dashboard with sidebar navigation and data charts"
 
 # Generate components
 npm start "Create a reusable card component with multiple variants"
-```
+\`\`\`
 
 ## Custom MCP Tools
 
@@ -75,7 +75,7 @@ Analyzes project requirements and suggests appropriate dependencies.
 
 ## Project Structure
 
-```
+\`\`\`
 web-builder-agent/
 ├── src/
 │   └── index.ts      # Main agent implementation
@@ -84,20 +84,20 @@ web-builder-agent/
 ├── tsconfig.json     # TypeScript configuration
 ├── .env.example      # Environment template
 └── README.md         # This file
-```
+\`\`\`
 
 ## Configuration
 
 Configuration options in `src/index.ts`:
 
-```typescript
+\`\`\`typescript
 const AGENT_CONFIG = {
   model: "claude-sonnet-4-20250514",  // Claude model to use
   maxTurns: 50,                       // Maximum conversation turns
   maxBudgetUsd: 5.0,                  // Safety budget limit
   cwd: process.cwd(),                 // Working directory
 };
-```
+\`\`\`
 
 ## Security
 
@@ -113,14 +113,14 @@ The agent includes permission controls that:
 
 Main function to run the agent.
 
-```typescript
+\`\`\`typescript
 import { runWebBuilderAgent } from './index.js';
 
 const result = await runWebBuilderAgent(
   "Build a landing page",
   { maxTurns: 25 }
 );
-```
+\`\`\`
 
 **Parameters:**
 - `prompt`: The user's request

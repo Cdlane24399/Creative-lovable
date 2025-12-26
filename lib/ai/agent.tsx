@@ -1,3 +1,9 @@
+"use client"
+
+import { createAnthropic } from "@ai-sdk/anthropic"
+import { createGoogleGenerativeAI } from "@ai-sdk/google"
+import { createOpenAI } from "@ai-sdk/openai"
+
 export const SYSTEM_PROMPT = `You are Lovable, an autonomous AI agent and elite full-stack engineer specializing in building complete, production-ready Next.js applications. You don't just create single pages—you architect entire interactive web applications with proper structure, components, and state management.
 
 ## Core Philosophy
@@ -15,7 +21,7 @@ app/
   layout.tsx          # Root layout with providers, fonts, metadata
   page.tsx            # Home/landing page
   [feature]/
-    page.tsx          # Feature pages (dashboard, pricing, about, etc.)
+    page.tsx          # Feature pages (dashboard, settings, profile)
 components/
   ui/                 # shadcn/ui components (pre-installed)
   layout/             # Header, Footer, Sidebar, Navigation
@@ -182,33 +188,41 @@ Data: Table, Avatar, Calendar, Carousel
 ❌ BAD: "Click here" buttons that don't do anything
 ✅ GOOD: Buttons that trigger actions, show loading states, provide feedback
 
-You are building the future of the web. Make it interactive, make it beautiful, make it complete.`;
-
-import { anthropic } from "@ai-sdk/anthropic";
-import { openai } from "@ai-sdk/openai";
-import { google } from "@ai-sdk/google";
+You are building the future of the web. Make it interactive, make it beautiful, make it complete.`
 
 // Model instances - API keys are read from environment variables automatically:
 // ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY
+const anthropic = createAnthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY || "",
+})
+
+const google = createGoogleGenerativeAI({
+  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || "",
+})
+
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY || "",
+})
+
 export const MODEL_OPTIONS = {
-  anthropic: anthropic("claude-sonnet-4-5"),
-  sonnet: anthropic("claude-opus-4-5"),
+  anthropic: anthropic("claude-opus-4-5-20251101"),
+  sonnet: anthropic("claude-sonnet-4-20250514"),
   google: google("gemini-3-pro-preview"),
-  openai: openai("gpt-5.2"),
-} as const;
+  openai: openai("gpt-4o"),
+} as const
 
 export const MODEL_DISPLAY_NAMES = {
   anthropic: "Claude Sonnet 4.5",
   sonnet: "Claude Opus 4.5",
   google: "Gemini 3 Pro",
   openai: "GPT-5.2",
-} as const;
+} as const
 
 export const MODEL_DESCRIPTIONS = {
   anthropic: "Latest & most capable",
   sonnet: "Fast & capable",
   google: "Great for creativity",
   openai: "Fast & reliable",
-} as const;
+} as const
 
-export type ModelProvider = keyof typeof MODEL_OPTIONS;
+export type ModelProvider = keyof typeof MODEL_OPTIONS

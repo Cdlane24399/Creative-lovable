@@ -34,7 +34,7 @@
 ✅ **Better Cleanup**: Handles both sandbox types
 
 #### Key Code Additions:
-```typescript
+\`\`\`typescript
 // Metadata for all sandboxes
 export interface SandboxMetadata {
   projectId: string
@@ -54,7 +54,7 @@ export async function writeFiles(sandbox, files: Array<{path, content}>)
 
 // Real-time statistics
 export function getSandboxStats()
-```
+\`\`\`
 
 ---
 
@@ -63,7 +63,7 @@ export function getSandboxStats()
 #### createWebsite Tool Optimizations:
 
 **Template-Aware Project Creation:**
-```typescript
+\`\`\`typescript
 if (hasTemplate) {
   // OPTIMIZED PATH: Copy pre-built project (60x faster!)
   await executeCommand(sandbox, `cp -r /home/user/project ${projectDir}`)
@@ -77,20 +77,20 @@ if (hasTemplate) {
   // FALLBACK: Manual scaffolding (legacy slow path)
   // Create dirs, write configs, npm install, etc.
 }
-```
+\`\`\`
 
 **Intelligent Wait Times:**
-```typescript
+\`\`\`typescript
 // BEFORE: Always wait 10 seconds
 await new Promise(resolve => setTimeout(resolve, 10000))
 
 // AFTER: Dynamic wait based on template
 const waitTime = hasTemplate ? 5000 : 10000 // 5s vs 10s
 await new Promise(resolve => setTimeout(resolve, waitTime))
-```
+\`\`\`
 
 **Performance Tracking:**
-```typescript
+\`\`\`typescript
 return {
   success: true,
   projectName: name,
@@ -99,10 +99,10 @@ return {
   totalTimeMs: totalTime, // NEW
   message: `Website created! Preview: ${url} (⚡ 8.2s vs ~180s without template)`
 }
-```
+\`\`\`
 
 #### executeCode Tool Enhancement:
-```typescript
+\`\`\`typescript
 // BEFORE: Always used regular sandbox
 const sandbox = await createSandbox(projectId)
 
@@ -117,7 +117,7 @@ return {
   usedCodeInterpreter, // NEW: Shows optimization used
   results: result.results || [] // NEW: Rich output from Code Interpreter
 }
-```
+\`\`\`
 
 ---
 
@@ -126,7 +126,7 @@ return {
 #### AI SDK v6 Best Practices:
 
 **Step Tracking:**
-```typescript
+\`\`\`typescript
 // NEW: Track every step of agentic workflow
 onStepFinish: async ({ text, toolCalls, toolResults, finishReason, usage }) => {
   console.log(`[Step ${currentStepNumber}] Finished:`, {
@@ -138,10 +138,10 @@ onStepFinish: async ({ text, toolCalls, toolResults, finishReason, usage }) => {
   // Optional: Save to database for audit trail
   await supabase.from("agent_steps").insert({...})
 }
-```
+\`\`\`
 
 **Conversation Compression:**
-```typescript
+\`\`\`typescript
 // NEW: Prevent context overflow in long sessions
 prepareStep: async ({ stepNumber, messages }) => {
   if (messages.length > 30) {
@@ -150,17 +150,17 @@ prepareStep: async ({ stepNumber, messages }) => {
     }
   }
 }
-```
+\`\`\`
 
 **Enhanced Error Handling:**
-```typescript
+\`\`\`typescript
 // NEW: Detailed error responses with timestamps
 const errorDetails = {
   error: errorMessage,
   timestamp: new Date().toISOString(),
 }
 return new Response(JSON.stringify(errorDetails), { status: 500 })
-```
+\`\`\`
 
 ---
 
@@ -169,18 +169,18 @@ return new Response(JSON.stringify(errorDetails), { status: 500 })
 #### Updated Agent Instructions:
 
 **Before:**
-```
+\`\`\`
 - Create complete websites with live preview using the createWebsite tool
 - Install npm packages on-demand with installPackage tool
-```
+\`\`\`
 
 **After:**
-```
+\`\`\`
 - Create complete websites with instant live preview (2-5 seconds!)
 - ⚡ Template-Optimized: All dependencies pre-installed
 - Install npm packages on-demand (rarely needed with template!)
 - Execute Python code with optimized Code Interpreter
-```
+\`\`\`
 
 **Added Context:**
 - Informed agent about 60x speedup
@@ -193,7 +193,7 @@ return new Response(JSON.stringify(errorDetails), { status: 500 })
 
 ### Flow Diagram:
 
-```
+\`\`\`
 USER REQUEST: "Build me a SaaS landing page"
     ↓
 Agent: createWebsite({name: "saas-landing", pages: [...]})
@@ -224,7 +224,7 @@ Agent: createWebsite({name: "saas-landing", pages: [...]})
          │                    │
     ✅ PREVIEW READY      ✅ PREVIEW READY
     (Total: ~8s)          (Total: ~200s)
-```
+\`\`\`
 
 ---
 
@@ -292,45 +292,45 @@ Agent: createWebsite({name: "saas-landing", pages: [...]})
 ### When Template is Used (E2B_TEMPLATE_ID set):
 
 1. **Sandbox Creation** (2s)
-   ```typescript
+   \`\`\`typescript
    const sandbox = await Sandbox.create("creative-lovable-nextjs", {
      timeoutMs: 600_000,
      metadata: { projectId, purpose: "website", ... }
    })
-   ```
+   \`\`\`
 
 2. **Project Setup** (1s)
-   ```bash
+   \`\`\`bash
    # Copy entire pre-built project from template
    cp -r /home/user/project /home/user/{name}
 
    # Update package.json name only
    # Update layout.tsx metadata only
-   ```
+   \`\`\`
 
 3. **Write User Files** (1-2s)
-   ```typescript
+   \`\`\`typescript
    // Write user's pages
    await writeFileToSandbox(sandbox, `${projectDir}/app/page.tsx`, content)
 
    // Write user's components (if any)
    await writeFileToSandbox(sandbox, `${projectDir}/components/hero.tsx`, content)
-   ```
+   \`\`\`
 
 4. **Start Server** (5s)
-   ```bash
+   \`\`\`bash
    cd /home/user/{name} && npm run dev
    # Wait 5 seconds (reduced from 10s)
-   ```
+   \`\`\`
 
 5. **Return Preview URL** (instant)
-   ```typescript
+   \`\`\`typescript
    return {
      previewUrl: "https://{sandboxId}.e2b.dev",
      totalTimeMs: 8200, // ~8 seconds total!
      usedTemplate: true
    }
-   ```
+   \`\`\`
 
 ### When Template is NOT Used (fallback):
 
@@ -386,15 +386,15 @@ The `creative-lovable-nextjs` template includes:
 ## 🧪 Testing The Optimization
 
 ### Test 1: Simple Landing Page
-```bash
+\`\`\`bash
 # Restart dev server to load new E2B_TEMPLATE_ID
 npm run dev
-```
+\`\`\`
 
 Then ask the agent:
-```
+\`\`\`
 "Build me a modern SaaS landing page with a hero section, features grid, and pricing table"
-```
+\`\`\`
 
 **Expected Result:**
 - ✅ Preview URL returned in 5-10 seconds
@@ -404,7 +404,7 @@ Then ask the agent:
 
 ### Test 2: Check Logs
 Monitor console output for:
-```
+\`\`\`
 [Step 1] Finished: { toolCallsCount: 1, tokensUsed: 1234 }
 createWebsite called: { hasTemplate: true, templateId: 'creative-lovable-nextjs' }
 npm install SKIPPED - using template with pre-installed dependencies
@@ -412,17 +412,17 @@ Starting dev server: { hasTemplate: true, waitTime: 5000 }
 After 5000ms wait - checking server status: { serverReady: true }
 Website created! Preview: https://xyz.e2b.dev (⚡ 8.2s vs ~180s without template)
 [Chat Complete] Project: abc123, Steps: 3
-```
+\`\`\`
 
 ### Test 3: Verify Template Usage
-```typescript
+\`\`\`typescript
 import { getSandboxStats } from '@/lib/e2b/sandbox'
 
 // Call this in your code to check active sandboxes
 const stats = getSandboxStats()
 console.log(stats)
 // Output: { regularSandboxes: 1, codeInterpreterSandboxes: 0, total: 1 }
-```
+\`\`\`
 
 ---
 
@@ -450,7 +450,7 @@ console.log(stats)
 ## 🎛️ Configuration Summary
 
 ### Environment Variables (.env.local):
-```bash
+\`\`\`bash
 # E2B Configuration
 E2B_API_KEY="e2b_bb9556..." ✅ Already set
 E2B_TEMPLATE_ID="creative-lovable-nextjs" ✅ NEWLY ADDED
@@ -462,7 +462,7 @@ GOOGLE_GENERATIVE_AI_API_KEY="..." ✅ Set
 
 # Supabase (Optional)
 NEXT_PUBLIC_SUPABASE_URL="..." ✅ Set
-```
+\`\`\`
 
 ### Template Details:
 - **Template ID**: `creative-lovable-nextjs`
@@ -477,7 +477,7 @@ NEXT_PUBLIC_SUPABASE_URL="..." ✅ Set
 ## 🔄 Workflow Comparison
 
 ### BEFORE (Without Template):
-```
+\`\`\`
 1. User: "Build a landing page"
 2. Agent: createWebsite()
 3. Create blank sandbox (10s)
@@ -490,10 +490,10 @@ NEXT_PUBLIC_SUPABASE_URL="..." ✅ Set
 10. npm run dev (5s)
 11. Wait for server (10s)
 12. Preview ready (209s total) ⏱️
-```
+\`\`\`
 
 ### AFTER (With Template):
-```
+\`\`\`
 1. User: "Build a landing page"
 2. Agent: createWebsite()
 3. Create sandbox from template (2s) ⚡
@@ -504,7 +504,7 @@ NEXT_PUBLIC_SUPABASE_URL="..." ✅ Set
 8. npm run dev (already configured!) (2s)
 9. Wait for server (5s)
 10. Preview ready (12s total) ⚡⚡⚡
-```
+\`\`\`
 
 **Time Saved**: 197 seconds = **94% faster**
 
@@ -513,7 +513,7 @@ NEXT_PUBLIC_SUPABASE_URL="..." ✅ Set
 ## 🛠️ Technical Implementation Details
 
 ### Template Copy Logic:
-```typescript
+\`\`\`typescript
 // lib/ai/web-builder-agent.ts:570-605
 if (hasTemplate) {
   // Copy entire pre-configured project
@@ -526,10 +526,10 @@ if (hasTemplate) {
   // Update layout with project metadata
   await writeFileToSandbox(sandbox, `${projectDir}/app/layout.tsx`, layoutContent)
 }
-```
+\`\`\`
 
 ### Install Skipping Logic:
-```typescript
+\`\`\`typescript
 // lib/ai/web-builder-agent.ts:711-727
 if (!projectExists && !hasTemplate) {
   // Slow path: npm install required
@@ -542,10 +542,10 @@ if (!projectExists && !hasTemplate) {
   // Log: "npm install SKIPPED - using template with pre-installed dependencies"
   // Time saved: ~180-300s
 }
-```
+\`\`\`
 
 ### Dynamic Wait Time:
-```typescript
+\`\`\`typescript
 // lib/ai/web-builder-agent.ts:730-738
 const waitTime = hasTemplate ? 5000 : 10000
 
@@ -554,7 +554,7 @@ await new Promise(resolve => setTimeout(resolve, waitTime))
 
 // Template: Wait 5s (server starts faster with cached deps)
 // No template: Wait 10s (server needs to compile fresh)
-```
+\`\`\`
 
 ---
 
@@ -602,14 +602,14 @@ await new Promise(resolve => setTimeout(resolve, waitTime))
 
 ### Immediate (Required):
 1. **Restart dev server** to load new `E2B_TEMPLATE_ID`:
-   ```bash
+   \`\`\`bash
    npm run dev
-   ```
+   \`\`\`
 
 2. **Test the optimization**:
-   ```
+   \`\`\`
    "Build me a landing page for a SaaS product"
-   ```
+   \`\`\`
    Should complete in 5-10 seconds!
 
 ### Optional (Recommended):

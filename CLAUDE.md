@@ -23,7 +23,7 @@ Creative-lovable is an AI-powered web development assistant that builds real, wo
 
 This project supports multiple package managers (npm/pnpm). Use your preferred package manager:
 
-```bash
+\`\`\`bash
 # Development
 npm run dev          # Start dev server at localhost:3000
 # or
@@ -35,7 +35,7 @@ npm run start        # Start production server
 
 # Code Quality
 npm run lint         # Run ESLint
-```
+\`\`\`
 
 **Note:** TypeScript build errors are ignored in production (`ignoreBuildErrors: true` in next.config.mjs) for rapid prototyping.
 
@@ -44,13 +44,13 @@ npm run lint         # Run ESLint
 The project uses custom E2B templates for **60x faster startup** (2-5 seconds vs 3-5 minutes).
 
 ### Build Custom Template:
-```bash
+\`\`\`bash
 # Development template
 npx tsx lib/e2b/templates/build.dev.ts
 
 # Production template
 npx tsx lib/e2b/templates/build.prod.ts
-```
+\`\`\`
 
 **Required:** Set `E2B_API_KEY` in `.env.local` before building templates.
 
@@ -136,7 +136,7 @@ Sandboxes are cloud-based Ubuntu environments managed by E2B. They are reused pe
 ### AI Model Configuration (`lib/ai/agent.ts`)
 
 Currently uses **placeholder model identifiers** for demonstration purposes:
-```typescript
+\`\`\`typescript
 // lib/ai/agent.ts:173-182
 anthropic: anthropic("claude-opus-4-5", {
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -147,7 +147,7 @@ google: google("gemini-3-pro-preview", {
 openai: openai("gpt-5.2", {
   apiKey: process.env.OPENAI_API_KEY,
 })
-```
+\`\`\`
 
 **⚠️ Important:** These model IDs are placeholders. Replace with actual model IDs from provider docs:
 - **Anthropic**: Use real model IDs like `claude-sonnet-4-20250514`, `claude-opus-4-20250514`
@@ -178,23 +178,23 @@ The system prompt in `SYSTEM_PROMPT` defines the agent's behavior, capabilities,
 ## Key Implementation Patterns
 
 ### Multi-Step Tool Calling (AI SDK v6)
-```typescript
+\`\`\`typescript
 const result = streamText({
   model: selectedModel,
   tools: createContextAwareTools(projectId),
   stopWhen: stepCountIs(15), // Limit agentic loops
 })
-```
+\`\`\`
 
 The agent can call multiple tools in sequence without returning to the user until `stopWhen` condition is met.
 
 ### Context-Aware Tools
 Each tool execution updates the `AgentContext`:
-```typescript
+\`\`\`typescript
 recordToolExecution(projectId, toolName, input, output, success, error, startTime)
 updateFileInContext(projectId, filePath, content)
 updateBuildStatus(projectId, hasErrors, errors)
-```
+\`\`\`
 
 This allows subsequent tool calls to have awareness of what happened previously.
 
@@ -225,7 +225,7 @@ Agent can autonomously fix errors:
 ## Environment Variables
 
 Required in `.env.local`:
-```bash
+\`\`\`bash
 # E2B (Required)
 E2B_API_KEY=e2b_***
 
@@ -239,7 +239,7 @@ GOOGLE_GENERATIVE_AI_API_KEY=***
 
 # Neon PostgreSQL (Required for persistence)
 DATABASE_URL=postgresql://neondb_owner:***@***.neon.tech/neondb?sslmode=require
-```
+\`\`\`
 
 ## Generated Project Specifications
 
@@ -298,48 +298,48 @@ Import from `@/components/ui/*` in generated code.
 The project follows E2B SDK v2 best practices for optimal performance and reliability:
 
 1. **Sandbox Creation with Metadata**: All sandboxes are created with metadata for tracking (lib/e2b/sandbox.ts:59-64)
-   ```typescript
+   \`\`\`typescript
    const sandbox = await Sandbox.create(template, {
      timeoutMs: DEFAULT_TIMEOUT_MS,
      metadata: { projectId, createdAt, template, purpose }
    })
-   ```
+   \`\`\`
 
 2. **Code Interpreter for Python**: Uses `@e2b/code-interpreter` package with `runCode()` for better Python execution (lib/e2b/sandbox.ts:176-187)
-   ```typescript
+   \`\`\`typescript
    if ("runCode" in sandbox && language === "python") {
      const execution = await sandbox.runCode(code)
    }
-   ```
+   \`\`\`
 
 3. **Batch File Operations**: Implements `writeFiles()` for efficient multi-file writes with optional native API support (lib/e2b/sandbox.ts:303-331)
-   ```typescript
+   \`\`\`typescript
    // Use native API for better performance
    await writeFiles(sandbox, files, { useNativeApi: true })
-   ```
+   \`\`\`
 
 4. **Dynamic Timeouts**: Commands get appropriate timeouts (10 min for npm install, 5 min default) (lib/e2b/sandbox.ts:234-271)
    - Default timeout extended to 10 minutes for npm install without templates (3-5 minutes)
    - Supports complex build processes and multiple iterative operations
 
 5. **Background Process Control**: `startBackgroundProcess()` uses native `background: true` API for better process control (lib/e2b/sandbox.ts:375-398)
-   ```typescript
+   \`\`\`typescript
    const result = await startBackgroundProcess(sandbox, "npm run dev", {
      workingDir: projectDir,
      projectId,
      onStdout: (data) => console.log(data),
    })
    // Returns process handle for cleanup: result.process
-   ```
+   \`\`\`
 
 6. **Command Streaming**: `executeCommand()` supports `onStdout`/`onStderr` callbacks for real-time feedback (lib/e2b/sandbox.ts:234-271)
-   ```typescript
+   \`\`\`typescript
    await executeCommand(sandbox, "npm install", {
      onStdout: (data) => console.log(data),
      onStderr: (data) => console.error(data),
      cwd: "/home/user/project",
    })
-   ```
+   \`\`\`
 
 7. **Process Cleanup**: `killBackgroundProcess(projectId)` properly terminates dev servers before restart or cleanup (lib/e2b/sandbox.ts:399-414)
    - `closeSandbox()` automatically kills associated background processes
@@ -350,7 +350,7 @@ The project follows E2B SDK v2 best practices for optimal performance and reliab
 10. **Backward Compatibility**: All new features maintain backward compatibility (e.g., `executeCommand` accepts number timeout for legacy code)
 
 11. **Sandbox Persistence (Beta)**: Pause and resume sandboxes to preserve state and reduce costs
-    ```typescript
+    \`\`\`typescript
     // Pause sandbox (saves filesystem and memory state)
     await pauseSandbox(projectId)
     
@@ -359,10 +359,10 @@ The project follows E2B SDK v2 best practices for optimal performance and reliab
     
     // Create with auto-pause (sandbox pauses on timeout instead of being killed)
     const sandbox = await createSandboxWithAutoPause(projectId, true)
-    ```
+    \`\`\`
 
 12. **Progress Callbacks**: `executeCommand` and `writeFiles` support progress callbacks for streaming
-    ```typescript
+    \`\`\`typescript
     await executeCommand(sandbox, "npm install", {
       onProgress: (phase, msg, detail) => console.log(`${phase}: ${msg}`)
     })
@@ -371,7 +371,7 @@ The project follows E2B SDK v2 best practices for optimal performance and reliab
       onProgress: (phase, msg) => console.log(`${phase}: ${msg}`),
       concurrency: 5
     })
-    ```
+    \`\`\`
 
 13. **Enhanced Batch Operations**: `writeFiles` with concurrency control and detailed error tracking
 
@@ -381,14 +381,14 @@ The project leverages AI SDK v6 (beta 150) advanced features:
 
 1. **Multi-Step Tool Calling**: Uses `stopWhen: stepCountIs(15)` for agentic workflows (app/api/chat/route.ts)
 2. **Step Tracking**: `onStepFinish` callback logs each step's completion
-   ```typescript
+   \`\`\`typescript
    onStepFinish: async ({ text, toolCalls, toolResults, finishReason, usage }) => {
      // Log and optionally save to database
    }
-   ```
+   \`\`\`
 
 3. **Dynamic Step Configuration with activeTools**: `prepareStep` supports dynamic tool filtering based on context
-   ```typescript
+   \`\`\`typescript
    prepareStep: async ({ stepNumber, messages }) => {
      const context = getAgentContext(projectId)
      // Compress conversation for long loops
@@ -400,10 +400,10 @@ The project leverages AI SDK v6 (beta 150) advanced features:
        return { activeTools: [...FILE_TOOLS, ...BUILD_TOOLS] }
      }
    }
-   ```
+   \`\`\`
 
 4. **Preliminary Tool Results (AsyncIterable)**: Tools can stream progress updates during execution
-   ```typescript
+   \`\`\`typescript
    async *execute({ name, description, pages }) {
      yield { status: "loading", phase: "init", message: "Creating website", progress: 0 }
      // ... do work ...
@@ -411,20 +411,20 @@ The project leverages AI SDK v6 (beta 150) advanced features:
      // ... final result
      yield { status: "success", success: true, previewUrl: url, progress: 100 }
    }
-   ```
+   \`\`\`
 
 5. **Tool Input Lifecycle Hooks**: Real-time progress during tool input generation
-   ```typescript
+   \`\`\`typescript
    tool({
      onInputStart: () => console.log("Tool input generation started"),
      onInputDelta: ({ inputTextDelta }) => console.log(`Receiving: ${inputTextDelta}`),
      onInputAvailable: ({ input }) => console.log("Input complete:", input),
      execute: async (input) => { /* ... */ }
    })
-   ```
+   \`\`\`
 
 6. **Tool Call Repair**: Automatic error recovery for invalid tool inputs
-   ```typescript
+   \`\`\`typescript
    experimental_repairToolCall: async ({ toolCall, error }) => {
      if (InvalidToolInputError.isInstance(error)) {
        // Fix common issues and retry
@@ -432,10 +432,10 @@ The project leverages AI SDK v6 (beta 150) advanced features:
      }
      return null
    }
-   ```
+   \`\`\`
 
 7. **Custom Error Messages**: `toUIMessageStreamResponse` with `onError` for better UX
-   ```typescript
+   \`\`\`typescript
    result.toUIMessageStreamResponse({
      onError: (error) => {
        if (NoSuchToolError.isInstance(error)) {
@@ -444,7 +444,7 @@ The project leverages AI SDK v6 (beta 150) advanced features:
        return error.message
      }
    })
-   ```
+   \`\`\`
 
 8. **Context-Aware Tools**: All tools update AgentContext after execution (lib/ai/web-builder-agent.ts)
 9. **Structured Outputs**: Ready for answer tools pattern with `toolChoice: 'required'`
@@ -461,25 +461,25 @@ The project leverages AI SDK v6 (beta 150) advanced features:
 When testing agent capabilities:
 
 **Simple website creation:**
-```
+\`\`\`
 "Build me a landing page for a SaaS product"
-```
+\`\`\`
 
 **Iterative updates:**
-```
+\`\`\`
 "Make the CTA button purple"
 "Add a pricing section with 3 tiers"
-```
+\`\`\`
 
 **Error recovery:**
-```
+\`\`\`
 "The site isn't loading, what's wrong?"
-```
+\`\`\`
 
 **Code execution:**
-```
+\`\`\`
 "Run this Python code to analyze data: [code]"
-```
+\`\`\`
 
 The agent should autonomously detect and fix build errors without requiring explicit debugging requests.
 

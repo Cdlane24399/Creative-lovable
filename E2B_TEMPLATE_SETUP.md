@@ -37,13 +37,13 @@
 
 ### 2. Environment Configuration
 Added to `.env.local`:
-```bash
+\`\`\`bash
 E2B_TEMPLATE_ID="creative-lovable-nextjs"
-```
+\`\`\`
 
 ### 3. Code Integration
 The sandbox.ts file automatically uses the template:
-```typescript
+\`\`\`typescript
 // lib/e2b/sandbox.ts:12
 const CUSTOM_TEMPLATE_ID = process.env.E2B_TEMPLATE_ID
 
@@ -52,7 +52,7 @@ const sandbox = await Sandbox.create(CUSTOM_TEMPLATE_ID, {
   timeoutMs: DEFAULT_TIMEOUT_MS,
   metadata: { projectId, createdAt, template, purpose }
 })
-```
+\`\`\`
 
 ---
 
@@ -81,7 +81,7 @@ const sandbox = await Sandbox.create(CUSTOM_TEMPLATE_ID, {
 ## 🎯 Impact on User Experience
 
 ### Preview Generation Flow:
-```
+\`\`\`
 User: "Build me a SaaS landing page with pricing"
   ↓
 Agent calls createWebsite tool
@@ -95,7 +95,7 @@ Start Next.js dev server (3-5s)
 Live preview URL ready!
   ↓
 TOTAL: ~8-10 seconds instead of 3-5 minutes
-```
+\`\`\`
 
 ### Key Benefits:
 1. **Instant Feedback**: Users see their websites in seconds, not minutes
@@ -111,13 +111,13 @@ TOTAL: ~8-10 seconds instead of 3-5 minutes
 ### Rebuild Template (If Needed)
 If you update dependencies or change the template configuration:
 
-```bash
+\`\`\`bash
 # Production template
 npx tsx lib/e2b/templates/build.prod.ts
 
 # Development template (separate alias)
 npx tsx lib/e2b/templates/build.dev.ts
-```
+\`\`\`
 
 ### Template Files
 - **Dockerfile**: `lib/e2b/templates/nextjs-shadcn.e2b.Dockerfile`
@@ -138,10 +138,10 @@ npx tsx lib/e2b/templates/build.dev.ts
 
 ### Verify Template Usage
 Check sandbox creation logs:
-```typescript
+\`\`\`typescript
 // Look for this in console logs when creating websites:
 "Created sandbox for project {projectId} using template: creative-lovable-nextjs"
-```
+\`\`\`
 
 ### Check Template Status
 View your templates in the E2B dashboard:
@@ -151,12 +151,12 @@ View your templates in the E2B dashboard:
 
 ### Sandbox Statistics
 The code now tracks sandbox usage:
-```typescript
+\`\`\`typescript
 import { getSandboxStats } from '@/lib/e2b/sandbox'
 
 const stats = getSandboxStats()
 // Returns: { regularSandboxes, codeInterpreterSandboxes, total }
-```
+\`\`\`
 
 ---
 
