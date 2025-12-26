@@ -257,7 +257,7 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
                     >
                       {selectedModel === "anthropic" && <AnthropicIcon className="h-4 w-4" />}
                       {selectedModel === "sonnet" && <AnthropicIcon className="h-4 w-4" />}
-                      {selectedModel === "google" && <GoogleIcon className="h-4 w-4" />}
+                      {(selectedModel === "google" || selectedModel === "googleFlash") && <GoogleIcon className="h-4 w-4" />}
                       {selectedModel === "openai" && <OpenAIIcon className="h-4 w-4" />}
                       <span className="text-sm hidden sm:inline">{MODEL_DISPLAY_NAMES[selectedModel]}</span>
                       <ChevronDown className="h-3 w-3 opacity-50" />
@@ -306,6 +306,21 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
                         <div>
                           <div className="font-medium">{MODEL_DISPLAY_NAMES.google}</div>
                           <div className="text-xs text-zinc-500">Great for creativity</div>
+                        </div>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setSelectedModel("googleFlash")}
+                      className={cn(
+                        "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer py-2.5 focus:bg-zinc-800 focus:text-zinc-100",
+                        selectedModel === "googleFlash" && "bg-zinc-800 text-zinc-100",
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <GoogleIcon className="h-5 w-5" />
+                        <div>
+                          <div className="font-medium">{MODEL_DISPLAY_NAMES.googleFlash}</div>
+                          <div className="text-xs text-zinc-500">Fast & versatile</div>
                         </div>
                       </div>
                     </DropdownMenuItem>
