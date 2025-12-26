@@ -1,5 +1,3 @@
-"use client"
-
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createGoogleGenerativeAI } from "@ai-sdk/google"
 import { createOpenAI } from "@ai-sdk/openai"
@@ -205,25 +203,25 @@ const openai = createOpenAI({
 })
 
 export const MODEL_OPTIONS = {
-  anthropic: anthropic("claude-opus-4-5-20251101"),
-  sonnet: anthropic("claude-sonnet-4-20250514"),
-  google: google("gemini-3-pro-preview"),
-  googleFlash: google("gemini-3-flash-preview"),
+  anthropic: anthropic("claude-sonnet-4-20250514"),
+  sonnet: anthropic("claude-opus-4"),
+  google: google("gemini-2.0-flash"),
+  googleFlash: google("gemini-2.0-flash"),
   openai: openai("gpt-4o"),
 } as const
 
 export const MODEL_DISPLAY_NAMES = {
-  anthropic: "Claude Sonnet 4.5",
-  sonnet: "Claude Opus 4.5",
-  google: "Gemini 3 Pro",
-  googleFlash: "Gemini 3 Flash",
-  openai: "GPT-5.2",
+  anthropic: "Claude Sonnet 4",
+  sonnet: "Claude Opus 4",
+  google: "Gemini 2.0 Flash",
+  googleFlash: "Gemini 2.0 Flash",
+  openai: "GPT-4o",
 } as const
 
 export const MODEL_DESCRIPTIONS = {
-  anthropic: "Latest & most capable",
-  sonnet: "Fast & capable",
-  google: "Great for creativity",
+  anthropic: "Fast & capable",
+  sonnet: "Most intelligent & capable",
+  google: "Fast & versatile",
   googleFlash: "Fast & versatile",
   openai: "Fast & reliable",
 } as const
