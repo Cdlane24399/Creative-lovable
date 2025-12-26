@@ -208,6 +208,7 @@ export const MODEL_OPTIONS = {
   anthropic: anthropic("claude-opus-4-5-20251101"),
   sonnet: anthropic("claude-sonnet-4-20250514"),
   google: google("gemini-3-pro-preview"),
+  googleFlash: google("gemini-3-flash-preview"),
   openai: openai("gpt-4o"),
 } as const
 
@@ -215,6 +216,7 @@ export const MODEL_DISPLAY_NAMES = {
   anthropic: "Claude Sonnet 4.5",
   sonnet: "Claude Opus 4.5",
   google: "Gemini 3 Pro",
+  googleFlash: "Gemini 3 Flash",
   openai: "GPT-5.2",
 } as const
 
@@ -222,6 +224,7 @@ export const MODEL_DESCRIPTIONS = {
   anthropic: "Latest & most capable",
   sonnet: "Fast & capable",
   google: "Great for creativity",
+  googleFlash: "Fast & versatile",
   openai: "Fast & reliable",
 } as const
 

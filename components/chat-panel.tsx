@@ -461,7 +461,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
                       disabled={isWorking || !isChatEnabled}
                     >
                       {(selectedModel === "anthropic" || selectedModel === "sonnet") && <AnthropicIcon className="h-3.5 w-3.5" />}
-                      {selectedModel === "google" && <GoogleIcon className="h-3.5 w-3.5" />}
+                      {(selectedModel === "google" || selectedModel === "googleFlash") && <GoogleIcon className="h-3.5 w-3.5" />}
                       {selectedModel === "openai" && <OpenAIIcon className="h-3.5 w-3.5" />}
                       <span className="text-xs">{MODEL_DISPLAY_NAMES[selectedModel]}</span>
                       <ChevronDown className="h-3 w-3" />
@@ -502,6 +502,18 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
                       <div className="flex items-center gap-2">
                         <GoogleIcon className="h-4 w-4" />
                         <span>{MODEL_DISPLAY_NAMES.google}</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setSelectedModel("googleFlash")}
+                      className={cn(
+                        "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer",
+                        selectedModel === "googleFlash" && "bg-zinc-800",
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <GoogleIcon className="h-4 w-4" />
+                        <span>{MODEL_DISPLAY_NAMES.googleFlash}</span>
                       </div>
                     </DropdownMenuItem>
                     <DropdownMenuItem

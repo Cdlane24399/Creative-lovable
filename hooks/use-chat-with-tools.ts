@@ -19,7 +19,7 @@ export interface ToolProgress {
 
 interface UseChatWithToolsOptions {
   projectId?: string
-  model?: "anthropic" | "sonnet" | "google" | "openai"
+  model?: "anthropic" | "sonnet" | "google" | "googleFlash" | "openai"
   onError?: (error: Error) => void
 }
 
