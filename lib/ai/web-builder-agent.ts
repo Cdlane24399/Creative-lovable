@@ -39,6 +39,7 @@ import {
   writeFiles as writeFilesToSandbox,
   readFile as readFileFromSandbox,
   executeCommand,
+  directoryExists,
   getHostUrl,
   startBackgroundProcess,
   getSandboxStats,
@@ -157,7 +158,8 @@ export function createContextAwareTools(projectId: string) {
         const startTime = new Date()
         try {
           setCurrentPlan(projectId, steps)
-          setProjectInfo(projectId, { projectName: goal })
+          // Note: projectName should only be set by createWebsite which generates a proper name
+          // Do NOT set projectName from goal - it's a description, not a valid project name
 
           recordToolExecution(projectId, "planChanges", { goal, steps }, { success: true }, true, undefined, startTime)
 
@@ -252,16 +254,15 @@ export function createContextAwareTools(projectId: string) {
     // ==================== FILE OPERATIONS ====================
 
     writeFile: tool({
-      description: "Write content to a file in the project sandbox. Automatically tracks the file in context.",
+      description: "Write content to a file in the project sandbox. Uses the current project from context.",
       inputSchema: z.object({
         path: z.string().describe("File path relative to project root (e.g., 'app/page.tsx')"),
         content: z.string().describe("File content to write"),
-        projectName: z.string().optional().describe("Project name in /home/user/. Defaults to current project."),
       }),
-      execute: async ({ path, content, projectName }) => {
+      execute: async ({ path, content }) => {
         const startTime = new Date()
         const context = ctx()
-        const actualProjectName = projectName || context.projectName || "project"
+        const actualProjectName = context.projectName || "project"
         const fullPath = `/home/user/${actualProjectName}/${path}`
 
         try {
@@ -277,7 +278,7 @@ export function createContextAwareTools(projectId: string) {
           const isNew = !context.files.has(path)
           updateFileInContext(projectId, path, content, isNew ? "created" : "updated")
 
-          recordToolExecution(projectId, "writeFile", { path, projectName }, { success: true, path }, true, undefined, startTime)
+          recordToolExecution(projectId, "writeFile", { path }, { success: true, path }, true, undefined, startTime)
 
           return {
             success: true,
@@ -287,22 +288,21 @@ export function createContextAwareTools(projectId: string) {
           }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : "Write failed"
-          recordToolExecution(projectId, "writeFile", { path, projectName }, undefined, false, errorMsg, startTime)
+          recordToolExecution(projectId, "writeFile", { path }, undefined, false, errorMsg, startTime)
           return { success: false, error: errorMsg, path }
         }
       },
     }),
 
     readFile: tool({
-      description: "Read content from a file in the project sandbox.",
+      description: "Read content from a file in the project sandbox. Uses the current project from context.",
       inputSchema: z.object({
         path: z.string().describe("File path relative to project root"),
-        projectName: z.string().optional().describe("Project name in /home/user/"),
       }),
-      execute: async ({ path, projectName }) => {
+      execute: async ({ path }) => {
         const startTime = new Date()
         const context = ctx()
-        const actualProjectName = projectName || context.projectName || "project"
+        const actualProjectName = context.projectName || "project"
         const fullPath = `/home/user/${actualProjectName}/${path}`
 
         try {
@@ -329,17 +329,16 @@ export function createContextAwareTools(projectId: string) {
     }),
 
     editFile: tool({
-      description: "Edit specific content in a file using search and replace. Use this for targeted updates instead of rewriting entire files.",
+      description: "Edit specific content in a file using search and replace. Uses the current project from context.",
       inputSchema: z.object({
         path: z.string().describe("File path relative to project root"),
         search: z.string().describe("Exact text to find in the file"),
         replace: z.string().describe("New text to replace with"),
-        projectName: z.string().optional().describe("Project name in /home/user/"),
       }),
-      execute: async ({ path, search, replace, projectName }) => {
+      execute: async ({ path, search, replace }) => {
         const startTime = new Date()
         const context = ctx()
-        const actualProjectName = projectName || context.projectName || "project"
+        const actualProjectName = context.projectName || "project"
         const fullPath = `/home/user/${actualProjectName}/${path}`
 
         try {
@@ -379,13 +378,14 @@ export function createContextAwareTools(projectId: string) {
     // ==================== PROJECT MANAGEMENT ====================
 
     getProjectStructure: tool({
-      description: "Get the file tree and optionally key file contents of a project. Use this to understand existing project structure.",
+      description: "Get the file tree and optionally key file contents of the current project. Use this to understand existing project structure.",
       inputSchema: z.object({
-        projectName: z.string().describe("Project name in /home/user/"),
         includeContents: z.boolean().optional().describe("Include file contents for key files"),
       }),
-      execute: async ({ projectName, includeContents }) => {
+      execute: async ({ includeContents }) => {
         const startTime = new Date()
+        const context = ctx()
+        const projectName = context.projectName || "project"
         const projectDir = `/home/user/${projectName}`
 
         try {
@@ -480,14 +480,15 @@ export function createContextAwareTools(projectId: string) {
     }),
 
     installPackage: tool({
-      description: "Install npm packages in the project.",
+      description: "Install npm packages in the current project.",
       inputSchema: z.object({
         packages: z.array(z.string()).describe("Package names to install"),
-        projectName: z.string().describe("Project name in /home/user/"),
         dev: z.boolean().optional().describe("Install as dev dependency"),
       }),
-      execute: async ({ packages, projectName, dev }) => {
+      execute: async ({ packages, dev }) => {
         const startTime = new Date()
+        const context = ctx()
+        const projectName = context.projectName || "project"
         const projectDir = `/home/user/${projectName}`
         const flag = dev ? "--save-dev" : "--save"
 
@@ -500,7 +501,7 @@ export function createContextAwareTools(projectId: string) {
           }
 
           const success = result.exitCode === 0
-          recordToolExecution(projectId, "installPackage", { packages, projectName, dev }, { success }, success, result.stderr || undefined, startTime)
+          recordToolExecution(projectId, "installPackage", { packages, dev }, { success }, success, result.stderr || undefined, startTime)
 
           return {
             success,
@@ -572,10 +573,11 @@ export function createContextAwareTools(projectId: string) {
     startDevServer: tool({
       description: "DEPRECATED: Do not use this tool. The dev server is started automatically by the application. Use createWebsite to write files instead.",
       inputSchema: z.object({
-        projectName: z.string().describe("Project name in /home/user/"),
         port: z.number().optional().describe("Port number (default: 3000)"),
       }),
-      execute: async ({ projectName }) => {
+      execute: async () => {
+        const context = ctx()
+        const projectName = context.projectName || "project"
         // Just update context - the frontend will start the server
         setProjectInfo(projectId, { projectName, projectDir: `/home/user/${projectName}` })
 
@@ -624,6 +626,8 @@ export function createContextAwareTools(projectId: string) {
         const projectDir = `/home/user/${name}`
         const hasTemplate = !!process.env.E2B_TEMPLATE_ID
 
+        console.log(`[createWebsite] Starting for project: ${name}, projectId: ${projectId}`)
+
         // Yield initial progress
         yield {
           status: "loading" as const,
@@ -634,7 +638,9 @@ export function createContextAwareTools(projectId: string) {
 
         try {
           // Use sandbox with auto-pause for cost savings
+          console.log(`[createWebsite] Creating/getting sandbox for projectId: ${projectId}`)
           const sandbox = await createSandboxWithAutoPause(projectId)
+          console.log(`[createWebsite] Got sandbox: ${sandbox.sandboxId}`)
 
           yield {
             status: "progress" as const,
@@ -647,17 +653,12 @@ export function createContextAwareTools(projectId: string) {
             // Support both template styles:
             // - app router at /app
             // - app router at /src/app
-            const check = await executeCommand(
-              sandbox,
-              `test -d ${projectDir}/src/app && echo "src/app" || echo "app"`
-            )
-            const dir = check.stdout.trim()
-            return dir === "src/app" ? "src/app" : "app"
+            const hasSrcApp = await directoryExists(sandbox, `${projectDir}/src/app`)
+            return hasSrcApp ? "src/app" : "app"
           }
 
-          // Check if project exists
-          const checkResult = await executeCommand(sandbox, `test -d ${projectDir} && echo "exists"`)
-          const projectExists = checkResult.stdout.trim() === "exists"
+          // Check if project exists using helper that handles E2B exit code exceptions
+          const projectExists = await directoryExists(sandbox, projectDir)
 
           // Scaffold new project
           if (!projectExists) {
@@ -678,38 +679,17 @@ export function createContextAwareTools(projectId: string) {
               // Copy the entire pre-built Next.js project from template
               await executeCommand(sandbox, `cp -r /home/user/project ${projectDir}`)
 
+              // DEBUG: Verify template copy
+              console.log(`[createWebsite] Verifying template copy for ${projectDir}...`)
+              const listFiles = await executeCommand(sandbox, `ls -la ${projectDir}`)
+              console.log(`[createWebsite] File list in ${projectDir}:`, listFiles.stdout)
+              
+              const checkPage = await executeCommand(sandbox, `cat ${projectDir}/app/page.tsx || echo "PAGE_NOT_FOUND"`)
+              console.log(`[createWebsite] Content of ${projectDir}/app/page.tsx after copy:`, checkPage.stdout.slice(0, 200))
+
               // #region agent log - check what template's page.tsx contains (before we overwrite it)
               const templatePageCheck = await readFileFromSandbox(sandbox, `${projectDir}/app/page.tsx`).catch(() => ({ content: "NOT_FOUND" }))
-              fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:templatePageCheck',message:'Template page.tsx content after copy',data:{hasDefaultContent:templatePageCheck.content?.includes('next.svg')||templatePageCheck.content?.includes('vercel.svg'),contentLength:templatePageCheck.content?.length,preview:templatePageCheck.content?.slice(0,300)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H10,H11'})}).catch(()=>{});
-              // #endregion
-
-              // Update package.json with project name and description
-              const updatePkgCmd = `cd ${projectDir} && node -e "const pkg=require('./package.json');pkg.name='${name}';require('fs').writeFileSync('package.json',JSON.stringify(pkg,null,2))"`
-              await executeCommand(sandbox, updatePkgCmd)
-
-              // Update layout.tsx with project metadata
-              const appDir = await resolveAppDir()
-              const layoutContent = `import type { Metadata } from "next";
-import "./globals.css";
-
-export const metadata: Metadata = {
-  title: "${name}",
-  description: "${description}",
-};
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en">
-      <body>{children}</body>
-    </html>
-  );
-}
-`
-              await writeFileToSandbox(sandbox, `${projectDir}/${appDir}/layout.tsx`, layoutContent)
-
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:templateCopied',message:'Template project copied and configured',data:{projectDir,copyDuration:Date.now()-startTime.getTime()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-              // #endregion
+              // ... existing code
             } else {
               // FALLBACK: Manual scaffolding (slower, for non-template usage)
               await executeCommand(sandbox, `mkdir -p ${projectDir}/app ${projectDir}/components ${projectDir}/public`)
@@ -884,6 +864,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             success: true,
             projectName: name,
             projectDir,
+            // Include sandboxId so frontend can pass it to dev-server route
+            sandboxId: sandbox.sandboxId,
             pagesCreated: pages.map(p => p.path),
             componentsCreated: components?.map(c => c.name) || [],
             isNewProject: !projectExists,

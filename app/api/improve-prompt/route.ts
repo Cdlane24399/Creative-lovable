@@ -53,7 +53,7 @@ export async function POST(req: Request) {
       model: anthropic("claude-sonnet-4-20250514"),
       system: PROMPT_IMPROVER_SYSTEM,
       prompt: prompt,
-      maxTokens: 300,
+      maxOutputTokens: 300,
     })
 
     return Response.json({ improvedPrompt: result.text.trim() })

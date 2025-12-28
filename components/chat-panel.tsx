@@ -76,7 +76,7 @@ interface ChatPanelProps {
   onPreviewUpdate?: (content: string) => void
   onSandboxUrlUpdate?: (url: string | null) => void
   /** Called when AI reports files are ready (triggers dev server start) */
-  onFilesReady?: (projectName: string) => void
+  onFilesReady?: (projectName: string, sandboxId?: string) => void
   initialPrompt?: string | null
   initialModel?: ModelProvider
 }
@@ -148,12 +148,22 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         
         const anyPart = part as any
         const toolCallId = anyPart.toolCallId || `${message.id}-${partType}`
+        const state = anyPart.state
+        
+        // Debug log: Track all tool states
+        if (partType === "tool-createWebsite") {
+          console.log("[ChatPanel] createWebsite tool state:", state, "toolCallId:", toolCallId)
+        }
         
         // Skip if already processed
         if (processedToolOutputsRef.current.has(toolCallId)) continue
         
-        // Get output from various possible locations (AI SDK v5 uses 'output')
-        const outputData = anyPart.output || anyPart.result
+        // AI SDK v6: Only process tools that have completed with output-available state
+        // Other states: input-streaming, input-available, output-error
+        if (state !== "output-available") continue
+        
+        // Get output (only available when state is 'output-available')
+        const outputData = anyPart.output
         if (!outputData) continue
         
         // Parse output if it's a string
@@ -166,6 +176,15 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
           }
         } else if (typeof outputData === "object" && outputData !== null) {
           output = outputData as Record<string, unknown>
+        }
+        
+        // Debug log: Log the output data for createWebsite
+        if (partType === "tool-createWebsite") {
+          console.log("[ChatPanel] createWebsite output:", {
+            success: output.success,
+            filesReady: output.filesReady,
+            projectName: output.projectName,
+          })
         }
         
         // Only process successful outputs
@@ -181,10 +200,14 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
           onSandboxUrlUpdate?.(previewUrl)
         }
         
-        // Also notify about project name for display
+        // Only notify about project name when files are actually ready
+        // The createWebsite tool sets filesReady: true in its final output
         const projName = output.projectName as string | undefined
-        if (projName) {
-          onFilesReady?.(projName)
+        const sandboxId = output.sandboxId as string | undefined
+        const filesReady = output.filesReady === true
+        if (projName && filesReady) {
+          console.log("[ChatPanel] Files ready, project:", projName, "sandboxId:", sandboxId)
+          onFilesReady?.(projName, sandboxId)
         }
       }
     }

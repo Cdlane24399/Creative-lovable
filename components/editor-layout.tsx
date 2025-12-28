@@ -5,6 +5,7 @@ import { ChatPanel, ChatPanelHandle } from "./chat-panel"
 import { PreviewPanel, PreviewPanelHandle } from "./preview-panel"
 import { EditorHeader } from "./editor-header"
 import { useProject } from "@/hooks/use-projects"
+import { useDevServer } from "@/hooks/use-dev-server"
 import { generatePlaceholderImage } from "@/lib/utils/screenshot"
 
 import { type ModelProvider } from "@/lib/ai/agent"
@@ -22,13 +23,99 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
   const [projectName, setProjectName] = useState<string>("Untitled Project")
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [sandboxUrl, setSandboxUrl] = useState<string | null>(null)
+  const [pendingServerStart, setPendingServerStart] = useState<string | null>(null)
+  const [pendingSandboxId, setPendingSandboxId] = useState<string | null>(null)
   const previewRef = useRef<PreviewPanelHandle>(null)
   const chatRef = useRef<ChatPanelHandle>(null)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const lastSavedUrlRef = useRef<string | null>(null)
+  const urlUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Debug: Log sandboxUrl state changes
+  useEffect(() => {
+    console.log("[EditorLayout] sandboxUrl state changed:", sandboxUrl)
+  }, [sandboxUrl])
 
   // Load existing project data
   const { project, isLoading: isProjectLoading, updateProject, saveScreenshot } = useProject(projectId || null)
+
+  // Dev server management - only enable polling when actively starting a server
+  const [isPollingEnabled, setIsPollingEnabled] = useState(false)
+
+  const {
+    status: devServerStatus,
+    isStarting: isDevServerStarting,
+    start: startDevServer,
+  } = useDevServer({
+    projectId: projectId || null,
+    projectName: pendingServerStart || (projectName !== "Untitled Project" ? projectName : null),
+    sandboxId: pendingSandboxId,
+    enabled: isPollingEnabled,
+    onReady: (url) => {
+      console.log("[EditorLayout] onReady callback triggered with url:", url)
+      console.log("[EditorLayout] Current sandboxUrl state:", sandboxUrl)
+      
+      // Debounce URL updates to prevent race conditions
+      if (urlUpdateTimeoutRef.current) {
+        clearTimeout(urlUpdateTimeoutRef.current)
+      }
+      
+      urlUpdateTimeoutRef.current = setTimeout(() => {
+        setSandboxUrl(url)
+        console.log("[EditorLayout] setSandboxUrl called with:", url)
+        setIsPreviewLoading(false)
+        setPendingServerStart(null)
+        // Stop polling once server is ready
+        setIsPollingEnabled(false)
+        console.log("[EditorLayout] onReady completed")
+      }, 100) // Small delay to batch state updates
+    },
+    onError: (errors) => {
+      console.error("[EditorLayout] Dev server errors:", errors)
+      setIsPreviewLoading(false)
+      // Stop polling on error
+      setIsPollingEnabled(false)
+    },
+  })
+
+  // Track if we've started the dev server for the current project
+  const devServerStartedRef = useRef<string | null>(null)
+
+  // Sync sandbox URL from dev server status updates (covers missed onReady events)
+  useEffect(() => {
+    if (!devServerStatus.url) return
+    if (devServerStatus.url === sandboxUrl) return
+
+    console.log("[EditorLayout] Syncing sandbox URL from status:", devServerStatus.url)
+    
+    // Debounce to avoid rapid state changes
+    if (urlUpdateTimeoutRef.current) {
+      clearTimeout(urlUpdateTimeoutRef.current)
+    }
+    
+    urlUpdateTimeoutRef.current = setTimeout(() => {
+      setSandboxUrl(devServerStatus.url)
+      setIsPreviewLoading(false)
+      setPendingServerStart(null)
+      // Stop polling since we have a URL
+      setIsPollingEnabled(false)
+    }, 100)
+  }, [devServerStatus.url, sandboxUrl])
+
+  // Start dev server when pending project name is set (only once per project)
+  useEffect(() => {
+    if (!pendingServerStart || !projectId) return
+    if (devServerStartedRef.current === pendingServerStart) return
+
+    console.log("[EditorLayout] Starting dev server for:", pendingServerStart, "projectId:", projectId, "sandboxId:", pendingSandboxId)
+    devServerStartedRef.current = pendingServerStart
+    
+    // Enable polling which will trigger status checks
+    setIsPollingEnabled(true)
+    
+    // Call startDevServer directly - the hook should now have the correct projectName
+    startDevServer()
+  }, [pendingServerStart, projectId, pendingSandboxId, startDevServer])
 
   // Restore project state when loading an existing project
   useEffect(() => {
@@ -37,6 +124,7 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
       if (project.sandbox_url) {
         lastSavedUrlRef.current = project.sandbox_url
         // Restore the sandbox URL from saved project
+        console.log("[EditorLayout] Restoring sandbox URL from project:", project.sandbox_url)
         setSandboxUrl(project.sandbox_url)
       }
     }
@@ -64,6 +152,18 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
       }
     }
   }, [sandboxUrl, projectId])
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
+      if (urlUpdateTimeoutRef.current) {
+        clearTimeout(urlUpdateTimeoutRef.current)
+      }
+    }
+  }, [])
 
   const saveProject = useCallback(async () => {
     if (!projectId || !sandboxUrl) return
@@ -147,35 +247,57 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
     }
   }, [hasUnsavedChanges, sandboxUrl, projectId, saveProject])
 
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     if (previewRef.current) {
       previewRef.current.refresh()
       setIsPreviewLoading(true)
       setTimeout(() => setIsPreviewLoading(false), 500)
     }
-  }
+  }, [])
 
   // Handle when AI reports project name (from createWebsite tool result)
-  const handleFilesReady = useCallback((newProjectName: string) => {
-    console.log("[EditorLayout] Project created:", newProjectName)
-    if (newProjectName && newProjectName !== projectName) {
+  const handleFilesReady = useCallback((newProjectName: string, sandboxId?: string) => {
+    console.log("[EditorLayout] Files ready, project:", newProjectName, "sandboxId:", sandboxId)
+    if (newProjectName) {
       setProjectName(newProjectName)
+      setIsPreviewLoading(true)
+      // Store sandboxId for dev server to use
+      if (sandboxId) {
+        setPendingSandboxId(sandboxId)
+      }
+      // Trigger dev server start with the project name
+      setPendingServerStart(newProjectName)
     }
-  }, [projectName])
+  }, [])
 
   // Handle sandbox URL update (from createWebsite tool result)
   const handleSandboxUrlUpdate = useCallback((url: string | null) => {
-    console.log("[EditorLayout] Sandbox URL updated:", url)
-    setSandboxUrl(url)
-    setIsPreviewLoading(false)
+    console.log("[EditorLayout] Sandbox URL update requested:", url)
     
-    // Update project name from prompt if still untitled
-    if (url && projectName.includes("Untitled")) {
-      const extractedName = extractProjectName(initialPrompt)
-      if (extractedName !== "Untitled Project") {
-        setProjectName(extractedName)
-      }
+    // Debounce to prevent race conditions with dev server status updates
+    if (urlUpdateTimeoutRef.current) {
+      clearTimeout(urlUpdateTimeoutRef.current)
     }
+    
+    urlUpdateTimeoutRef.current = setTimeout(() => {
+      console.log("[EditorLayout] Applying sandbox URL:", url)
+      setSandboxUrl(url)
+      setIsPreviewLoading(false)
+      
+      // Stop polling since we have a URL directly from the tool
+      if (url) {
+        setIsPollingEnabled(false)
+        setPendingServerStart(null)
+      }
+
+      // Update project name from prompt if still untitled
+      if (url && projectName.includes("Untitled")) {
+        const extractedName = extractProjectName(initialPrompt)
+        if (extractedName !== "Untitled Project") {
+          setProjectName(extractedName)
+        }
+      }
+    }, 150) // Slightly longer delay for direct URL updates
   }, [initialPrompt, projectName])
 
   return (
@@ -211,7 +333,7 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
             ref={previewRef} 
             content={previewContent} 
             sandboxUrl={sandboxUrl}
-            isLoading={isPreviewLoading}
+            isLoading={isPreviewLoading || isDevServerStarting}
           />
         </div>
       </div>

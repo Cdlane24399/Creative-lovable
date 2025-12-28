@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     const selectedModel = MODEL_OPTIONS[model] || MODEL_OPTIONS.anthropic
 
     // Convert messages for the model
-    const modelMessages = convertToModelMessages(messages)
+    const modelMessages = await convertToModelMessages(messages)
 
     // Create context-aware tools for this project
     const tools = createContextAwareTools(projectId)

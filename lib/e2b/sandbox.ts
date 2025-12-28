@@ -7,6 +7,11 @@ const codeInterpreterSandboxes = new Map<string, CodeInterpreter>()
 const backgroundProcesses = new Map<string, any>() // projectId -> process handle
 const pausedSandboxes = new Map<string, { sandboxId: string; pausedAt: Date }>() // projectId -> paused sandbox info
 
+// Track connection attempts to prevent reconnection storms
+const connectionAttempts = new Map<string, { count: number; lastAttempt: number }>()
+const MAX_RECONNECT_ATTEMPTS = 3
+const RECONNECT_COOLDOWN_MS = 5000 // 5 seconds between attempts
+
 // Default timeout for sandboxes (10 minutes for website generation)
 // Note: E2B default is 5 minutes, extended to 10 for:
 // - npm install without templates (3-5 minutes)
@@ -16,6 +21,120 @@ const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000
 
 // Get custom template ID from environment (optional)
 const CUSTOM_TEMPLATE_ID = process.env.E2B_TEMPLATE_ID
+
+// ============================================================
+// DATABASE HELPERS FOR SANDBOX PERSISTENCE
+// ============================================================
+
+/**
+ * Get sandbox ID from database for a project.
+ * This enables sandbox reconnection across API route invocations.
+ */
+async function getSandboxIdFromDatabase(projectId: string): Promise<string | null> {
+  try {
+    const { getDb } = await import("@/lib/db/neon")
+    const sql = getDb()
+    const result = await sql`
+      SELECT sandbox_id FROM projects WHERE id = ${projectId}
+    `
+    return (result && result[0]?.sandbox_id) || null
+  } catch (error) {
+    console.warn(`Failed to get sandbox ID from database for ${projectId}:`, error)
+    return null
+  }
+}
+
+/**
+ * Save sandbox ID to database for a project.
+ * This enables sandbox reconnection across API route invocations.
+ * Uses UPSERT to handle the case where the project doesn't exist yet.
+ */
+async function saveSandboxIdToDatabase(projectId: string, sandboxId: string): Promise<void> {
+  try {
+    const { getDb } = await import("@/lib/db/neon")
+    const sql = getDb()
+    // Use UPSERT to ensure the project exists and sandbox ID is saved
+    await sql`
+      INSERT INTO projects (id, name, sandbox_id)
+      VALUES (${projectId}, 'Untitled Project', ${sandboxId})
+      ON CONFLICT (id) DO UPDATE SET
+        sandbox_id = ${sandboxId},
+        updated_at = NOW()
+    `
+    console.log(`[Sandbox] Saved sandbox ID ${sandboxId} to database for project ${projectId}`)
+  } catch (error) {
+    console.warn(`[Sandbox] Failed to save sandbox ID to database for ${projectId}:`, error)
+  }
+}
+
+/**
+ * Clear sandbox ID from database when sandbox is closed.
+ */
+async function clearSandboxIdFromDatabase(projectId: string): Promise<void> {
+  try {
+    const { getDb } = await import("@/lib/db/neon")
+    const sql = getDb()
+    await sql`
+      UPDATE projects SET sandbox_id = NULL, updated_at = NOW() WHERE id = ${projectId}
+    `
+  } catch (error) {
+    console.warn(`Failed to clear sandbox ID from database for ${projectId}:`, error)
+  }
+}
+
+/**
+ * Try to reconnect to an existing sandbox by ID with retry logic.
+ * Returns the sandbox if successful, undefined otherwise.
+ */
+async function tryReconnectSandbox(sandboxId: string, projectId: string): Promise<Sandbox | undefined> {
+  // Check if we've exceeded retry attempts
+  const attempts = connectionAttempts.get(sandboxId)
+  if (attempts) {
+    const timeSinceLastAttempt = Date.now() - attempts.lastAttempt
+    
+    if (attempts.count >= MAX_RECONNECT_ATTEMPTS) {
+      if (timeSinceLastAttempt < RECONNECT_COOLDOWN_MS) {
+        console.warn(`[Sandbox] Reconnection rate-limited for ${sandboxId}, ${attempts.count} attempts`)
+        return undefined
+      }
+      // Reset after cooldown
+      connectionAttempts.set(sandboxId, { count: 1, lastAttempt: Date.now() })
+    } else {
+      connectionAttempts.set(sandboxId, {
+        count: attempts.count + 1,
+        lastAttempt: Date.now(),
+      })
+    }
+  } else {
+    connectionAttempts.set(sandboxId, { count: 1, lastAttempt: Date.now() })
+  }
+
+  try {
+    console.log(`[Sandbox] Attempting to reconnect to sandbox ${sandboxId} for project ${projectId}`)
+    
+    const sandbox = await Sandbox.connect(sandboxId, {
+      timeoutMs: DEFAULT_TIMEOUT_MS,
+    })
+    
+    // Test connection by extending timeout
+    await sandbox.setTimeout(DEFAULT_TIMEOUT_MS)
+    
+    activeSandboxes.set(projectId, sandbox)
+    
+    // Reset connection attempts on success
+    connectionAttempts.delete(sandboxId)
+    
+    console.log(`[Sandbox] Successfully reconnected to sandbox ${sandboxId} for project ${projectId}`)
+    return sandbox
+  } catch (error) {
+    console.warn(`[Sandbox] Failed to reconnect to sandbox ${sandboxId}:`, error)
+    
+    // Clear from database if reconnection fails
+    await clearSandboxIdFromDatabase(projectId)
+    
+    return undefined
+  }
+}
 
 // Supported languages for code execution
 export type CodeLanguage = "python" | "javascript" | "typescript" | "js" | "ts"
@@ -42,24 +161,47 @@ export interface SandboxState {
 /**
  * Creates or retrieves an existing sandbox for a project.
  * Sandboxes are isolated cloud environments for code execution.
+ * 
+ * Priority order:
+ * 1. Check in-memory cache
+ * 2. Try to reconnect using sandbox ID from database
+ * 3. Create a new sandbox and persist to database
  *
  * @param projectId - Unique identifier for the project
  * @param templateId - Optional custom template ID (overrides E2B_TEMPLATE_ID env var)
  */
 export async function createSandbox(projectId: string, templateId?: string): Promise<Sandbox> {
-  // Check if sandbox already exists for this project
+  console.log(`[Sandbox] createSandbox called for projectId: ${projectId}`)
+
+  // 1. Check if sandbox already exists in memory for this project
   const existing = activeSandboxes.get(projectId)
   if (existing) {
     try {
       // Verify sandbox is still alive by extending timeout
       await existing.setTimeout(DEFAULT_TIMEOUT_MS)
+      console.log(`[Sandbox] Reusing existing sandbox: ${existing.sandboxId}`)
       return existing
-    } catch {
+    } catch (error) {
       // Sandbox expired or errored, remove from cache
+      console.log(`[Sandbox] Existing sandbox expired or unreachable, removing from cache:`, error)
       activeSandboxes.delete(projectId)
     }
   }
 
+  // 2. Try to reconnect using sandbox ID from database
+  // This handles the case where the sandbox was created in a different API route invocation
+  const dbSandboxId = await getSandboxIdFromDatabase(projectId)
+  console.log(`[Sandbox] Database sandbox ID for ${projectId}: ${dbSandboxId || 'none'}`)
+  if (dbSandboxId) {
+    const reconnected = await tryReconnectSandbox(dbSandboxId, projectId)
+    if (reconnected) {
+      console.log(`[Sandbox] Successfully reconnected to sandbox: ${dbSandboxId}`)
+      return reconnected
+    }
+    console.log(`[Sandbox] Failed to reconnect, will create new sandbox`)
+  }
+
+  // 3. Create a new sandbox
   // Use provided template ID, or fall back to env var, or use default
   const template = templateId || CUSTOM_TEMPLATE_ID
 
@@ -73,6 +215,8 @@ export async function createSandbox(projectId: string, templateId?: string): Pro
       purpose: "website",
     }
 
+    console.log(`[Sandbox] Creating new sandbox for project ${projectId}${template ? ` with template: ${template}` : ''}`)
+
     const sandbox = template
       ? await Sandbox.create(template, {
           timeoutMs: DEFAULT_TIMEOUT_MS,
@@ -85,40 +229,58 @@ export async function createSandbox(projectId: string, templateId?: string): Pro
 
     activeSandboxes.set(projectId, sandbox)
 
+    // Persist sandbox ID to database for cross-route reconnection
+    await saveSandboxIdToDatabase(projectId, sandbox.sandboxId)
+
+    // Reset connection attempts for this sandbox
+    connectionAttempts.delete(sandbox.sandboxId)
+
     // Log template usage for debugging
-    if (template) {
-      console.log(`Created sandbox for project ${projectId} using template: ${template}`)
-    }
+    console.log(`[Sandbox] Created NEW sandbox ${sandbox.sandboxId} for project ${projectId}${template ? ` using template: ${template}` : ''}`)
 
     return sandbox
   } catch (error) {
-    console.error(`Failed to create E2B sandbox for project ${projectId}:`, error)
+    console.error(`[Sandbox] Failed to create E2B sandbox for project ${projectId}:`, error)
     throw new Error(`Sandbox creation failed: ${error instanceof Error ? error.message : "Unknown error"}`)
   }
 }
 
 /**
  * Retrieves an existing sandbox for a project without creating a new one.
+ * Checks both in-memory cache and database for existing sandbox.
  */
 export async function getSandbox(projectId: string): Promise<Sandbox | undefined> {
+  // 1. Check in-memory cache
   const sandbox = activeSandboxes.get(projectId)
   if (sandbox) {
     try {
       // Verify sandbox is still alive
       await sandbox.setTimeout(DEFAULT_TIMEOUT_MS)
       return sandbox
-    } catch {
+    } catch (error) {
       // Sandbox expired, remove from cache
+      console.log(`[Sandbox] Cached sandbox expired for ${projectId}:`, error)
       activeSandboxes.delete(projectId)
-      return undefined
     }
   }
+
+  // 2. Try to reconnect using sandbox ID from database
+  const dbSandboxId = await getSandboxIdFromDatabase(projectId)
+  if (dbSandboxId) {
+    const reconnected = await tryReconnectSandbox(dbSandboxId, projectId)
+    if (reconnected) {
+      return reconnected
+    }
+    // Clear stale sandbox ID from database if reconnection failed
+    await clearSandboxIdFromDatabase(projectId)
+  }
+
   return undefined
 }
 
 /**
  * Closes and cleans up a sandbox for a project.
- * Also kills any associated background processes.
+ * Also kills any associated background processes and clears database entry.
  */
 export async function closeSandbox(projectId: string): Promise<void> {
   // Kill background processes first
@@ -127,12 +289,16 @@ export async function closeSandbox(projectId: string): Promise<void> {
   const sandbox = activeSandboxes.get(projectId)
   if (sandbox) {
     try {
+      console.log(`[Sandbox] Closing sandbox for project ${projectId}`)
       await sandbox.kill()
     } catch (error) {
-      console.error(`Failed to kill sandbox for project ${projectId}:`, error)
+      console.error(`[Sandbox] Failed to kill sandbox for project ${projectId}:`, error)
     } finally {
       activeSandboxes.delete(projectId)
       pausedSandboxes.delete(projectId)
+      connectionAttempts.delete(sandbox.sandboxId)
+      // Clear sandbox ID from database
+      await clearSandboxIdFromDatabase(projectId)
     }
   }
 }
@@ -157,9 +323,7 @@ export async function pauseSandbox(projectId: string): Promise<boolean> {
     await killBackgroundProcess(projectId)
 
     // Use beta pause API (E2B SDK v2 feature)
-    // @ts-expect-error - betaPause is a beta feature
     if (typeof sandbox.betaPause === "function") {
-      // @ts-expect-error - betaPause is a beta feature
       await sandbox.betaPause()
 
       // Track paused state
@@ -255,17 +419,13 @@ export async function createSandboxWithAutoPause(
 
   try {
     // Try to use beta create with auto-pause
-    // @ts-expect-error - betaCreate is a beta feature
     if (autoPause && typeof Sandbox.betaCreate === "function") {
-      // @ts-expect-error - betaCreate is a beta feature
       const sandbox = template
-        // @ts-expect-error - betaCreate is a beta feature
         ? await Sandbox.betaCreate(template, {
             timeoutMs: DEFAULT_TIMEOUT_MS,
             autoPause: true,
             metadata: metadata as any,
           })
-        // @ts-expect-error - betaCreate is a beta feature
         : await Sandbox.betaCreate({
             timeoutMs: DEFAULT_TIMEOUT_MS,
             autoPause: true,
@@ -273,6 +433,8 @@ export async function createSandboxWithAutoPause(
           })
 
       activeSandboxes.set(projectId, sandbox)
+      // Persist sandbox ID to database for cross-route reconnection
+      await saveSandboxIdToDatabase(projectId, sandbox.sandboxId)
       console.log(`Created sandbox with auto-pause for project ${projectId}`)
       return sandbox
     }
@@ -524,12 +686,21 @@ export async function executeCommand(
     const durationMs = Date.now() - startTime
     const errorMessage = error instanceof Error ? error.message : "Command execution failed"
 
-    // Log detailed error for debugging
-    console.error(`E2B command failed: "${command.slice(0, 100)}..."`, {
-      error: errorMessage,
-      commandLength: command.length,
-      durationMs,
-    })
+    // E2B SDK throws on non-zero exit codes - this is often expected behavior
+    // (e.g., `test -d` returns 1 when directory doesn't exist)
+    // Use debug level unless it's a "real" command failure
+    const isTestCommand = command.startsWith("test ") || command.includes("&& test ")
+    const isExpectedFailure = errorMessage.includes("exit status 1") && isTestCommand
+
+    if (isExpectedFailure) {
+      console.debug(`[E2B] Expected non-zero exit: "${command.slice(0, 60)}..."`, { durationMs })
+    } else {
+      console.error(`[E2B] Command failed: "${command.slice(0, 100)}..."`, {
+        error: errorMessage,
+        commandLength: command.length,
+        durationMs,
+      })
+    }
 
     onProgress?.("error", "Command failed", errorMessage)
 
@@ -540,6 +711,38 @@ export async function executeCommand(
       durationMs,
     }
   }
+}
+
+/**
+ * Check if a directory exists in the sandbox.
+ * Uses a pattern that always returns exit code 0 to avoid E2B SDK exceptions.
+ *
+ * @param sandbox - The E2B sandbox instance
+ * @param path - Absolute path to check
+ * @returns true if directory exists, false otherwise
+ */
+export async function directoryExists(
+  sandbox: Sandbox | CodeInterpreter,
+  path: string
+): Promise<boolean> {
+  const result = await executeCommand(sandbox, `test -d ${path} && echo "exists" || echo "not_exists"`)
+  return result.stdout.trim() === "exists"
+}
+
+/**
+ * Check if a file exists in the sandbox.
+ * Uses a pattern that always returns exit code 0 to avoid E2B SDK exceptions.
+ *
+ * @param sandbox - The E2B sandbox instance
+ * @param path - Absolute path to check
+ * @returns true if file exists, false otherwise
+ */
+export async function fileExists(
+  sandbox: Sandbox | CodeInterpreter,
+  path: string
+): Promise<boolean> {
+  const result = await executeCommand(sandbox, `test -f ${path} && echo "exists" || echo "not_exists"`)
+  return result.stdout.trim() === "exists"
 }
 
 /**
@@ -770,6 +973,7 @@ export async function startBackgroundProcess(
     onStderr?: (data: string) => void
   }
 ) {
+  console.log(`[startBackgroundProcess] Starting command: ${command} in ${options?.workingDir || 'default cwd'}`)
   try {
     // Use native E2B SDK v2 background API
     const process = await sandbox.commands.run(command, {
@@ -778,6 +982,7 @@ export async function startBackgroundProcess(
       onStdout: options?.onStdout,
       onStderr: options?.onStderr,
     })
+    console.log(`[startBackgroundProcess] Native command started successfully`)
 
     // Track process for cleanup
     if (options?.projectId) {
@@ -786,6 +991,7 @@ export async function startBackgroundProcess(
 
     return { started: true, process }
   } catch (error) {
+    console.warn(`[startBackgroundProcess] Native API failed: ${error instanceof Error ? error.message : String(error)}`)
     // Fallback to shell-based approach if native API fails
     const fullCommand = options?.workingDir ? `cd ${options.workingDir} && ${command}` : command
 

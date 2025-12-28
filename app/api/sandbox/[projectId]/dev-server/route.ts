@@ -30,6 +30,9 @@ interface DevServerStatus {
 const statusCache = new Map<string, { status: DevServerStatus; timestamp: number }>()
 const CACHE_TTL_MS = 1500 // Cache valid for 1.5 seconds
 
+// Track in-flight start requests to prevent duplicates
+const startingProjects = new Map<string, Promise<any>>()
+
 /**
  * GET /api/sandbox/[projectId]/dev-server
  * Get the current status of the dev server (with caching to reduce log noise)
@@ -62,13 +65,30 @@ export async function GET(
       return NextResponse.json(status)
     }
 
-    // Quick port check - just see if something is listening
-    const statusCheck = await executeCommand(
-      sandbox,
-      `nc -z 127.0.0.1 3000 && echo "UP" || echo "DOWN"`,
-      { timeoutMs: 3000 }
-    )
-    const isRunning = statusCheck.stdout.trim() === "UP"
+    // Quick port check - check multiple ports as Next.js may use 3001+ if 3000 is busy
+    let isRunning = false
+    let activePort = 3000
+    
+    // Use Promise.race to get first successful port check
+    const portChecks = [3000, 3001, 3002, 3003, 3004, 3005].map(async port => {
+      const statusCheck = await executeCommand(
+        sandbox,
+        `nc -z 127.0.0.1 ${port} && echo "UP" || echo "DOWN"`,
+        { timeoutMs: 2000 }
+      )
+      if (statusCheck.stdout.trim() === "UP") {
+        return { port, isUp: true }
+      }
+      return { port, isUp: false }
+    })
+    
+    const checkResults = await Promise.all(portChecks)
+    const upPort = checkResults.find(r => r.isUp)
+    
+    if (upPort) {
+      isRunning = true
+      activePort = upPort.port
+    }
 
     // Only fetch logs if server is running and we need them for error checking
     let logs: string[] = []
@@ -87,11 +107,11 @@ export async function GET(
       }
     }
 
-    const url = isRunning ? getHostUrl(sandbox, 3000) : null
+    const url = isRunning ? getHostUrl(sandbox, activePort) : null
 
     const status: DevServerStatus = {
       isRunning,
-      port: isRunning ? 3000 : null,
+      port: isRunning ? activePort : null,
       url,
       logs: [], // Don't send full logs on every poll - use getLogs endpoint if needed
       errors,
@@ -103,13 +123,15 @@ export async function GET(
 
     return NextResponse.json(status)
   } catch (error) {
-    // Don't log every status check failure - just return not running
+    console.error("[dev-server GET] Error fetching status:", error)
+    
+    // Return not running status on error
     const status: DevServerStatus = {
       isRunning: false,
       port: null,
       url: null,
       logs: [],
-      errors: [],
+      errors: error instanceof Error ? [error.message] : ["Failed to check server status"],
       lastChecked: new Date().toISOString(),
     }
     return NextResponse.json(status)
@@ -125,123 +147,228 @@ export async function POST(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params
+  console.log("[dev-server POST] Starting for projectId:", projectId)
 
-  try {
-    const body = await req.json().catch(() => ({}))
-    const { projectName = "project", forceRestart = false } = body
+  // Check if already starting - prevent duplicate requests
+  const existingStart = startingProjects.get(projectId)
+  if (existingStart) {
+    console.log("[dev-server POST] Already starting, waiting for existing request")
+    try {
+      return await existingStart
+    } catch (err) {
+      // If existing request failed, continue with new attempt
+      startingProjects.delete(projectId)
+    }
+  }
 
-    const sandbox = await createSandbox(projectId)
-    const projectDir = `/home/user/${projectName}`
+  // Create promise for this start operation
+  const startPromise = (async () => {
+    try {
+      const body = await req.json().catch(() => ({}))
+      const { projectName = "project", sandboxId: providedSandboxId, forceRestart = false } = body
+      console.log("[dev-server POST] Params:", { projectName, providedSandboxId, forceRestart })
 
-    // Check if project directory exists
-    const checkDir = await executeCommand(sandbox, `test -d ${projectDir} && echo "exists"`, { timeoutMs: 5000 })
-    if (checkDir.stdout.trim() !== "exists") {
-      return NextResponse.json(
-        { error: `Project directory not found: ${projectDir}` },
-        { status: 404 }
+      // If sandboxId is provided, try to connect to that specific sandbox first
+      let sandbox
+      if (providedSandboxId) {
+        try {
+          const { Sandbox } = await import("e2b")
+          console.log("[dev-server POST] Connecting to provided sandbox:", providedSandboxId)
+          sandbox = await Sandbox.connect(providedSandboxId, { timeoutMs: 10 * 60 * 1000 })
+          console.log("[dev-server POST] Successfully connected to sandbox:", sandbox.sandboxId)
+        } catch (err) {
+          console.warn("[dev-server POST] Failed to connect to provided sandbox, falling back to createSandbox:", err)
+          sandbox = await createSandbox(projectId)
+        }
+      } else {
+        sandbox = await createSandbox(projectId)
+      }
+      console.log("[dev-server POST] Using sandbox:", sandbox.sandboxId)
+
+      const projectDir = `/home/user/${projectName}`
+
+      // Check if project directory exists
+      const checkDir = await executeCommand(
+        sandbox, 
+        `test -d ${projectDir} && echo "exists" || echo "not_exists"`, 
+        { timeoutMs: 5000 }
       )
-    }
+      console.log("[dev-server POST] Directory check:", { projectDir, result: checkDir.stdout.trim() })
 
-    // Kill any existing processes if force restart
-    if (forceRestart) {
-      await killBackgroundProcess(projectId)
-      await executeCommand(sandbox, `pkill -f "next dev" 2>/dev/null; lsof -ti :3000 | xargs kill -9 2>/dev/null; true`, { timeoutMs: 5000 })
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
-
-    // Quick check if server is already running
-    const quickCheck = await executeCommand(
-      sandbox,
-      `nc -z 127.0.0.1 3000 && echo "UP" || echo "DOWN"`,
-      { timeoutMs: 3000 }
-    )
-    const alreadyRunning = quickCheck.stdout.trim() === "UP"
-
-    if (alreadyRunning && !forceRestart) {
-      const url = getHostUrl(sandbox, 3000)
-      // Clear cache to ensure fresh status
-      statusCache.delete(projectId)
-      return NextResponse.json({
-        success: true,
-        alreadyRunning: true,
-        url,
-        port: 3000,
-        message: "Dev server is already running",
-      })
-    }
-
-    // Clear old .next cache for fresh build
-    await executeCommand(sandbox, `rm -rf ${projectDir}/.next 2>/dev/null; rm -f /tmp/server.log 2>/dev/null; true`, { timeoutMs: 5000 })
-
-    // Start the dev server in background
-    await startBackgroundProcess(sandbox, "npm run dev > /tmp/server.log 2>&1", {
-      workingDir: projectDir,
-      projectId,
-    })
-
-    // Fast wait - just wait for the server to bind to port (15 seconds max)
-    const maxWaitMs = 15000
-    const pollInterval = 1000
-    const maxPolls = Math.ceil(maxWaitMs / pollInterval)
-    
-    let serverReady = false
-
-    for (let i = 0; i < maxPolls; i++) {
-      await new Promise(resolve => setTimeout(resolve, pollInterval))
-
-      // Check if port is listening
-      const check = await executeCommand(
-        sandbox,
-        `nc -z 127.0.0.1 3000 && echo "UP" || echo "DOWN"`,
-        { timeoutMs: 2000 }
-      )
-      
-      if (check.stdout.trim() === "UP") {
-        serverReady = true
-        break
+      if (checkDir.stdout.trim() !== "exists") {
+        console.error("[dev-server POST] Project directory not found:", projectDir)
+        return NextResponse.json(
+          { error: `Project directory not found: ${projectDir}` },
+          { status: 404 }
+        )
       }
 
-      // Check for fatal errors only
-      const logCheck = await executeCommand(sandbox, `tail -n 10 /tmp/server.log 2>/dev/null | grep -i "EADDRINUSE\\|address already in use" || echo ""`, { timeoutMs: 2000 })
-      if (logCheck.stdout.trim()) {
+      // Kill any existing processes if force restart
+      if (forceRestart) {
+        console.log("[dev-server POST] Force restart requested, killing existing processes")
+        await killBackgroundProcess(projectId)
+        await executeCommand(
+          sandbox, 
+          `pkill -f "next dev" 2>/dev/null || true`, 
+          { timeoutMs: 5000 }
+        )
+        // Kill all ports in range
+        for (const port of [3000, 3001, 3002, 3003, 3004, 3005]) {
+          await executeCommand(
+            sandbox,
+            `lsof -ti :${port} | xargs kill -9 2>/dev/null || true`,
+            { timeoutMs: 2000 }
+          )
+        }
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+
+      // Quick check if server is already running on any of the fallback ports
+      let alreadyRunning = false
+      let existingPort = 3000
+
+      const portCheckPromises = [3000, 3001, 3002, 3003, 3004, 3005].map(async port => {
+        const quickCheck = await executeCommand(
+          sandbox,
+          `nc -z 127.0.0.1 ${port} && echo "UP" || echo "DOWN"`,
+          { timeoutMs: 2000 }
+        )
+        return { port, isUp: quickCheck.stdout.trim() === "UP" }
+      })
+
+      const portResults = await Promise.all(portCheckPromises)
+      const runningPort = portResults.find(r => r.isUp)
+      
+      if (runningPort) {
+        alreadyRunning = true
+        existingPort = runningPort.port
+      }
+
+      console.log(`[dev-server POST] Already running check: ${alreadyRunning} on port ${existingPort}`)
+
+      if (alreadyRunning && !forceRestart) {
+        const url = getHostUrl(sandbox, existingPort)
+        // Clear cache to ensure fresh status
+        statusCache.delete(projectId)
+        return NextResponse.json({
+          success: true,
+          alreadyRunning: true,
+          url,
+          port: existingPort,
+          message: "Dev server is already running",
+        })
+      }
+
+      // Clear server log for fresh output (but preserve .next cache for faster rebuilds)
+      await executeCommand(sandbox, `rm -f /tmp/server.log 2>/dev/null || true`, { timeoutMs: 5000 })
+
+      // Start the dev server in background
+      console.log("[dev-server POST] Starting background process...")
+      await startBackgroundProcess(sandbox, "npm run dev > /tmp/server.log 2>&1", {
+        workingDir: projectDir,
+        projectId,
+      })
+      console.log("[dev-server POST] Background process started")
+
+      // Fast wait - just wait for the server to bind to a port (15 seconds max)
+      const maxWaitMs = 15000
+      const pollInterval = 1000
+      const maxPolls = Math.ceil(maxWaitMs / pollInterval)
+      
+      let serverReady = false
+      let actualPort = 3000
+
+      console.log("[dev-server POST] Polling for server readiness...")
+      for (let i = 0; i < maxPolls; i++) {
+        await new Promise(resolve => setTimeout(resolve, pollInterval))
+
+        // Check ports in parallel for faster detection
+        const portCheckPromises = [3000, 3001, 3002, 3003, 3004, 3005].map(async port => {
+          const check = await executeCommand(
+            sandbox,
+            `nc -z 127.0.0.1 ${port} && echo "UP" || echo "DOWN"`,
+            { timeoutMs: 2000 }
+          )
+          return { port, isUp: check.stdout.trim() === "UP" }
+        })
+
+        const results = await Promise.all(portCheckPromises)
+        const upPort = results.find(r => r.isUp)
+
+        if (upPort) {
+          console.log(`[dev-server POST] Port ${upPort.port} is UP`)
+          serverReady = true
+          actualPort = upPort.port
+          break
+        }
+
+        // Check logs for the actual port (Next.js logs "Local: http://localhost:XXXX")
+        const logCheck = await executeCommand(
+          sandbox,
+          `grep -o "Local:.*http://localhost:[0-9]*" /tmp/server.log 2>/dev/null | tail -1 | grep -o "[0-9]*$" || echo ""`,
+          { timeoutMs: 2000 }
+        )
+        const logPort = parseInt(logCheck.stdout.trim(), 10)
+        if (logPort > 0) {
+          // Verify this port is actually listening
+          const portCheck = await executeCommand(
+            sandbox,
+            `nc -z 127.0.0.1 ${logPort} && echo "UP" || echo "DOWN"`,
+            { timeoutMs: 2000 }
+          )
+          if (portCheck.stdout.trim() === "UP") {
+            serverReady = true
+            actualPort = logPort
+            break
+          }
+        }
+      }
+
+      if (!serverReady) {
+        // Get logs for debugging
+        const logsResult = await executeCommand(
+          sandbox, 
+          `tail -n 30 /tmp/server.log 2>/dev/null || echo "No logs"`, 
+          { timeoutMs: 3000 }
+        )
         return NextResponse.json(
-          { error: "Port 3000 is already in use. Try force restart." },
+          { 
+            error: "Dev server failed to start within timeout",
+            logs: logsResult.stdout,
+          },
           { status: 500 }
         )
       }
-    }
 
-    if (!serverReady) {
-      // Get logs for debugging
-      const logsResult = await executeCommand(sandbox, `tail -n 30 /tmp/server.log 2>/dev/null || echo "No logs"`, { timeoutMs: 3000 })
+      const url = getHostUrl(sandbox, actualPort)
+
+      // Clear cache
+      statusCache.delete(projectId)
+
+      return NextResponse.json({
+        success: true,
+        alreadyRunning: false,
+        url,
+        port: actualPort,
+        sandboxId: sandbox.sandboxId,
+        message: `Dev server started at ${url}`,
+      })
+    } catch (error) {
+      console.error("[dev-server POST] Failed to start dev server:", error)
       return NextResponse.json(
-        { 
-          error: "Dev server failed to start within timeout",
-          logs: logsResult.stdout,
-        },
+        { error: error instanceof Error ? error.message : "Failed to start dev server" },
         { status: 500 }
       )
+    } finally {
+      // Clean up tracking
+      startingProjects.delete(projectId)
     }
+  })()
 
-    const url = getHostUrl(sandbox, 3000)
+  // Track this start operation
+  startingProjects.set(projectId, startPromise)
 
-    // Clear cache
-    statusCache.delete(projectId)
-
-    return NextResponse.json({
-      success: true,
-      alreadyRunning: false,
-      url,
-      port: 3000,
-      message: `Dev server started at ${url}`,
-    })
-  } catch (error) {
-    console.error("Failed to start dev server:", error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to start dev server" },
-      { status: 500 }
-    )
-  }
+  return startPromise
 }
 
 /**
@@ -267,15 +394,27 @@ export async function DELETE(
     // Kill the background process
     await killBackgroundProcess(projectId)
     
-    // Also kill any lingering processes
-    await executeCommand(sandbox, `pkill -f "next dev" 2>/dev/null; lsof -ti :3000 | xargs kill -9 2>/dev/null; true`, { timeoutMs: 5000 })
+    // Also kill any lingering processes on all potential ports
+    await executeCommand(
+      sandbox, 
+      `pkill -f "next dev" 2>/dev/null || true`, 
+      { timeoutMs: 5000 }
+    )
+    
+    for (const port of [3000, 3001, 3002, 3003, 3004, 3005]) {
+      await executeCommand(
+        sandbox,
+        `lsof -ti :${port} | xargs kill -9 2>/dev/null || true`,
+        { timeoutMs: 2000 }
+      )
+    }
 
     return NextResponse.json({
       success: true,
       message: "Dev server stopped",
     })
   } catch (error) {
-    console.error("Failed to stop dev server:", error)
+    console.error("[dev-server DELETE] Failed to stop dev server:", error)
     return NextResponse.json(
       { error: "Failed to stop dev server" },
       { status: 500 }
