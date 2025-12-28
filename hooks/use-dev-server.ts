@@ -67,8 +67,12 @@ export function useDevServer({
   onReady,
   onStatusChange,
 }: UseDevServerOptions): UseDevServerReturn {
-  // Log props on each render for debugging
-  console.log("[useDevServer] Hook render:", { projectId, projectName, sandboxId, enabled })
+  // Minimal logging - only log on first render
+  const hasLoggedRef = useRef(false)
+  if (!hasLoggedRef.current && projectId) {
+    console.log("[useDevServer] Initialized for project:", projectId)
+    hasLoggedRef.current = true
+  }
 
   const [status, setStatus] = useState<DevServerStatus>(DEFAULT_STATUS)
   const [isStarting, setIsStarting] = useState(false)
@@ -122,17 +126,16 @@ export function useDevServer({
       if (!response.ok) {
         consecutiveFailuresRef.current++
         
-        // Exponential backoff for retries
-        if (consecutiveFailuresRef.current > 5) {
-          const backoffMs = Math.min(1000 * Math.pow(2, retryCountRef.current), 30000)
-          console.warn(`[useDevServer] Too many failures (${consecutiveFailuresRef.current}), backing off for ${backoffMs}ms`)
-          
-          if (consecutiveFailuresRef.current > 10) {
-            // Stop polling after too many failures
-            console.error("[useDevServer] Stopping poll after 10 consecutive failures")
-            stopPolling()
-            setError("Unable to connect to dev server status endpoint")
-          }
+        // Only log after multiple failures
+        if (consecutiveFailuresRef.current === 5) {
+          console.warn(`[useDevServer] Multiple connection failures (${consecutiveFailuresRef.current})`)
+        }
+        
+        // Stop polling after too many failures
+        if (consecutiveFailuresRef.current > 10) {
+          console.error("[useDevServer] Stopping poll after 10 consecutive failures")
+          stopPolling()
+          setError("Unable to connect to dev server status endpoint")
         }
         return null
       }
@@ -152,7 +155,10 @@ export function useDevServer({
       consecutiveFailuresRef.current++
       retryCountRef.current++
       
-      console.warn(`[useDevServer] Fetch error (${consecutiveFailuresRef.current} consecutive):`, err)
+      // Only log errors after multiple failures
+      if (consecutiveFailuresRef.current > 3) {
+        console.warn(`[useDevServer] Connection error (${consecutiveFailuresRef.current} consecutive)`)
+      }
       return null
     }
   }, [projectId, stopPolling])
@@ -176,7 +182,7 @@ export function useDevServer({
     // Check if server just became ready - only call onReady once
     if (newStatus.isRunning && !wasRunningRef.current && newStatus.url) {
       if (!onReadyCalledRef.current) {
-        console.log("[useDevServer] Server became ready, calling onReady with URL:", newStatus.url)
+        console.log("[useDevServer] Server ready:", newStatus.url)
         onReadyCalledRef.current = true
         onReady?.(newStatus.url)
       }
@@ -205,21 +211,12 @@ export function useDevServer({
     stopPolling()
     pollActiveRef.current = true
     
-    console.log("[useDevServer] Starting poll with interval:", interval)
-    
     // Immediate fetch
     refresh()
     
     // Set up interval
     pollRef.current = setInterval(() => {
       if (!pollActiveRef.current) return
-      
-      // Check if we've exceeded reasonable poll timeout without success
-      const timeSinceSuccess = Date.now() - lastSuccessfulPollRef.current
-      if (timeSinceSuccess > 60000) { // 1 minute
-        console.warn("[useDevServer] No successful poll in 60 seconds, may have connection issues")
-      }
-      
       refresh()
     }, interval)
   }, [stopPolling, refresh])
@@ -227,12 +224,12 @@ export function useDevServer({
   // Start the dev server
   const start = useCallback(async (forceRestart = false) => {
     if (!projectId || !projectName) {
-      console.error("[useDevServer] Missing projectId or projectName:", { projectId, projectName })
+      console.error("[useDevServer] Missing projectId or projectName")
       setError("No project to start")
       return
     }
 
-    console.log("[useDevServer] Starting dev server:", { projectId, projectName, sandboxId, forceRestart })
+    console.log("[useDevServer] Starting dev server:", projectName)
     setIsStarting(true)
     setError(null)
     consecutiveFailuresRef.current = 0
@@ -240,9 +237,6 @@ export function useDevServer({
     onReadyCalledRef.current = false
 
     try {
-      console.log("[useDevServer] Making POST request to:", `/api/sandbox/${projectId}/dev-server`)
-      console.log("[useDevServer] Request body:", { projectName, sandboxId, forceRestart })
-      
       const response = await fetch(`/api/sandbox/${projectId}/dev-server`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -250,7 +244,6 @@ export function useDevServer({
       })
 
       const data = await response.json()
-      console.log("[useDevServer] Response received:", { status: response.status, data, url: data?.url })
 
       if (!response.ok) {
         throw new Error(data.error || "Failed to start dev server")
@@ -270,16 +263,10 @@ export function useDevServer({
       stopPolling()
 
       if (data.url) {
-        console.log("[useDevServer] Server ready, calling onReady with URL:", data.url)
-        console.log("[useDevServer] onReady callback exists:", typeof onReady === 'function')
-        
         if (!onReadyCalledRef.current) {
           onReadyCalledRef.current = true
           onReady?.(data.url)
         }
-        console.log("[useDevServer] onReady callback invoked successfully")
-      } else {
-        console.warn("[useDevServer] Server started but no URL in response:", data)
       }
     } catch (err) {
       console.error("[useDevServer] Error starting server:", err)

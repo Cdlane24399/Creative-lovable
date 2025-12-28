@@ -594,7 +594,7 @@ export function createContextAwareTools(projectId: string) {
     createWebsite: tool({
       description: "Create or update a complete website with live preview. Use this for building full web applications. Optimized for E2B custom templates.",
       inputSchema: z.object({
-        name: z.string().describe("Project name in lowercase with hyphens"),
+        name: z.string().describe("Descriptive project name based on user's request (lowercase with hyphens, e.g., 'coffee-shop-landing', 'portfolio-site', 'fitness-tracker')"),
         description: z.string().describe("Description of the website"),
         pages: z.array(z.object({
           path: z.string().describe("Page path (e.g., 'page.tsx', 'about/page.tsx')"),
@@ -623,10 +623,13 @@ export function createContextAwareTools(projectId: string) {
       // AI SDK v6: Use async generator for preliminary results (streaming progress)
       async *execute({ name, description, pages, components }) {
         const startTime = new Date()
-        const projectDir = `/home/user/${name}`
         const hasTemplate = !!process.env.E2B_TEMPLATE_ID
+        // When using template, write directly to the template's project directory
+        // The template already has a dev server running there (via CMD in Dockerfile)
+        // This enables hot-reload without needing to restart the server
+        const projectDir = hasTemplate ? "/home/user/project" : `/home/user/${name}`
 
-        console.log(`[createWebsite] Starting for project: ${name}, projectId: ${projectId}`)
+        console.log(`[createWebsite] Starting for project: ${name}, projectId: ${projectId}, projectDir: ${projectDir}`)
 
         // Yield initial progress
         yield {
@@ -660,42 +663,20 @@ export function createContextAwareTools(projectId: string) {
           // Check if project exists using helper that handles E2B exit code exceptions
           const projectExists = await directoryExists(sandbox, projectDir)
 
-          // Scaffold new project
-          if (!projectExists) {
+          // Scaffold new project (only needed if not using template)
+          if (!projectExists && !hasTemplate) {
             yield {
               status: "progress" as const,
               phase: "scaffold",
-              message: hasTemplate ? "Using template (60x faster)" : "Creating project structure",
+              message: "Creating project structure",
               progress: 20,
             }
 
-            if (hasTemplate) {
-              // OPTIMIZED: Copy pre-built project from template (60x faster!)
-              // Template has a fully configured Next.js project at /home/user/project
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/6f9641da-88fd-44cb-82e6-8ceca14f2c00',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'web-builder-agent.ts:createWebsite:copyTemplate',message:'Copying pre-built project from template',data:{templateProjectPath:'/home/user/project',targetPath:projectDir},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-              // #endregion
+            // Manual scaffolding (for non-template usage)
+            await executeCommand(sandbox, `mkdir -p ${projectDir}/app ${projectDir}/components ${projectDir}/public`)
 
-              // Copy the entire pre-built Next.js project from template
-              await executeCommand(sandbox, `cp -r /home/user/project ${projectDir}`)
-
-              // DEBUG: Verify template copy
-              console.log(`[createWebsite] Verifying template copy for ${projectDir}...`)
-              const listFiles = await executeCommand(sandbox, `ls -la ${projectDir}`)
-              console.log(`[createWebsite] File list in ${projectDir}:`, listFiles.stdout)
-              
-              const checkPage = await executeCommand(sandbox, `cat ${projectDir}/app/page.tsx || echo "PAGE_NOT_FOUND"`)
-              console.log(`[createWebsite] Content of ${projectDir}/app/page.tsx after copy:`, checkPage.stdout.slice(0, 200))
-
-              // #region agent log - check what template's page.tsx contains (before we overwrite it)
-              const templatePageCheck = await readFileFromSandbox(sandbox, `${projectDir}/app/page.tsx`).catch(() => ({ content: "NOT_FOUND" }))
-              // ... existing code
-            } else {
-              // FALLBACK: Manual scaffolding (slower, for non-template usage)
-              await executeCommand(sandbox, `mkdir -p ${projectDir}/app ${projectDir}/components ${projectDir}/public`)
-
-              // package.json
-              const packageJson = {
+            // package.json
+            const packageJson = {
               name,
               version: "0.1.0",
               private: true,
@@ -704,61 +685,60 @@ export function createContextAwareTools(projectId: string) {
                 build: "next build",
                 start: "next start",
               },
-                dependencies: {
-                  next: "15.0.0",
-                  react: "18.3.1",
-                  "react-dom": "18.3.1",
-                },
-                devDependencies: {
-                  autoprefixer: "^10.4.19",
-                  postcss: "^8.4.38",
-                  tailwindcss: "^3.4.3",
-                  typescript: "^5.4.5",
-                  "@types/node": "^20.12.7",
-                  "@types/react": "^18.2.79",
-                  "@types/react-dom": "^18.2.25",
-                },
-              }
-              await writeFileToSandbox(sandbox, `${projectDir}/package.json`, JSON.stringify(packageJson, null, 2))
-
-              // Config files
-              await writeFileToSandbox(sandbox, `${projectDir}/tsconfig.json`, JSON.stringify({
-                compilerOptions: {
-                  target: "ES2017",
-                  lib: ["dom", "dom.iterable", "esnext"],
-                  allowJs: true,
-                  skipLibCheck: true,
-                  strict: true,
-                  noEmit: true,
-                  esModuleInterop: true,
-                  module: "esnext",
-                  moduleResolution: "bundler",
-                  resolveJsonModule: true,
-                  isolatedModules: true,
-                  jsx: "preserve",
-                  incremental: true,
-                  plugins: [{ name: "next" }],
-                  paths: { "@/*": ["./*"] },
-                },
-                include: ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-                exclude: ["node_modules"],
-              }, null, 2))
-
-              await writeFileToSandbox(sandbox, `${projectDir}/next.config.mjs`,
-                `/** @type {import('next').NextConfig} */\nconst nextConfig = { reactStrictMode: true };\nexport default nextConfig;\n`)
-
-              await writeFileToSandbox(sandbox, `${projectDir}/tailwind.config.ts`,
-                `import type { Config } from "tailwindcss";\n\nconst config: Config = {\n  content: [\n    "./pages/**/*.{js,ts,jsx,tsx,mdx}",\n    "./components/**/*.{js,ts,jsx,tsx,mdx}",\n    "./app/**/*.{js,ts,jsx,tsx,mdx}",\n  ],\n  theme: { extend: {} },\n  plugins: [],\n};\n\nexport default config;\n`)
-
-              await writeFileToSandbox(sandbox, `${projectDir}/postcss.config.js`,
-                `module.exports = {\n  plugins: {\n    tailwindcss: {},\n    autoprefixer: {},\n  },\n};\n`)
-
-              await writeFileToSandbox(sandbox, `${projectDir}/app/globals.css`,
-                `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\nbody {\n  font-family: system-ui, -apple-system, sans-serif;\n}\n`)
-
-              await writeFileToSandbox(sandbox, `${projectDir}/app/layout.tsx`,
-                `import type { Metadata } from "next";\nimport "./globals.css";\n\nexport const metadata: Metadata = {\n  title: "${name}",\n  description: "${description}",\n};\n\nexport default function RootLayout({ children }: { children: React.ReactNode }) {\n  return (\n    <html lang="en">\n      <body>{children}</body>\n    </html>\n  );\n}\n`)
+              dependencies: {
+                next: "15.0.0",
+                react: "18.3.1",
+                "react-dom": "18.3.1",
+              },
+              devDependencies: {
+                autoprefixer: "^10.4.19",
+                postcss: "^8.4.38",
+                tailwindcss: "^3.4.3",
+                typescript: "^5.4.5",
+                "@types/node": "^20.12.7",
+                "@types/react": "^18.2.79",
+                "@types/react-dom": "^18.2.25",
+              },
             }
+            await writeFileToSandbox(sandbox, `${projectDir}/package.json`, JSON.stringify(packageJson, null, 2))
+
+            // Config files
+            await writeFileToSandbox(sandbox, `${projectDir}/tsconfig.json`, JSON.stringify({
+              compilerOptions: {
+                target: "ES2017",
+                lib: ["dom", "dom.iterable", "esnext"],
+                allowJs: true,
+                skipLibCheck: true,
+                strict: true,
+                noEmit: true,
+                esModuleInterop: true,
+                module: "esnext",
+                moduleResolution: "bundler",
+                resolveJsonModule: true,
+                isolatedModules: true,
+                jsx: "preserve",
+                incremental: true,
+                plugins: [{ name: "next" }],
+                paths: { "@/*": ["./*"] },
+              },
+              include: ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+              exclude: ["node_modules"],
+            }, null, 2))
+
+            await writeFileToSandbox(sandbox, `${projectDir}/next.config.mjs`,
+              `/** @type {import('next').NextConfig} */\nconst nextConfig = { reactStrictMode: true };\nexport default nextConfig;\n`)
+
+            await writeFileToSandbox(sandbox, `${projectDir}/tailwind.config.ts`,
+              `import type { Config } from "tailwindcss";\n\nconst config: Config = {\n  content: [\n    "./pages/**/*.{js,ts,jsx,tsx,mdx}",\n    "./components/**/*.{js,ts,jsx,tsx,mdx}",\n    "./app/**/*.{js,ts,jsx,tsx,mdx}",\n  ],\n  theme: { extend: {} },\n  plugins: [],\n};\n\nexport default config;\n`)
+
+            await writeFileToSandbox(sandbox, `${projectDir}/postcss.config.js`,
+              `module.exports = {\n  plugins: {\n    tailwindcss: {},\n    autoprefixer: {},\n  },\n};\n`)
+
+            await writeFileToSandbox(sandbox, `${projectDir}/app/globals.css`,
+              `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\nbody {\n  font-family: system-ui, -apple-system, sans-serif;\n}\n`)
+
+            await writeFileToSandbox(sandbox, `${projectDir}/app/layout.tsx`,
+              `import type { Metadata } from "next";\nimport "./globals.css";\n\nexport const metadata: Metadata = {\n  title: "${name}",\n  description: "${description}",\n};\n\nexport default function RootLayout({ children }: { children: React.ReactNode }) {\n  return (\n    <html lang="en">\n      <body>{children}</body>\n    </html>\n  );\n}\n`)
           }
 
           const appDir = await resolveAppDir()

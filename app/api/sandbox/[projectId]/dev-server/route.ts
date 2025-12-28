@@ -13,6 +13,7 @@ import {
   getHostUrl,
   startBackgroundProcess,
   killBackgroundProcess,
+  checkDevServerStatus,
 } from "@/lib/e2b/sandbox"
 
 export const maxDuration = 60
@@ -65,30 +66,11 @@ export async function GET(
       return NextResponse.json(status)
     }
 
-    // Quick port check - check multiple ports as Next.js may use 3001+ if 3000 is busy
-    let isRunning = false
-    let activePort = 3000
-    
-    // Use Promise.race to get first successful port check
-    const portChecks = [3000, 3001, 3002, 3003, 3004, 3005].map(async port => {
-      const statusCheck = await executeCommand(
-        sandbox,
-        `nc -z 127.0.0.1 ${port} && echo "UP" || echo "DOWN"`,
-        { timeoutMs: 2000 }
-      )
-      if (statusCheck.stdout.trim() === "UP") {
-        return { port, isUp: true }
-      }
-      return { port, isUp: false }
-    })
-    
-    const checkResults = await Promise.all(portChecks)
-    const upPort = checkResults.find(r => r.isUp)
-    
-    if (upPort) {
-      isRunning = true
-      activePort = upPort.port
-    }
+    // Check if server is responding using curl (more reliable than nc -z)
+    // This verifies the server can actually serve HTTP requests, not just that port is open
+    const serverStatus = await checkDevServerStatus(sandbox)
+    const isRunning = serverStatus.isRunning
+    const activePort = serverStatus.port || 3000
 
     // Only fetch logs if server is running and we need them for error checking
     let logs: string[] = []
@@ -123,7 +105,7 @@ export async function GET(
 
     return NextResponse.json(status)
   } catch (error) {
-    console.error("[dev-server GET] Error fetching status:", error)
+    // Silent error - don't log every failed status check
     
     // Return not running status on error
     const status: DevServerStatus = {
@@ -185,7 +167,10 @@ export async function POST(
       }
       console.log("[dev-server POST] Using sandbox:", sandbox.sandboxId)
 
-      const projectDir = `/home/user/${projectName}`
+      // When using E2B template, files are written to /home/user/project
+      // The template already has the dev server running there
+      const hasTemplate = !!process.env.E2B_TEMPLATE_ID
+      const projectDir = hasTemplate ? "/home/user/project" : `/home/user/${projectName}`
 
       // Check if project directory exists
       const checkDir = await executeCommand(
@@ -223,26 +208,10 @@ export async function POST(
         await new Promise(resolve => setTimeout(resolve, 500))
       }
 
-      // Quick check if server is already running on any of the fallback ports
-      let alreadyRunning = false
-      let existingPort = 3000
-
-      const portCheckPromises = [3000, 3001, 3002, 3003, 3004, 3005].map(async port => {
-        const quickCheck = await executeCommand(
-          sandbox,
-          `nc -z 127.0.0.1 ${port} && echo "UP" || echo "DOWN"`,
-          { timeoutMs: 2000 }
-        )
-        return { port, isUp: quickCheck.stdout.trim() === "UP" }
-      })
-
-      const portResults = await Promise.all(portCheckPromises)
-      const runningPort = portResults.find(r => r.isUp)
-      
-      if (runningPort) {
-        alreadyRunning = true
-        existingPort = runningPort.port
-      }
+      // Quick check if server is already running using HTTP status (more reliable)
+      const existingStatus = await checkDevServerStatus(sandbox)
+      const alreadyRunning = existingStatus.isRunning
+      const existingPort = existingStatus.port || 3000
 
       console.log(`[dev-server POST] Already running check: ${alreadyRunning} on port ${existingPort}`)
 
@@ -270,71 +239,84 @@ export async function POST(
       })
       console.log("[dev-server POST] Background process started")
 
-      // Fast wait - just wait for the server to bind to a port (15 seconds max)
-      const maxWaitMs = 15000
+      // Extended wait for server startup (30 seconds max to account for slower environments)
+      const maxWaitMs = 30000
       const pollInterval = 1000
       const maxPolls = Math.ceil(maxWaitMs / pollInterval)
-      
+
       let serverReady = false
       let actualPort = 3000
 
-      console.log("[dev-server POST] Polling for server readiness...")
+      console.log("[dev-server POST] Polling for server readiness (max 30s)...")
       for (let i = 0; i < maxPolls; i++) {
         await new Promise(resolve => setTimeout(resolve, pollInterval))
 
-        // Check ports in parallel for faster detection
-        const portCheckPromises = [3000, 3001, 3002, 3003, 3004, 3005].map(async port => {
-          const check = await executeCommand(
-            sandbox,
-            `nc -z 127.0.0.1 ${port} && echo "UP" || echo "DOWN"`,
-            { timeoutMs: 2000 }
-          )
-          return { port, isUp: check.stdout.trim() === "UP" }
-        })
-
-        const results = await Promise.all(portCheckPromises)
-        const upPort = results.find(r => r.isUp)
-
-        if (upPort) {
-          console.log(`[dev-server POST] Port ${upPort.port} is UP`)
-          serverReady = true
-          actualPort = upPort.port
-          break
-        }
-
-        // Check logs for the actual port (Next.js logs "Local: http://localhost:XXXX")
+        // Check for port in logs first (Next.js logs the port it binds to)
         const logCheck = await executeCommand(
           sandbox,
-          `grep -o "Local:.*http://localhost:[0-9]*" /tmp/server.log 2>/dev/null | tail -1 | grep -o "[0-9]*$" || echo ""`,
+          `grep -oE "http://localhost:[0-9]+" /tmp/server.log 2>/dev/null | tail -1 | grep -oE "[0-9]+$" || echo ""`,
           { timeoutMs: 2000 }
         )
         const logPort = parseInt(logCheck.stdout.trim(), 10)
+
         if (logPort > 0) {
-          // Verify this port is actually listening
-          const portCheck = await executeCommand(
+          console.log(`[dev-server POST] Found port ${logPort} in logs, verifying with HTTP check...`)
+          // Use curl to verify server is actually responding (not just port open)
+          const httpCheck = await executeCommand(
             sandbox,
-            `nc -z 127.0.0.1 ${logPort} && echo "UP" || echo "DOWN"`,
-            { timeoutMs: 2000 }
+            `curl -s -o /dev/null -w '%{http_code}' http://localhost:${logPort} 2>/dev/null || echo "000"`,
+            { timeoutMs: 5000 }
           )
-          if (portCheck.stdout.trim() === "UP") {
+          const httpCode = httpCheck.stdout.trim()
+          if (httpCode.startsWith('2') || httpCode.startsWith('3')) {
+            console.log(`[dev-server POST] Server responding on port ${logPort} with HTTP ${httpCode}`)
             serverReady = true
             actualPort = logPort
             break
           }
         }
+
+        // Fallback: Check all possible ports using HTTP status
+        const portStatus = await checkDevServerStatus(sandbox)
+        if (portStatus.isRunning && portStatus.port) {
+          console.log(`[dev-server POST] Server responding on port ${portStatus.port} with HTTP ${portStatus.httpCode}`)
+          serverReady = true
+          actualPort = portStatus.port
+          break
+        }
+
+        // Log progress every 5 seconds
+        if ((i + 1) % 5 === 0) {
+          const elapsed = (i + 1) * pollInterval / 1000
+          console.log(`[dev-server POST] Still waiting... ${elapsed}s elapsed`)
+
+          // Check for errors in logs
+          const errorCheck = await executeCommand(
+            sandbox,
+            `tail -n 15 /tmp/server.log 2>/dev/null | grep -iE "error|failed|EADDRINUSE" || echo ""`,
+            { timeoutMs: 2000 }
+          )
+          if (errorCheck.stdout.trim()) {
+            console.warn(`[dev-server POST] Potential issues in logs:`, errorCheck.stdout.trim())
+          }
+        }
       }
 
       if (!serverReady) {
-        // Get logs for debugging
+        // Get comprehensive logs for debugging
         const logsResult = await executeCommand(
           sandbox, 
-          `tail -n 30 /tmp/server.log 2>/dev/null || echo "No logs"`, 
+          `tail -n 50 /tmp/server.log 2>/dev/null || echo "No logs available"`, 
           { timeoutMs: 3000 }
         )
+        
+        console.error("[dev-server POST] Server failed to start, logs:", logsResult.stdout)
+        
         return NextResponse.json(
           { 
-            error: "Dev server failed to start within timeout",
+            error: "Dev server failed to start within 30 seconds. The server may still be starting up in the background.",
             logs: logsResult.stdout,
+            hint: "Try refreshing the page in a few seconds, or check the server logs for errors."
           },
           { status: 500 }
         )
@@ -344,6 +326,8 @@ export async function POST(
 
       // Clear cache
       statusCache.delete(projectId)
+
+      console.log(`[dev-server POST] Server ready at ${url} on port ${actualPort}`)
 
       return NextResponse.json({
         success: true,

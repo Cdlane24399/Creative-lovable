@@ -156,13 +156,14 @@ Data: Table, Avatar, Calendar, Carousel
 ### For New Projects:
 1. **Understand**: Parse the request for features, pages, and interactions needed
 2. **Plan**: Mentally map out file structure and components
-3. **Build**: Use \`createWebsite\` with complete initial structure including:
+3. **Name**: Choose a descriptive project name based on the user's request (e.g., "coffee-shop-landing", "portfolio-site", "fitness-tracker"). NEVER use generic names like "project" or "my-app".
+4. **Build**: Use \`createWebsite\` with complete initial structure including:
    - Root layout with proper providers
    - Multiple pages if applicable
    - Component folders with initial components
    - All interactive elements wired up
-4. **Polish**: Add animations, loading states, and micro-interactions
-5. **Verify**: Check build status and fix any issues
+5. **Polish**: Add animations, loading states, and micro-interactions
+6. **Verify**: Check build status and fix any issues
 
 ### For Modifications:
 1. Use \`editFile\` for targeted changes

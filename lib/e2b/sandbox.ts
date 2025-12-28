@@ -950,6 +950,90 @@ export function getHostUrl(sandbox: Sandbox, port: number = 3000): string {
 }
 
 /**
+ * Wait for a dev server to be ready by polling HTTP status.
+ * Uses curl to verify the server is actually responding to HTTP requests.
+ * This is more reliable than just checking if the port is open.
+ *
+ * @param sandbox - The E2B sandbox instance
+ * @param port - Port to check (default: 3000)
+ * @param maxWaitMs - Maximum time to wait in ms (default: 30000)
+ * @param pollInterval - Time between polls in ms (default: 1000)
+ * @returns Object with success status and optional error
+ */
+export async function waitForDevServer(
+  sandbox: Sandbox | CodeInterpreter,
+  port: number = 3000,
+  maxWaitMs: number = 30000,
+  pollInterval: number = 1000
+): Promise<{ success: boolean; port: number; error?: string }> {
+  const startTime = Date.now()
+
+  while (Date.now() - startTime < maxWaitMs) {
+    try {
+      // Use curl to check HTTP response - more reliable than nc -z
+      const result = await sandbox.commands.run(
+        `curl -s -o /dev/null -w '%{http_code}' http://localhost:${port} 2>/dev/null || echo "000"`,
+        { timeoutMs: 5000 }
+      )
+      const httpCode = result.stdout.trim()
+
+      // 200, 304, or any 2xx/3xx response means server is ready
+      if (httpCode.startsWith('2') || httpCode.startsWith('3')) {
+        console.log(`[waitForDevServer] Server ready on port ${port} (HTTP ${httpCode})`)
+        return { success: true, port }
+      }
+    } catch {
+      // Ignore errors during polling, keep trying
+    }
+
+    await new Promise(resolve => setTimeout(resolve, pollInterval))
+  }
+
+  return {
+    success: false,
+    port,
+    error: `Dev server did not respond on port ${port} within ${maxWaitMs / 1000}s`,
+  }
+}
+
+/**
+ * Check if a dev server is running and responding on any of the common ports.
+ * Uses curl for HTTP-level verification.
+ *
+ * @param sandbox - The E2B sandbox instance
+ * @param ports - Ports to check (default: [3000, 3001, 3002, 3003, 3004, 3005])
+ * @returns Object with running status and active port
+ */
+export async function checkDevServerStatus(
+  sandbox: Sandbox | CodeInterpreter,
+  ports: number[] = [3000, 3001, 3002, 3003, 3004, 3005]
+): Promise<{ isRunning: boolean; port: number | null; httpCode?: string }> {
+  // Check all ports in parallel
+  const checks = await Promise.all(
+    ports.map(async port => {
+      try {
+        const result = await sandbox.commands.run(
+          `curl -s -o /dev/null -w '%{http_code}' http://localhost:${port} 2>/dev/null || echo "000"`,
+          { timeoutMs: 3000 }
+        )
+        const httpCode = result.stdout.trim()
+        const isUp = httpCode.startsWith('2') || httpCode.startsWith('3')
+        return { port, isUp, httpCode }
+      } catch {
+        return { port, isUp: false, httpCode: "000" }
+      }
+    })
+  )
+
+  const activePort = checks.find(c => c.isUp)
+  return {
+    isRunning: !!activePort,
+    port: activePort?.port || null,
+    httpCode: activePort?.httpCode,
+  }
+}
+
+/**
  * Start a background process (like a dev server) in the sandbox.
  * Uses E2B SDK v2 native `background: true` API for better process control.
  * Returns immediately without waiting for the process to complete.
