@@ -70,7 +70,8 @@ export async function POST(req: Request) {
       messages: modelMessages,
       tools,
       abortSignal: req.signal,
-      stopWhen: stepCountIs(15), // Max steps for agentic workflows
+      // Removed step limit - let the agent run as long as needed
+      // stopWhen: stepCountIs(15),
 
       // AI SDK v6: onStepFinish callback for step tracking
       onStepFinish: async ({ text, toolCalls, toolResults, finishReason, usage }) => {
