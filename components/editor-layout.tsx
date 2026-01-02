@@ -432,6 +432,10 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
         hasUnsavedChanges={hasUnsavedChanges}
         onSave={saveProject}
         sandboxUrl={sandboxUrl}
+        currentView={currentView}
+        onViewChange={setCurrentView}
+        isRefreshing={isPreviewLoading || isDevServerStarting}
+        onRefresh={handleRefresh}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -457,6 +461,7 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
             sandboxUrl={sandboxUrl}
             isLoading={isPreviewLoading || isDevServerStarting}
             project={project}
+            currentView={currentView}
           />
         </div>
       </div>
