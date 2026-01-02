@@ -162,10 +162,10 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
           setPendingSandboxId(data.sandboxId)
         }
         
-        // Trigger dev server start
-        if (project?.name) {
-          setPendingServerStart(project.name)
-        }
+        // Trigger dev server start - use project name or projectId as fallback
+        const serverName = project?.name || projectId
+        console.log("[EditorLayout] Starting dev server for restored sandbox:", serverName)
+        setPendingServerStart(serverName)
       } else if (response.status === 422) {
         // No files to restore - this is a project without saved files
         console.log("[EditorLayout] No files to restore for this project")
@@ -186,8 +186,7 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
     // 1. We have a project (loaded from DB)
     // 2. No sandbox URL is currently active
     // 3. Not a new project (no initialPrompt)
-    // 4. Project was previously active (has a name that's not Untitled)
-    if (project && !sandboxUrl && !initialPrompt && project.name !== "Untitled Project") {
+    if (project && !sandboxUrl && !initialPrompt) {
       // Wait a bit for the project data to fully load
       const timer = setTimeout(restoreSandbox, 500)
       return () => clearTimeout(timer)

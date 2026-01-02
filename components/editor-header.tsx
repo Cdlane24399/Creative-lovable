@@ -123,9 +123,6 @@ export function EditorHeader({
             Preview
           </button>
 
-          {/* Divider */}
-          <div className="h-5 w-px bg-zinc-700/50 mx-1" />
-
           {/* Icon toggles */}
           <button
             onClick={() => onViewChange?.("code")}
@@ -152,9 +149,6 @@ export function EditorHeader({
           >
             <BarChart3 className="h-4 w-4" />
           </button>
-
-          {/* Divider */}
-          <div className="h-5 w-px bg-zinc-700/50 mx-1" />
 
           {/* Add button */}
           <button

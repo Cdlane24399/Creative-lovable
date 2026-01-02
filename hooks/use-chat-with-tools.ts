@@ -4,7 +4,7 @@ import { useMemo, useCallback, useEffect, useRef } from "react"
 import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
 import type { ChatMessage } from "@/app/api/chat/route"
-import type { Message } from "@/lib/db/types"
+import type { Message, MessagePart } from "@/lib/db/types"
 
 // Progress state for a single tool call (for future use with data streaming)
 export interface ToolProgress {
@@ -24,6 +24,8 @@ interface UseChatWithToolsOptions {
   onError?: (error: Error) => void
   /** Initial messages to restore from database */
   initialMessages?: Message[]
+  /** Called when messages should be saved */
+  onMessagesSaved?: () => void
 }
 
 /**
@@ -49,10 +51,15 @@ function convertDbMessagesToAiMessages(dbMessages: Message[]): ChatMessage[] {
  * - Project context tracking via projectId
  * - Convenient status helpers for UI state management
  * - Initial message restoration from database
+ * - Auto-save of messages after AI responses
  */
-export function useChatWithTools({ projectId, model = "anthropic", onError, initialMessages }: UseChatWithToolsOptions = {}) {
+export function useChatWithTools({ projectId, model = "anthropic", onError, initialMessages, onMessagesSaved }: UseChatWithToolsOptions = {}) {
   // Track if we've initialized with messages
   const hasInitializedRef = useRef(false)
+  // Track last saved message count to avoid duplicate saves
+  const lastSavedCountRef = useRef(0)
+  // Track if we're currently saving
+  const isSavingRef = useRef(false)
   
   // Convert initial messages to AI SDK format
   const convertedInitialMessages = useMemo(() => {
@@ -96,6 +103,69 @@ export function useChatWithTools({ projectId, model = "anthropic", onError, init
       (part.state === "input-streaming" || part.state === "input-available")
   )
 
+  // Save messages to database
+  const saveMessages = useCallback(async () => {
+    if (!projectId || chat.messages.length === 0) return
+    if (isSavingRef.current) return
+    if (chat.messages.length === lastSavedCountRef.current) return
+
+    isSavingRef.current = true
+    
+    try {
+      // Convert messages to the format expected by the API
+      const messagesToSave = chat.messages.map((msg) => {
+        // Extract text content from parts
+        const textContent = msg.parts
+          ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
+          .map((p) => p.text)
+          .join("") || ""
+
+        return {
+          id: msg.id,
+          role: msg.role as "user" | "assistant" | "system",
+          content: textContent,
+          parts: msg.parts as MessagePart[],
+        }
+      })
+
+      const response = await fetch(`/api/projects/${projectId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(messagesToSave),
+      })
+
+      if (response.ok) {
+        lastSavedCountRef.current = chat.messages.length
+        console.log(`[useChatWithTools] Saved ${messagesToSave.length} messages for project ${projectId}`)
+        onMessagesSaved?.()
+      } else {
+        console.error("[useChatWithTools] Failed to save messages:", await response.text())
+      }
+    } catch (error) {
+      console.error("[useChatWithTools] Error saving messages:", error)
+    } finally {
+      isSavingRef.current = false
+    }
+  }, [projectId, chat.messages, onMessagesSaved])
+
+  // Auto-save messages when AI stops working (status becomes 'ready')
+  const prevStatusRef = useRef(chat.status)
+  useEffect(() => {
+    const wasWorking = prevStatusRef.current === "submitted" || prevStatusRef.current === "streaming"
+    const isNowReady = chat.status === "ready"
+    
+    // Save when transitioning from working to ready
+    if (wasWorking && isNowReady && chat.messages.length > 0) {
+      // Small delay to ensure all state updates are complete
+      const timer = setTimeout(() => {
+        saveMessages()
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+    
+    prevStatusRef.current = chat.status
+  }, [chat.status, chat.messages.length, saveMessages])
+
   return {
     ...chat,
     // Helper to check if AI is currently working
@@ -111,5 +181,7 @@ export function useChatWithTools({ projectId, model = "anthropic", onError, init
     getToolProgress,
     // Flag to check if chat was restored from history
     hasRestoredHistory: convertedInitialMessages !== undefined && convertedInitialMessages.length > 0,
+    // Manual save function (auto-save happens automatically)
+    saveMessages,
   }
 }
