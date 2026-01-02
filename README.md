@@ -84,7 +84,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 Create a `.env.local` file with the following:
 
-\`\`\`env
+```env
 # Required: E2B API Key (get at https://e2b.dev)
 E2B_API_KEY=your_e2b_api_key
 
@@ -97,10 +97,18 @@ ANTHROPIC_API_KEY=your_anthropic_key
 OPENAI_API_KEY=your_openai_key
 GOOGLE_GENERATIVE_AI_API_KEY=your_google_key
 
-# Optional: Supabase for persistence
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-\`\`\`
+# Required: Neon Database
+NEON_DATABASE_URL=your_neon_database_url
+# or
+DATABASE_URL=your_database_url
+
+# Optional: Vercel KV for caching
+KV_REST_API_URL=your_kv_url
+KV_REST_API_TOKEN=your_kv_token
+
+# Optional: API authentication
+API_KEY=your_api_key
+```
 
 ---
 
@@ -166,37 +174,90 @@ The AI assistant has access to these tools:
 
 ## 🏗️ Architecture
 
-\`\`\`
+```
 Creative-lovable/
 ├── app/
-│   ├── api/chat/route.ts         # AI chat API with tool definitions
-│   ├── layout.tsx                # Root layout
-│   └── page.tsx                  # Landing page
+│   ├── api/
+│   │   ├── chat/route.ts           # AI chat with streaming & tools
+│   │   ├── projects/               # Project CRUD API
+│   │   │   ├── route.ts            # List/create projects
+│   │   │   └── [id]/
+│   │   │       ├── route.ts        # Get/update/delete project
+│   │   │       ├── messages/       # Message persistence
+│   │   │       └── screenshot/     # Screenshot saves
+│   │   └── sandbox/                # Sandbox dev server API
+│   ├── layout.tsx                  # Root layout
+│   └── page.tsx                    # Landing page
 ├── components/
-│   ├── chat-panel.tsx            # Chat interface
-│   ├── editor-layout.tsx         # Main editor layout
-│   ├── preview-panel.tsx         # Website preview iframe
-│   └── ui/                       # shadcn/ui components
+│   ├── chat-panel.tsx              # Chat interface
+│   ├── editor-layout.tsx           # Main editor layout
+│   ├── preview-panel.tsx           # Website preview iframe
+│   └── ui/                         # shadcn/ui components
 ├── lib/
 │   ├── ai/
-│   │   ├── agent.ts              # System prompt & model config
-│   │   └── tools.ts              # Tool definitions (deprecated)
+│   │   ├── agent.ts                # System prompt & model config
+│   │   ├── agent-context.ts        # Context management (write-through)
+│   │   ├── context-types.ts        # Type definitions
+│   │   ├── web-builder-agent.ts    # Context-aware tools
+│   │   ├── planning/               # TaskGraph planning system
+│   │   └── tools/                  # Tool exports
+│   ├── db/
+│   │   ├── neon.ts                 # Database connection
+│   │   ├── types.ts                # Database types
+│   │   └── repositories/           # Data access layer
+│   │       ├── base.repository.ts
+│   │       ├── project.repository.ts
+│   │       ├── message.repository.ts
+│   │       └── context.repository.ts
+│   ├── services/                   # Business logic layer
+│   │   ├── project.service.ts
+│   │   ├── message.service.ts
+│   │   └── context.service.ts
+│   ├── cache/                      # Unified cache management
+│   │   └── cache-manager.ts
 │   ├── e2b/
-│   │   ├── sandbox.ts            # E2B sandbox management
-│   │   └── templates/            # Custom template definitions
-│   └── supabase/                 # Supabase client setup
-├── IMPLEMENTATION_PLAN.md        # Original implementation plan
-├── IMPLEMENTATION_SUMMARY.md     # What was implemented
-└── README.md                     # This file
-\`\`\`
+│   │   ├── sandbox.ts              # E2B sandbox management
+│   │   ├── sandbox-state-machine.ts # Sandbox lifecycle
+│   │   └── templates/              # Custom template definitions
+│   ├── errors.ts                   # Error handling
+│   ├── auth.ts                     # Authentication
+│   └── rate-limit.ts               # Rate limiting
+├── hooks/                          # React hooks
+└── README.md                       # This file
+```
+
+### Layer Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      API Routes Layer                        │
+│  (Thin controllers with validation & error handling)        │
+├─────────────────────────────────────────────────────────────┤
+│                     Services Layer                           │
+│  ProjectService | MessageService | ContextService            │
+│  (Business logic, caching, cross-entity coordination)       │
+├─────────────────────────────────────────────────────────────┤
+│                   Repository Layer                           │
+│  ProjectRepository | MessageRepository | ContextRepository   │
+│  (Database operations, type-safe queries)                   │
+├─────────────────────────────────────────────────────────────┤
+│                    Cache Manager                             │
+│  (Unified cache with event emission & health checks)        │
+├─────────────────────────────────────────────────────────────┤
+│                   Agent Context                              │
+│  (Write-through caching, TaskGraph planning)                │
+├─────────────────────────────────────────────────────────────┤
+│                 Sandbox State Machine                        │
+│  (Formal lifecycle: idle→creating→active→paused→expired)   │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## 📚 Documentation
 
-- **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)** - Detailed feature documentation
-- **[Implementation Plan](IMPLEMENTATION_PLAN.md)** - Original technical plan
 - **[E2B Template Setup](lib/e2b/templates/README.md)** - Custom template guide
+- **[CLAUDE.md](CLAUDE.md)** - Project documentation for AI assistants
 
 ---
 

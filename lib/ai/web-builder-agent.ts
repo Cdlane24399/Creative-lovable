@@ -43,6 +43,7 @@ import {
   readFile as readFileFromSandbox,
   executeCommand,
   directoryExists,
+  saveFilesSnapshot,
   type CodeLanguage,
 } from "@/lib/e2b/sandbox"
 
@@ -238,7 +239,8 @@ const pageSchema = z.object({
   path: z
     .string()
     .min(1)
-    .describe("Page path relative to app directory (e.g., 'page.tsx', 'about/page.tsx')"),
+    .refine((p) => !p.includes(".."), "Page path cannot contain '..' - use the 'components' array for components")
+    .describe("Page path relative to app directory (e.g., 'page.tsx', 'about/page.tsx'). Do NOT use '../' paths - components belong in the 'components' array."),
   content: z.string().min(1).describe("Full React/Next.js page component code"),
   action: z
     .enum(["create", "update", "delete"])
@@ -1139,6 +1141,28 @@ export function createContextAwareTools(projectId: string) {
 
           // Update context with project info
           setProjectInfo(projectId, { projectName: name, projectDir, sandboxId: sandbox.sandboxId })
+
+          // Save files snapshot for restoration after sandbox expiration
+          const context = ctx()
+          const filesSnapshot: Record<string, string> = {}
+          const dependenciesSnapshot: Record<string, string> = {}
+          
+          // Collect all file contents from context for snapshot
+          for (const [filePath, fileInfo] of context.files.entries()) {
+            if (fileInfo.content) {
+              filesSnapshot[filePath] = fileInfo.content
+            }
+          }
+          
+          // Collect dependencies from context
+          for (const [pkg, version] of context.dependencies.entries()) {
+            dependenciesSnapshot[pkg] = version
+          }
+          
+          // Save snapshot to database asynchronously (don't block)
+          saveFilesSnapshot(projectId, filesSnapshot, dependenciesSnapshot).catch((err) => {
+            console.warn("[createWebsite] Failed to save files snapshot:", err)
+          })
 
           recordToolExecution(
             projectId,

@@ -2,12 +2,12 @@
 
 import type React from "react"
 import { useState, useRef, useEffect } from "react"
-import { ArrowUp, AudioLines, ChevronDown, X, Sparkles, Zap, Code2, Wand2, Loader2 } from "lucide-react"
+import { ArrowUp, AudioLines, Sparkles, Zap, Code2, Wand2, Loader2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { MODEL_DISPLAY_NAMES, type ModelProvider } from "@/lib/ai/agent"
 import { cn } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
+import { ModelSelector } from "@/components/shared/model-selector"
 
 const AnthropicIcon = ({ className }: { className?: string }) => (
   <svg role="img" viewBox="0 0 24 24" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
@@ -247,100 +247,12 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
 
             <div className="flex items-center justify-between mt-3 pt-3">
               <div className="flex items-center gap-2">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-9 gap-2 rounded-xl px-3 text-zinc-400 hover:bg-white/10 hover:text-zinc-200 transition-colors border border-transparent hover:border-white/5"
-                    >
-                      {selectedModel === "anthropic" && <AnthropicIcon className="h-4 w-4" />}
-                      {selectedModel === "sonnet" && <AnthropicIcon className="h-4 w-4" />}
-                      {(selectedModel === "google" || selectedModel === "googleFlash") && <GoogleIcon className="h-4 w-4" />}
-                      {selectedModel === "openai" && <OpenAIIcon className="h-4 w-4" />}
-                      <span className="text-sm hidden sm:inline">{MODEL_DISPLAY_NAMES[selectedModel]}</span>
-                      <ChevronDown className="h-3 w-3 opacity-50" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="bg-[#18181B] border-zinc-800 w-56 shadow-xl">
-                    <DropdownMenuItem
-                      onClick={() => setSelectedModel("anthropic")}
-                      className={cn(
-                        "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer py-2.5 focus:bg-zinc-800 focus:text-zinc-100",
-                        selectedModel === "anthropic" && "bg-zinc-800 text-zinc-100",
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <AnthropicIcon className="h-5 w-5" />
-                        <div>
-                          <div className="font-medium">{MODEL_DISPLAY_NAMES.anthropic}</div>
-                          <div className="text-xs text-zinc-500">Latest & most capable</div>
-                        </div>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setSelectedModel("sonnet")}
-                      className={cn(
-                        "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer py-2.5 focus:bg-zinc-800 focus:text-zinc-100",
-                        selectedModel === "sonnet" && "bg-zinc-800 text-zinc-100",
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <AnthropicIcon className="h-5 w-5" />
-                        <div>
-                          <div className="font-medium">{MODEL_DISPLAY_NAMES.sonnet}</div>
-                          <div className="text-xs text-zinc-500">Fast & reliable</div>
-                        </div>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setSelectedModel("google")}
-                      className={cn(
-                        "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer py-2.5 focus:bg-zinc-800 focus:text-zinc-100",
-                        selectedModel === "google" && "bg-zinc-800 text-zinc-100",
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <GoogleIcon className="h-5 w-5" />
-                        <div>
-                          <div className="font-medium">{MODEL_DISPLAY_NAMES.google}</div>
-                          <div className="text-xs text-zinc-500">Great for creativity</div>
-                        </div>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setSelectedModel("googleFlash")}
-                      className={cn(
-                        "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer py-2.5 focus:bg-zinc-800 focus:text-zinc-100",
-                        selectedModel === "googleFlash" && "bg-zinc-800 text-zinc-100",
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <GoogleIcon className="h-5 w-5" />
-                        <div>
-                          <div className="font-medium">{MODEL_DISPLAY_NAMES.googleFlash}</div>
-                          <div className="text-xs text-zinc-500">Fast & versatile</div>
-                        </div>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setSelectedModel("openai")}
-                      className={cn(
-                        "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer py-2.5 focus:bg-zinc-800 focus:text-zinc-100",
-                        selectedModel === "openai" && "bg-zinc-800 text-zinc-100",
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <OpenAIIcon className="h-5 w-5" />
-                        <div>
-                          <div className="font-medium">{MODEL_DISPLAY_NAMES.openai}</div>
-                          <div className="text-xs text-zinc-500">Fast & reliable</div>
-                        </div>
-                      </div>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <ModelSelector
+                  selectedModel={selectedModel}
+                  onModelChange={setSelectedModel}
+                  showDescriptions={true}
+                  disabled={isImproving}
+                />
 
                 {/* Improve Prompt Button */}
                 <Button

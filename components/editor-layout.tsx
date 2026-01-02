@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import { ChatPanel, ChatPanelHandle } from "./chat-panel"
 import { PreviewPanel, PreviewPanelHandle } from "./preview-panel"
-import { EditorHeader } from "./editor-header"
+import { EditorHeader, type EditorView } from "./editor-header"
 import { useProject } from "@/hooks/use-projects"
 import { useDevServer } from "@/hooks/use-dev-server"
 import { generatePlaceholderImage } from "@/lib/utils/screenshot"
@@ -18,6 +18,7 @@ interface EditorLayoutProps {
 }
 
 export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initialModel }: EditorLayoutProps) {
+  const [currentView, setCurrentView] = useState<EditorView>("preview")
   const [previewContent, setPreviewContent] = useState<string | null>(null)
   const [isPreviewLoading, setIsPreviewLoading] = useState(false)
   const [projectName, setProjectName] = useState<string>("Untitled Project")
@@ -30,6 +31,7 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const lastSavedUrlRef = useRef<string | null>(null)
   const urlUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const titleGeneratedRef = useRef(false)
 
   // Debug: Log sandboxUrl state changes
   useEffect(() => {
@@ -37,7 +39,7 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
   }, [sandboxUrl])
 
   // Load existing project data
-  const { project, isLoading: isProjectLoading, updateProject, saveScreenshot } = useProject(projectId || null)
+  const { project, messages: savedMessages, isLoading: isProjectLoading, updateProject, saveScreenshot } = useProject(projectId || null)
 
   // Dev server management - only enable polling when actively starting a server
   const [isPollingEnabled, setIsPollingEnabled] = useState(false)
@@ -121,6 +123,10 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
   useEffect(() => {
     if (project) {
       setProjectName(project.name)
+      // Mark title as already generated if project has a non-default name
+      if (project.name && project.name !== "Untitled Project") {
+        titleGeneratedRef.current = true
+      }
       if (project.sandbox_url) {
         lastSavedUrlRef.current = project.sandbox_url
         // Restore the sandbox URL from saved project
@@ -129,6 +135,101 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
       }
     }
   }, [project])
+
+  // Track restoration attempts
+  const restorationAttemptedRef = useRef(false)
+
+  // Restore sandbox when opening an existing project without a working preview
+  const restoreSandbox = useCallback(async () => {
+    if (!projectId || restorationAttemptedRef.current) return
+    if (initialPrompt) return // New project, don't try to restore
+
+    restorationAttemptedRef.current = true
+    console.log("[EditorLayout] Attempting to restore project sandbox...")
+    setIsPreviewLoading(true)
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/restore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log("[EditorLayout] Sandbox restored:", data)
+        
+        if (data.sandboxId) {
+          setPendingSandboxId(data.sandboxId)
+        }
+        
+        // Trigger dev server start
+        if (project?.name) {
+          setPendingServerStart(project.name)
+        }
+      } else if (response.status === 422) {
+        // No files to restore - this is a project without saved files
+        console.log("[EditorLayout] No files to restore for this project")
+        setIsPreviewLoading(false)
+      } else {
+        console.warn("[EditorLayout] Failed to restore sandbox:", await response.text())
+        setIsPreviewLoading(false)
+      }
+    } catch (error) {
+      console.error("[EditorLayout] Error restoring sandbox:", error)
+      setIsPreviewLoading(false)
+    }
+  }, [projectId, initialPrompt, project?.name])
+
+  // Trigger restoration when opening an existing project
+  useEffect(() => {
+    // Only try to restore if:
+    // 1. We have a project (loaded from DB)
+    // 2. No sandbox URL is currently active
+    // 3. Not a new project (no initialPrompt)
+    // 4. Project was previously active (has a name that's not Untitled)
+    if (project && !sandboxUrl && !initialPrompt && project.name !== "Untitled Project") {
+      // Wait a bit for the project data to fully load
+      const timer = setTimeout(restoreSandbox, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [project, sandboxUrl, initialPrompt, restoreSandbox])
+
+  // Auto-generate project title when sandbox is ready
+  const generateProjectTitle = useCallback(async () => {
+    if (!initialPrompt || !projectId) return
+    if (titleGeneratedRef.current) return
+    if (projectName !== "Untitled Project" && projectName !== projectId) return
+
+    titleGeneratedRef.current = true
+    console.log("[EditorLayout] Generating project title...")
+
+    try {
+      const response = await fetch("/api/generate-title", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: initialPrompt, projectId }),
+      })
+
+      if (response.ok) {
+        const { title } = await response.json()
+        if (title) {
+          console.log("[EditorLayout] Generated title:", title)
+          setProjectName(title)
+        }
+      }
+    } catch (error) {
+      console.error("Failed to generate title:", error)
+    }
+  }, [initialPrompt, projectId, projectName])
+
+  // Trigger title generation when sandbox URL becomes available
+  useEffect(() => {
+    if (sandboxUrl && initialPrompt && !titleGeneratedRef.current) {
+      // Small delay to ensure project exists in DB first
+      const timer = setTimeout(generateProjectTitle, 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [sandboxUrl, initialPrompt, generateProjectTitle])
 
   // Auto-save project when sandbox URL changes
   useEffect(() => {
@@ -190,9 +291,8 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
           lastSavedUrlRef.current = sandboxUrl
           setHasUnsavedChanges(false)
 
-          // Generate and save a placeholder screenshot
-          const placeholder = generatePlaceholderImage(newProject.name)
-          await saveScreenshot(placeholder, sandboxUrl)
+          // Capture and save a screenshot
+          captureAndSaveScreenshot(newProject.name, sandboxUrl)
         }
       } else if (response.ok) {
         // Update existing project
@@ -202,14 +302,37 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
         lastSavedUrlRef.current = sandboxUrl
         setHasUnsavedChanges(false)
 
-        // Update screenshot with placeholder
-        const placeholder = generatePlaceholderImage(projectName)
-        await saveScreenshot(placeholder, sandboxUrl)
+        // Capture and save a screenshot
+        captureAndSaveScreenshot(projectName, sandboxUrl)
       }
     } catch (error) {
       console.error("Failed to save project:", error)
     }
-  }, [projectId, sandboxUrl, projectName, initialPrompt, updateProject, saveScreenshot])
+  }, [projectId, sandboxUrl, projectName, initialPrompt, updateProject])
+
+  // Capture screenshot from sandbox URL using the screenshot API
+  const captureAndSaveScreenshot = useCallback(async (name: string, url: string) => {
+    try {
+      const response = await fetch("/api/screenshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, projectName: name }),
+      })
+
+      if (response.ok) {
+        const { screenshot_base64 } = await response.json()
+        if (screenshot_base64) {
+          await saveScreenshot(screenshot_base64, url)
+          console.log("[EditorLayout] Screenshot saved for", name)
+        }
+      }
+    } catch (error) {
+      // Fall back to placeholder on error
+      console.warn("Screenshot capture failed, using placeholder:", error)
+      const placeholder = generatePlaceholderImage(name)
+      await saveScreenshot(placeholder, url)
+    }
+  }, [saveScreenshot])
 
   // Extract project name from prompt
   const extractProjectName = (prompt: string | null | undefined): string => {
@@ -305,12 +428,10 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
       {/* Header */}
       <EditorHeader
         onNavigateHome={onNavigateHome}
-        sandboxUrl={sandboxUrl}
-        onRefresh={handleRefresh}
-        isPreviewLoading={isPreviewLoading}
         projectName={projectName}
         hasUnsavedChanges={hasUnsavedChanges}
         onSave={saveProject}
+        sandboxUrl={sandboxUrl}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -324,6 +445,7 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
             onFilesReady={handleFilesReady}
             initialPrompt={initialPrompt}
             initialModel={initialModel}
+            savedMessages={savedMessages}
           />
         </div>
 
@@ -334,6 +456,7 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
             content={previewContent} 
             sandboxUrl={sandboxUrl}
             isLoading={isPreviewLoading || isDevServerStarting}
+            project={project}
           />
         </div>
       </div>

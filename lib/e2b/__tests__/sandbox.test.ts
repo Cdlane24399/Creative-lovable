@@ -15,6 +15,14 @@ import {
   readFile,
 } from "../sandbox"
 
+// Check if e2b is available
+let e2bAvailable = true
+try {
+  require("e2b")
+} catch {
+  e2bAvailable = false
+}
+
 // Simple test runner
 const tests: Array<{ name: string; fn: () => Promise<void> }> = []
 let passed = 0
@@ -47,6 +55,11 @@ async function runTests() {
 // Check for E2B_API_KEY
 if (!process.env.E2B_API_KEY) {
   console.error("❌ E2B_API_KEY environment variable is required")
+  process.exit(1)
+}
+
+if (!e2bAvailable) {
+  console.error("❌ E2B SDK not available")
   process.exit(1)
 }
 

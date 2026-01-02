@@ -46,7 +46,7 @@ export function ToolProgressIndicator({ toolName, progress, className }: ToolPro
   // Determine current phase index
   const currentPhaseIndex = useMemo(() => {
     if (!progress) return 0
-    return phases.indexOf(progress.phase)
+    return phases.indexOf(progress.phase as ToolProgressPhase)
   }, [phases, progress])
 
   // Calculate overall progress percentage

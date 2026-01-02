@@ -16,8 +16,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useChatWithTools } from "@/hooks/use-chat-with-tools"
 import { cn } from "@/lib/utils"
 import { MODEL_DISPLAY_NAMES, type ModelProvider } from "@/lib/ai/agent"
-import { ChatMarkdown, ToolCallsGroup, StreamingStatus, ChatError, ChatEmptyState } from "@/components/chat"
+import { ChatMarkdown, ToolCallsGroup, ChatError, ChatEmptyState } from "@/components/chat"
 import { motion, AnimatePresence } from "framer-motion"
+import type { Message } from "@/lib/db/types"
 
 // Exported handle type for programmatic control
 export interface ChatPanelHandle {
@@ -79,10 +80,12 @@ interface ChatPanelProps {
   onFilesReady?: (projectName: string, sandboxId?: string) => void
   initialPrompt?: string | null
   initialModel?: ModelProvider
+  /** Messages loaded from database for chat history restoration */
+  savedMessages?: Message[]
 }
 
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel(
-  { projectId, onPreviewUpdate, onSandboxUrlUpdate, onFilesReady, initialPrompt, initialModel },
+  { projectId, onPreviewUpdate, onSandboxUrlUpdate, onFilesReady, initialPrompt, initialModel, savedMessages },
   ref
 ) {
   const [inputValue, setInputValue] = useState("")
@@ -95,9 +98,10 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const hasAutoSentRef = useRef(false)
 
-  const { messages, sendMessage, isWorking, status, isCallingTools, getToolProgress } = useChatWithTools({
+  const { messages, sendMessage, isWorking, status, isCallingTools, getToolProgress, hasRestoredHistory } = useChatWithTools({
     projectId,
     model: selectedModel,
+    initialMessages: savedMessages,
     onError: (error) => {
       console.error("Chat error:", error)
       setLastError(error)
@@ -222,20 +226,6 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     setInputValue("")
 
     await sendMessage({ text: content })
-  }
-
-  // Get current tool being executed for status display
-  const getCurrentTool = (): string | undefined => {
-    const lastMessage = messages[messages.length - 1]
-    if (lastMessage?.role !== "assistant") return undefined
-    
-    const parts = lastMessage.parts as MessagePart[]
-    const activeTool = parts.find(
-      (p) => p.type.startsWith("tool-") && 
-      ((p as ToolPart).state === "input-streaming" || (p as ToolPart).state === "input-available")
-    )
-    
-    return activeTool ? activeTool.type.replace("tool-", "") : undefined
   }
 
   const handleRetry = () => {
@@ -386,13 +376,15 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
             ))
           )}
 
-          {/* Streaming status indicator */}
-          {isWorking && (
-            <StreamingStatus 
-              status={status as "submitted" | "streaming" | "ready" | "error"} 
-              isCallingTools={isCallingTools}
-              currentTool={getCurrentTool()}
-            />
+          {/* Simple typing indicator when AI is working */}
+          {isWorking && !isCallingTools && (
+            <div className="flex items-center gap-2 py-2 text-sm text-zinc-500">
+              <div className="flex gap-1">
+                <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-zinc-500 [animation-delay:-0.3s]" />
+                <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-zinc-500 [animation-delay:-0.15s]" />
+                <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-zinc-500" />
+              </div>
+            </div>
           )}
 
           {/* Error display */}
@@ -483,8 +475,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
                       className="h-8 gap-1.5 rounded-lg px-2.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300"
                       disabled={isWorking || !isChatEnabled}
                     >
-                      {(selectedModel === "anthropic" || selectedModel === "sonnet") && <AnthropicIcon className="h-3.5 w-3.5" />}
-                      {(selectedModel === "google" || selectedModel === "googleFlash") && <GoogleIcon className="h-3.5 w-3.5" />}
+                      {(selectedModel === "anthropic" || selectedModel === "opus") && <AnthropicIcon className="h-3.5 w-3.5" />}
+                      {(selectedModel === "google" || selectedModel === "googlePro") && <GoogleIcon className="h-3.5 w-3.5" />}
                       {selectedModel === "openai" && <OpenAIIcon className="h-3.5 w-3.5" />}
                       <span className="text-xs">{MODEL_DISPLAY_NAMES[selectedModel]}</span>
                       <ChevronDown className="h-3 w-3" />
@@ -504,15 +496,15 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
                       </div>
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => setSelectedModel("sonnet")}
+                      onClick={() => setSelectedModel("opus")}
                       className={cn(
                         "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer",
-                        selectedModel === "sonnet" && "bg-zinc-800",
+                        selectedModel === "opus" && "bg-zinc-800",
                       )}
                     >
                       <div className="flex items-center gap-2">
                         <AnthropicIcon className="h-4 w-4" />
-                        <span>{MODEL_DISPLAY_NAMES.sonnet}</span>
+                        <span>{MODEL_DISPLAY_NAMES.opus}</span>
                       </div>
                     </DropdownMenuItem>
                     <DropdownMenuItem
@@ -528,15 +520,15 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
                       </div>
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => setSelectedModel("googleFlash")}
+                      onClick={() => setSelectedModel("googlePro")}
                       className={cn(
                         "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer",
-                        selectedModel === "googleFlash" && "bg-zinc-800",
+                        selectedModel === "googlePro" && "bg-zinc-800",
                       )}
                     >
                       <div className="flex items-center gap-2">
                         <GoogleIcon className="h-4 w-4" />
-                        <span>{MODEL_DISPLAY_NAMES.googleFlash}</span>
+                        <span>{MODEL_DISPLAY_NAMES.googlePro}</span>
                       </div>
                     </DropdownMenuItem>
                     <DropdownMenuItem

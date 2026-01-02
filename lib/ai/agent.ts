@@ -203,28 +203,42 @@ const openai = createOpenAI({
   apiKey: process.env.OPENAI_API_KEY || "",
 })
 
+// Model-specific configurations
+// Using latest model versions for best performance
 export const MODEL_OPTIONS = {
-  anthropic: anthropic("claude-opus-4-5-20251101"),
-  sonnet: anthropic("claude-sonnet-4-20250514"),
-  google: google("gemini-3-pro-preview"),
-  googleFlash: google("gemini-3-flash-preview"),
-  openai: openai("gpt-4o"),
+  anthropic: anthropic("claude-sonnet-4-5"),
+  opus: anthropic("claude-opus-4-5-20251101"),
+  google: google("gemini-3-flash-preview"),
+  googlePro: google("gemini-3-pro-preview"),
+  openai: openai("gpt-5.2"),
 } as const
+
+// Model-specific settings for streamText
+export const MODEL_SETTINGS: Record<ModelProvider, {
+  maxSteps?: number
+  maxTokens?: number
+}> = {
+  anthropic: { maxSteps: 50 },
+  opus: { maxSteps: 50 },
+  google: { maxSteps: 40, maxTokens: 8192 },
+  googlePro: { maxSteps: 50, maxTokens: 8192 },
+  openai: { maxSteps: 50 },
+}
 
 export const MODEL_DISPLAY_NAMES = {
   anthropic: "Claude Sonnet 4.5",
-  sonnet: "Claude Opus 4.5",
-  google: "Gemini 3 Pro",
-  googleFlash: "Gemini 3 Flash",
+  opus: "Claude Opus 4.5",
+  google: "Gemini 3 Flash",
+  googlePro: "Gemini 3 Pro",
   openai: "GPT-5.2",
 } as const
 
 export const MODEL_DESCRIPTIONS = {
-  anthropic: "Latest & most capable",
-  sonnet: "Fast & capable",
-  google: "Great for creativity",
-  googleFlash: "Fast & versatile",
-  openai: "Fast & reliable",
+  anthropic: "Fast & capable (default)",
+  opus: "Most capable, best reasoning",
+  google: "Fast, great for tool use",
+  googlePro: "Best multimodal understanding",
+  openai: "Latest OpenAI model",
 } as const
 
 export type ModelProvider = keyof typeof MODEL_OPTIONS

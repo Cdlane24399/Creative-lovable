@@ -1,36 +1,60 @@
 "use client"
 
-import { ChevronDown, Home, RefreshCw, ExternalLink, Github, Loader2, Save, Check } from "lucide-react"
+import { useState, useEffect } from "react"
+import { ChevronDown, Home, Github, Save, Check, Layers, BarChart3, Plus, ExternalLink, Copy, RefreshCw, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+import { motion, AnimatePresence } from "framer-motion"
+
+export type EditorView = "preview" | "code" | "settings"
 
 interface EditorHeaderProps {
   onNavigateHome?: () => void
-  sandboxUrl?: string | null
-  onRefresh?: () => void
-  isPreviewLoading?: boolean
   projectName?: string
   hasUnsavedChanges?: boolean
   onSave?: () => void
+  sandboxUrl?: string | null
+  currentView?: EditorView
+  onViewChange?: (view: EditorView) => void
+  isRefreshing?: boolean
+  onRefresh?: () => void
 }
 
 export function EditorHeader({
   onNavigateHome,
-  sandboxUrl,
-  onRefresh,
-  isPreviewLoading,
   projectName = "Untitled Project",
   hasUnsavedChanges = false,
   onSave,
+  sandboxUrl,
+  currentView = "preview",
+  onViewChange,
+  isRefreshing = false,
+  onRefresh,
 }: EditorHeaderProps) {
-  // Extract display URL from sandbox URL
-  const displayUrl = sandboxUrl
-    ? sandboxUrl.replace(/^https?:\/\//, "").slice(0, 40) + (sandboxUrl.length > 50 ? "..." : "")
-    : null
+  const [urlExpanded, setUrlExpanded] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  // Copy URL to clipboard
+  const handleCopyUrl = () => {
+    if (sandboxUrl) {
+      navigator.clipboard.writeText(sandboxUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  // Close URL bar when clicking outside
+  useEffect(() => {
+    if (urlExpanded) {
+      const handleClickOutside = () => setUrlExpanded(false)
+      document.addEventListener("click", handleClickOutside)
+      return () => document.removeEventListener("click", handleClickOutside)
+    }
+  }, [urlExpanded])
 
   return (
-    <header className="flex h-14 items-center justify-between px-4 bg-[#111111]">
+    <header className="flex h-14 items-center justify-between px-4 bg-[#111111] border-b border-zinc-800">
       {/* Left - Project Title Dropdown */}
       <div className="flex items-center gap-2">
         <DropdownMenu>
@@ -79,41 +103,154 @@ export function EditorHeader({
         )}
       </div>
 
-      {/* Center - URL Bar (pill shaped) */}
-      <div className="flex items-center">
-        <div className="flex h-9 items-center gap-2 rounded-full border border-zinc-700/60 bg-transparent px-1.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onRefresh}
-            disabled={!sandboxUrl || isPreviewLoading}
-            className="h-7 w-7 rounded-full text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 disabled:opacity-50"
-          >
-            {isPreviewLoading ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
+      {/* Center - Toggles & URL */}
+      <div className="flex items-center justify-center flex-1 px-4">
+        <div className="flex items-center gap-1 p-1 rounded-full bg-zinc-900/80 border border-zinc-800/50 h-9">
+          {/* Preview toggle with green indicator */}
+          <button
+            onClick={() => onViewChange?.("preview")}
+            className={cn(
+              "relative flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition-all h-full",
+              currentView === "preview"
+                ? "bg-zinc-800 text-white shadow-none"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
             )}
-          </Button>
-          <div className="flex items-center px-2 min-w-[180px]">
-            {sandboxUrl ? (
-              <span className="text-xs text-zinc-400 truncate">{displayUrl}</span>
-            ) : (
-              <>
-                <span className="text-xs text-zinc-500">lovable.dev/projects/</span>
-                <span className="text-xs text-zinc-400 truncate max-w-[120px]">{projectName.toLowerCase().replace(/\s+/g, "-")}</span>
-              </>
-            )}
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => sandboxUrl && window.open(sandboxUrl, "_blank")}
-            disabled={!sandboxUrl}
-            className="h-7 w-7 rounded-full text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 disabled:opacity-50"
           >
-            <ExternalLink className="h-3.5 w-3.5" />
-          </Button>
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+            </span>
+            Preview
+          </button>
+
+          {/* Divider */}
+          <div className="h-5 w-px bg-zinc-700/50 mx-1" />
+
+          {/* Icon toggles */}
+          <button
+            onClick={() => onViewChange?.("code")}
+            className={cn(
+              "flex items-center justify-center h-7 w-7 rounded-full transition-all p-0",
+              currentView === "code"
+                ? "bg-zinc-800 text-white shadow-none"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+            )}
+            title="Code"
+          >
+            <Layers className="h-4 w-4" />
+          </button>
+
+          <button
+            onClick={() => onViewChange?.("settings")}
+            className={cn(
+              "flex items-center justify-center h-7 w-7 rounded-full transition-all p-0",
+              currentView === "settings"
+                ? "bg-zinc-800 text-white shadow-none"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+            )}
+            title="Settings"
+          >
+            <BarChart3 className="h-4 w-4" />
+          </button>
+
+          {/* Divider */}
+          <div className="h-5 w-px bg-zinc-700/50 mx-1" />
+
+          {/* Add button */}
+          <button
+            type="button"
+            className="flex items-center justify-center h-7 w-7 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
+            title="Add"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Expandable URL bar */}
+        <div className="relative ml-4" onClick={(e) => e.stopPropagation()}>
+          <AnimatePresence mode="wait">
+            {urlExpanded && sandboxUrl ? (
+              <motion.div
+                key="expanded"
+                initial={{ width: 40, opacity: 0 }}
+                animate={{ width: "auto", opacity: 1 }}
+                exit={{ width: 40, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800/50 h-9"
+              >
+                {/* Refresh button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onRefresh?.()
+                  }}
+                  disabled={!!isRefreshing}
+                  className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all disabled:opacity-50"
+                  title="Refresh"
+                >
+                  {isRefreshing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                </button>
+
+                {/* URL display */}
+                <span className="text-zinc-400 text-sm max-w-[300px] truncate select-all">
+                  {sandboxUrl.replace(/^https?:\/\//, "")}
+                </span>
+
+                {/* Copy button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleCopyUrl()
+                  }}
+                  className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
+                  title="Copy URL"
+                >
+                  {copied ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-500" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </button>
+
+                {/* Open external */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    window.open(sandboxUrl, "_blank")
+                  }}
+                  className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
+                  title="Open in new tab"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </button>
+              </motion.div>
+            ) : (
+              <motion.button
+                key="collapsed"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => sandboxUrl && setUrlExpanded(true)}
+                disabled={!sandboxUrl}
+                className={cn(
+                  "flex items-center justify-center px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800/50 transition-all h-9",
+                  sandboxUrl 
+                    ? "text-zinc-400 hover:text-zinc-300 hover:border-zinc-700 cursor-pointer" 
+                    : "text-zinc-600 cursor-not-allowed"
+                )}
+                title={sandboxUrl ? "Click to expand URL" : "No preview available"}
+              >
+                <span className="text-sm">/</span>
+                {sandboxUrl && (
+                  <span className="ml-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                )}
+              </motion.button>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 

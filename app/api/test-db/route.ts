@@ -14,7 +14,7 @@ export async function GET() {
 
     for (const table of tables) {
       try {
-        const data = await sql.unsafe(`SELECT * FROM ${table} LIMIT 1`)
+        const data = await sql.unsafe(`SELECT * FROM ${table} LIMIT 1`) as unknown as any[]
         tableInfo[table] = {
           exists: true,
           sampleRow: data?.[0] || null,

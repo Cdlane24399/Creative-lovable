@@ -3,101 +3,203 @@
  *
  * Provides deep awareness of the sandbox state, project structure,
  * build status, and execution history for intelligent agentic decisions.
+ *
+ * UPDATED: Now uses write-through caching via ContextService
+ * - Database writes happen immediately (no data loss on crash)
+ * - In-memory cache for fast reads
+ * - TaskGraph is the primary planning system (legacy string arrays deprecated)
+ *
+ * Features:
+ * - In-memory caching for fast access
+ * - Database persistence for state recovery
+ * - Write-through saves (no debouncing = no data loss)
+ * - Task graph support for enhanced planning
  */
 
-import type { Sandbox } from "e2b"
+// Re-export types from context-types for backward compatibility
+export type {
+  FileInfo,
+  BuildStatus,
+  ServerState,
+  ToolExecution,
+  AgentContext,
+  TaskStatus,
+  Task,
+  TaskGraph,
+} from "./context-types"
 
-// File information with content tracking
-export interface FileInfo {
-  path: string
-  content?: string
-  lastModified?: Date
-  action?: "created" | "updated" | "deleted"
-}
+import type {
+  FileInfo,
+  BuildStatus,
+  ServerState,
+  ToolExecution,
+  AgentContext,
+  TaskGraph,
+} from "./context-types"
 
-// Build status tracking
-export interface BuildStatus {
-  hasErrors: boolean
-  hasWarnings: boolean
-  errors: string[]
-  warnings: string[]
-  lastChecked: Date
-}
+// =============================================================================
+// In-Memory Context Store (Fast Read Cache)
+// =============================================================================
 
-// Server state
-export interface ServerState {
-  isRunning: boolean
-  port: number
-  url?: string
-  logs: string[]
-  lastStarted?: Date
-}
-
-// Tool execution history for learning
-export interface ToolExecution {
-  toolName: string
-  input: Record<string, unknown>
-  output?: Record<string, unknown>
-  success: boolean
-  error?: string
-  timestamp: Date
-  durationMs: number
-}
-
-// Complete agent context
-export interface AgentContext {
-  // Project identification
-  projectId: string
-  projectName?: string
-  projectDir?: string
-
-  // Current state awareness
-  files: Map<string, FileInfo>
-  dependencies: Map<string, string> // package -> version
-  buildStatus?: BuildStatus
-  serverState?: ServerState
-
-  // Execution history for learning
-  toolHistory: ToolExecution[]
-  errorHistory: string[]
-
-  // Planning state
-  currentPlan?: string[]
-  completedSteps: string[]
-
-  // Sandbox reference
-  sandboxId?: string
-
-  // Metadata
-  createdAt: Date
-  lastActivity: Date
-}
-
-// Global context store (per projectId)
+/** Global context store (per projectId) - in-memory cache */
 const contextStore = new Map<string, AgentContext>()
 
+/** Track contexts that are being loaded from DB (prevent duplicate loads) */
+const loadingContexts = new Map<string, Promise<AgentContext>>()
+
+/** Flag to enable async persistence (set to true for production) */
+const ENABLE_ASYNC_PERSISTENCE = true
+
+// =============================================================================
+// Context Creation & Retrieval
+// =============================================================================
+
 /**
- * Create or get existing agent context for a project
+ * Create a new empty agent context
+ */
+function createEmptyContext(projectId: string): AgentContext {
+  return {
+    projectId,
+    files: new Map(),
+    dependencies: new Map(),
+    toolHistory: [],
+    errorHistory: [],
+    completedSteps: [],
+    createdAt: new Date(),
+    lastActivity: new Date(),
+    isDirty: false,
+  }
+}
+
+/**
+ * Get or create agent context for a project (synchronous, in-memory only)
+ * Use getAgentContextAsync for database-backed context loading
  */
 export function getAgentContext(projectId: string): AgentContext {
   let context = contextStore.get(projectId)
 
   if (!context) {
-    context = {
-      projectId,
-      files: new Map(),
-      dependencies: new Map(),
-      toolHistory: [],
-      errorHistory: [],
-      completedSteps: [],
-      createdAt: new Date(),
-      lastActivity: new Date(),
-    }
+    context = createEmptyContext(projectId)
     contextStore.set(projectId, context)
   }
 
   return context
 }
+
+/**
+ * Get agent context with database hydration
+ * Loads from database if not in memory, caches result
+ */
+export async function getAgentContextAsync(projectId: string): Promise<AgentContext> {
+  // Check in-memory cache first
+  const cached = contextStore.get(projectId)
+  if (cached) {
+    return cached
+  }
+
+  // Check if already loading
+  const loading = loadingContexts.get(projectId)
+  if (loading) {
+    return loading
+  }
+
+  // Load from database using new repository
+  const loadPromise = (async () => {
+    try {
+      const { getContextRepository } = await import("@/lib/db/repositories")
+      const contextRepo = getContextRepository()
+      const dbContext = await contextRepo.findByProjectId(projectId)
+
+      if (dbContext) {
+        // Convert repository format to AgentContext
+        const context: AgentContext = {
+          projectId: dbContext.projectId,
+          projectName: dbContext.projectName,
+          projectDir: dbContext.projectDir,
+          sandboxId: dbContext.sandboxId,
+          files: dbContext.files,
+          dependencies: dbContext.dependencies,
+          buildStatus: dbContext.buildStatus,
+          serverState: dbContext.serverState,
+          toolHistory: dbContext.toolHistory,
+          errorHistory: dbContext.errorHistory,
+          currentPlan: undefined, // Deprecated
+          completedSteps: dbContext.completedSteps,
+          taskGraph: dbContext.taskGraph,
+          createdAt: dbContext.createdAt,
+          lastActivity: dbContext.lastActivity,
+          isDirty: false,
+        }
+        contextStore.set(projectId, context)
+        return context
+      }
+
+      // No context in DB, create new one
+      const newContext = createEmptyContext(projectId)
+      contextStore.set(projectId, newContext)
+      return newContext
+    } finally {
+      loadingContexts.delete(projectId)
+    }
+  })()
+
+  loadingContexts.set(projectId, loadPromise)
+  return loadPromise
+}
+
+/**
+ * Persist context to database (write-through)
+ * Non-blocking - errors are logged but don't throw
+ */
+async function persistContext(context: AgentContext): Promise<void> {
+  if (!ENABLE_ASYNC_PERSISTENCE) return
+
+  try {
+    const { getContextRepository, getProjectRepository } = await import("@/lib/db/repositories")
+    const contextRepo = getContextRepository()
+    const projectRepo = getProjectRepository()
+
+    // Ensure project exists first to prevent FK violations
+    await projectRepo.ensureExists(context.projectId, context.projectName || "Untitled Project")
+
+    // Save context
+    await contextRepo.upsert(context.projectId, {
+      projectName: context.projectName,
+      projectDir: context.projectDir,
+      sandboxId: context.sandboxId,
+      files: context.files,
+      dependencies: context.dependencies,
+      buildStatus: context.buildStatus,
+      serverState: context.serverState,
+      toolHistory: context.toolHistory,
+      errorHistory: context.errorHistory,
+      taskGraph: context.taskGraph,
+      completedSteps: context.completedSteps,
+    })
+
+    context.isDirty = false
+  } catch (error) {
+    console.error(`[agent-context] Failed to persist context for ${context.projectId}:`, error)
+  }
+}
+
+/**
+ * Mark context as dirty and trigger async save
+ * Uses write-through pattern: save immediately but don't block
+ */
+function markDirtyAndSave(context: AgentContext): void {
+  context.isDirty = true
+  context.lastActivity = new Date()
+
+  // Fire and forget - persist asynchronously
+  persistContext(context).catch(() => {
+    // Error already logged in persistContext
+  })
+}
+
+// =============================================================================
+// File Operations
+// =============================================================================
 
 /**
  * Update context after file operation
@@ -121,8 +223,38 @@ export function updateFileInContext(
     })
   }
 
-  context.lastActivity = new Date()
+  markDirtyAndSave(context)
 }
+
+/**
+ * Bulk update files in context
+ */
+export function updateFilesInContext(
+  projectId: string,
+  files: Array<{ path: string; content?: string; action?: "created" | "updated" | "deleted" }>
+): void {
+  const context = getAgentContext(projectId)
+
+  for (const file of files) {
+    const action = file.action ?? "updated"
+    if (action === "deleted") {
+      context.files.delete(file.path)
+    } else {
+      context.files.set(file.path, {
+        path: file.path,
+        content: file.content,
+        action,
+        lastModified: new Date(),
+      })
+    }
+  }
+
+  markDirtyAndSave(context)
+}
+
+// =============================================================================
+// Tool Execution Recording
+// =============================================================================
 
 /**
  * Record tool execution for learning
@@ -160,8 +292,12 @@ export function recordToolExecution(
     }
   }
 
-  context.lastActivity = new Date()
+  markDirtyAndSave(context)
 }
+
+// =============================================================================
+// Build & Server State
+// =============================================================================
 
 /**
  * Update build status in context
@@ -180,7 +316,7 @@ export function updateBuildStatus(
     lastChecked: new Date(),
   }
 
-  context.lastActivity = new Date()
+  markDirtyAndSave(context)
 }
 
 /**
@@ -200,8 +336,12 @@ export function updateServerState(
     lastStarted: state.isRunning ? new Date() : context.serverState?.lastStarted,
   }
 
-  context.lastActivity = new Date()
+  markDirtyAndSave(context)
 }
+
+// =============================================================================
+// Project Information
+// =============================================================================
 
 /**
  * Set project info in context
@@ -220,7 +360,7 @@ export function setProjectInfo(
   if (info.projectDir) context.projectDir = info.projectDir
   if (info.sandboxId) context.sandboxId = info.sandboxId
 
-  context.lastActivity = new Date()
+  markDirtyAndSave(context)
 }
 
 /**
@@ -233,27 +373,141 @@ export function addDependency(
 ): void {
   const context = getAgentContext(projectId)
   context.dependencies.set(packageName, version)
-  context.lastActivity = new Date()
+  markDirtyAndSave(context)
 }
 
 /**
- * Set current plan
+ * Bulk add dependencies to context
+ */
+export function addDependencies(
+  projectId: string,
+  dependencies: Record<string, string>
+): void {
+  const context = getAgentContext(projectId)
+  for (const [pkg, version] of Object.entries(dependencies)) {
+    context.dependencies.set(pkg, version)
+  }
+  markDirtyAndSave(context)
+}
+
+// =============================================================================
+// Planning (Legacy String Array - DEPRECATED)
+// =============================================================================
+
+/**
+ * @deprecated Use setTaskGraph instead for proper task management
+ * Set current plan (legacy format - string array)
  */
 export function setCurrentPlan(projectId: string, steps: string[]): void {
   const context = getAgentContext(projectId)
-  context.currentPlan = steps
+  
+  // Convert to TaskGraph for unified handling
+  const { createTaskGraph, createTask } = require("./planning/task-graph")
+  
+  const tasks = steps.map((step, index) => createTask({
+    description: step,
+    dependencies: index > 0 ? [`task-${index - 1}`] : [],
+  }))
+  
+  // Override IDs for predictable referencing
+  tasks.forEach((task: any, index: number) => {
+    task.id = `task-${index}`
+  })
+  
+  const taskGraph = createTaskGraph({
+    goal: "Plan execution",
+    tasks: tasks.map((t: any) => ({
+      description: t.description,
+      dependencies: t.dependencies,
+    })),
+  })
+  
+  context.taskGraph = taskGraph
   context.completedSteps = []
-  context.lastActivity = new Date()
+  
+  markDirtyAndSave(context)
 }
 
 /**
- * Mark step as completed
+ * @deprecated Use updateTaskStatus instead
+ * Mark step as completed (legacy format)
  */
 export function completeStep(projectId: string, step: string): void {
   const context = getAgentContext(projectId)
   context.completedSteps.push(step)
-  context.lastActivity = new Date()
+  
+  // Also update TaskGraph if present
+  if (context.taskGraph) {
+    const tasks = Object.values(context.taskGraph.tasks)
+    const matchingTask = tasks.find(t => t.description === step)
+    if (matchingTask) {
+      matchingTask.status = "completed"
+      matchingTask.completedAt = new Date()
+    }
+  }
+  
+  markDirtyAndSave(context)
 }
+
+// =============================================================================
+// Task Graph (Primary Planning System)
+// =============================================================================
+
+/**
+ * Set task graph for planning
+ */
+export function setTaskGraph(projectId: string, taskGraph: TaskGraph): void {
+  const context = getAgentContext(projectId)
+  context.taskGraph = taskGraph
+  context.completedSteps = [] // Reset legacy tracking
+  markDirtyAndSave(context)
+}
+
+/**
+ * Get task graph from context
+ */
+export function getTaskGraph(projectId: string): TaskGraph | undefined {
+  return getAgentContext(projectId).taskGraph
+}
+
+/**
+ * Update task status in task graph
+ */
+export function updateTaskStatus(
+  projectId: string,
+  taskId: string,
+  status: "pending" | "in_progress" | "completed" | "failed" | "blocked" | "skipped",
+  error?: string
+): void {
+  const context = getAgentContext(projectId)
+  
+  if (!context.taskGraph) return
+  
+  const task = context.taskGraph.tasks[taskId]
+  if (!task) return
+  
+  task.status = status
+  if (error) task.error = error
+  if (status === "completed") task.completedAt = new Date()
+  if (status === "in_progress") task.startedAt = new Date()
+  
+  context.taskGraph.updatedAt = new Date()
+  
+  markDirtyAndSave(context)
+}
+
+/**
+ * Clear task graph
+ */
+export function clearTaskGraph(projectId: string): void {
+  const context = getAgentContext(projectId)
+  context.taskGraph = undefined
+  markDirtyAndSave(context)
+}
+
+// =============================================================================
+// Context Summary & Recommendations
+// =============================================================================
 
 /**
  * Generate context summary for the agent
@@ -308,11 +562,13 @@ export function generateContextSummary(projectId: string): string {
     parts.push(`Recent issues: ${context.errorHistory.slice(-3).join("; ")}`)
   }
 
-  // Current plan progress
-  if (context.currentPlan && context.currentPlan.length > 0) {
-    const completed = context.completedSteps.length
-    const total = context.currentPlan.length
-    parts.push(`Plan progress: ${completed}/${total} steps completed`)
+  // Task graph progress (primary planning system)
+  if (context.taskGraph) {
+    const tasks = Object.values(context.taskGraph.tasks)
+    const completed = tasks.filter(t => t.status === "completed").length
+    const failed = tasks.filter(t => t.status === "failed").length
+    const inProgress = tasks.filter(t => t.status === "in_progress").length
+    parts.push(`Task graph: ${completed}/${tasks.length} completed${failed > 0 ? `, ${failed} failed` : ""}${inProgress > 0 ? `, ${inProgress} in progress` : ""}`)
   }
 
   return parts.length > 0 ? parts.join("\n") : "No context available yet."
@@ -349,22 +605,61 @@ export function getContextRecommendations(projectId: string): string[] {
     recommendations.push("Multiple recent failures - consider using getBuildStatus to diagnose")
   }
 
-  // Check for incomplete plan
-  if (context.currentPlan && context.completedSteps.length < context.currentPlan.length) {
-    const nextStep = context.currentPlan[context.completedSteps.length]
-    if (nextStep) {
-      recommendations.push(`Next planned step: ${nextStep}`)
+  // Task graph recommendations
+  if (context.taskGraph) {
+    const tasks = Object.values(context.taskGraph.tasks)
+    const blocked = tasks.filter(t => t.status === "blocked")
+    const failed = tasks.filter(t => t.status === "failed")
+    const pending = tasks.filter(t => t.status === "pending")
+
+    if (failed.length > 0) {
+      recommendations.push(`Failed tasks: ${failed.map(t => t.description).join(", ")}`)
+    }
+
+    if (blocked.length > 0) {
+      recommendations.push(`Blocked tasks waiting on dependencies: ${blocked.length}`)
+    }
+
+    // Find next executable task
+    const executable = pending.filter(task =>
+      task.dependencies.every(depId => {
+        const dep = context.taskGraph?.tasks[depId]
+        return dep?.status === "completed"
+      })
+    )
+
+    if (executable.length > 0) {
+      recommendations.push(`Next executable tasks: ${executable.map(t => t.description).slice(0, 3).join(", ")}`)
     }
   }
 
   return recommendations
 }
 
+// =============================================================================
+// Context Management
+// =============================================================================
+
 /**
- * Clear context for a project
+ * Clear context for a project (in-memory only)
  */
 export function clearContext(projectId: string): void {
   contextStore.delete(projectId)
+}
+
+/**
+ * Clear context and delete from database
+ */
+export async function deleteContext(projectId: string): Promise<void> {
+  clearContext(projectId)
+  
+  try {
+    const { getContextRepository } = await import("@/lib/db/repositories")
+    const contextRepo = getContextRepository()
+    await contextRepo.delete(projectId)
+  } catch (error) {
+    console.error(`[agent-context] Failed to delete context from DB for ${projectId}:`, error)
+  }
 }
 
 /**
@@ -372,4 +667,61 @@ export function clearContext(projectId: string): void {
  */
 export function getAllContexts(): Map<string, AgentContext> {
   return new Map(contextStore)
+}
+
+/**
+ * Force save a context immediately
+ */
+export async function saveContext(projectId: string): Promise<boolean> {
+  const context = contextStore.get(projectId)
+  if (!context) return false
+  
+  await persistContext(context)
+  return true
+}
+
+/**
+ * Flush all pending saves (for graceful shutdown)
+ * With write-through, this just ensures all async saves complete
+ */
+export async function flushAllContexts(): Promise<void> {
+  const savePromises: Promise<void>[] = []
+  
+  for (const [projectId, context] of contextStore) {
+    if (context.isDirty) {
+      savePromises.push(persistContext(context))
+    }
+  }
+  
+  await Promise.allSettled(savePromises)
+}
+
+/**
+ * Check if context was loaded from database
+ */
+export function isContextPersisted(projectId: string): boolean {
+  const context = contextStore.get(projectId)
+  return context !== undefined && !context.isDirty
+}
+
+// =============================================================================
+// Lifecycle Hooks
+// =============================================================================
+
+// Register process exit handler to flush contexts
+if (typeof process !== "undefined") {
+  const exitHandler = async () => {
+    console.log("[agent-context] Flushing all contexts before exit...")
+    await flushAllContexts()
+  }
+
+  process.on("beforeExit", exitHandler)
+  process.on("SIGINT", async () => {
+    await exitHandler()
+    process.exit(0)
+  })
+  process.on("SIGTERM", async () => {
+    await exitHandler()
+    process.exit(0)
+  })
 }

@@ -81,3 +81,41 @@ CREATE TRIGGER update_projects_updated_at
   BEFORE UPDATE ON projects
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+-- Agent context persistence table
+-- Stores AI agent state for project continuity across server restarts
+CREATE TABLE IF NOT EXISTS agent_context (
+  project_id UUID PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+
+  -- Project identification
+  project_name VARCHAR(255),
+  project_dir TEXT,
+  sandbox_id VARCHAR(255),
+
+  -- State snapshots (JSON)
+  files JSONB DEFAULT '{}',
+  dependencies JSONB DEFAULT '{}',
+  build_status JSONB,
+  server_state JSONB,
+
+  -- History tracking (JSON arrays)
+  tool_history JSONB DEFAULT '[]',
+  error_history JSONB DEFAULT '[]',
+
+  -- Planning state
+  current_plan JSONB,
+  completed_steps JSONB DEFAULT '[]',
+  task_graph JSONB,
+
+  -- Metadata
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Index for faster sandbox lookups
+CREATE INDEX IF NOT EXISTS idx_agent_context_sandbox_id
+ON agent_context(sandbox_id)
+WHERE sandbox_id IS NOT NULL;
+
+-- Index for cleanup of stale contexts
+CREATE INDEX IF NOT EXISTS idx_agent_context_updated_at
+ON agent_context(updated_at);

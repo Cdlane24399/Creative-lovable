@@ -5,14 +5,16 @@ import {
   NoSuchToolError,
   InvalidToolInputError,
   type UIMessage,
+  type StopCondition,
 } from "ai"
-import { SYSTEM_PROMPT, MODEL_OPTIONS, type ModelProvider } from "@/lib/ai/agent"
-import { getDb } from "@/lib/db/neon"
+import { SYSTEM_PROMPT, MODEL_OPTIONS, MODEL_SETTINGS, type ModelProvider } from "@/lib/ai/agent"
 import {
   createContextAwareTools,
   generateAgenticSystemPrompt,
 } from "@/lib/ai/web-builder-agent"
 import { setProjectInfo, getAgentContext } from "@/lib/ai/agent-context"
+import { withAuth } from "@/lib/auth"
+import { getProjectService, getMessageService } from "@/lib/services"
 
 export const maxDuration = 60
 
@@ -31,7 +33,7 @@ const DEFAULT_PROJECT_ID = "default"
 // Export type for the chat messages
 export type ChatMessage = UIMessage
 
-export async function POST(req: Request) {
+export const POST = withAuth(async (req: Request) => {
   try {
     const body = await req.json()
     const {
@@ -44,8 +46,13 @@ export async function POST(req: Request) {
       model?: ModelProvider
     }
 
-    // Get selected model
+    // Get services
+    const projectService = getProjectService()
+    const messageService = getMessageService()
+
+    // Get selected model and its settings
     const selectedModel = MODEL_OPTIONS[model] || MODEL_OPTIONS.anthropic
+    const modelSettings = MODEL_SETTINGS[model] || MODEL_SETTINGS.anthropic
 
     // Convert messages for the model
     const modelMessages = await convertToModelMessages(messages)
@@ -59,6 +66,16 @@ export async function POST(req: Request) {
     // Initialize project info if this is a new session
     setProjectInfo(projectId, { projectName: projectId })
 
+    // Ensure project exists in database BEFORE any tool calls can trigger context saves
+    // This prevents foreign key constraint violations
+    if (projectId && projectId !== DEFAULT_PROJECT_ID) {
+      try {
+        await projectService.ensureProjectExists(projectId, "Untitled Project")
+      } catch (dbError) {
+        console.warn("Failed to ensure project exists:", dbError)
+      }
+    }
+
     // AI SDK v6 best practice: Track steps for debugging and monitoring
     let currentStepNumber = 0
 
@@ -70,8 +87,10 @@ export async function POST(req: Request) {
       messages: modelMessages,
       tools,
       abortSignal: req.signal,
-      // Removed step limit - let the agent run as long as needed
-      // stopWhen: stepCountIs(15),
+      // AI SDK v6: Use stopWhen with stepCountIs for multi-step agentic behaviors
+      stopWhen: stepCountIs(modelSettings.maxSteps || 50),
+      // Model-specific token limits (important for Gemini)
+      ...(modelSettings.maxTokens && { maxOutputTokens: modelSettings.maxTokens }),
 
       // AI SDK v6: onStepFinish callback for step tracking
       onStepFinish: async ({ text, toolCalls, toolResults, finishReason, usage }) => {
@@ -113,8 +132,8 @@ export async function POST(req: Request) {
           // Build errors: Focus on debugging and file operations
           config.activeTools = [...FILE_TOOLS, ...BUILD_TOOLS] as ToolName[]
           console.log(`[Step ${stepNumber}] Build errors detected, focusing on debugging tools`)
-        } else if (context.serverState?.isRunning && context.currentPlan) {
-          // Server running with active plan: Focus on file operations
+        } else if (context.serverState?.isRunning && context.taskGraph) {
+          // Server running with active task graph: Focus on file operations
           config.activeTools = [...FILE_TOOLS, ...BUILD_TOOLS, "markStepComplete"] as ToolName[]
         }
 
@@ -180,28 +199,23 @@ export async function POST(req: Request) {
         return `An error occurred: ${error instanceof Error ? error.message : "Unknown error"}`
       },
       onFinish: async ({ messages: finishedMessages }) => {
-        // Save message to database if projectId provided
+        // Save messages to database if projectId provided
         if (projectId && projectId !== DEFAULT_PROJECT_ID) {
           try {
-            const sql = getDb()
+            // Convert UIMessage array to our format and save
+            // AI SDK v6: UIMessage only has parts, no content property
+            const messagesToSave = finishedMessages.map((msg: UIMessage) => ({
+              id: msg.id,
+              role: msg.role as "user" | "assistant" | "system",
+              content: msg.parts?.filter((p: any) => p.type === "text").map((p: any) => p.text).join("") || "",
+              parts: msg.parts as any[],
+            }))
 
-            // Ensure the project exists before saving messages (upsert pattern)
-            // This handles the case where a new project ID is generated client-side
-            // but the project hasn't been explicitly created yet
-            await sql`
-              INSERT INTO projects (id, name, description)
-              VALUES (${projectId}, 'Untitled Project', 'Auto-created from chat')
-              ON CONFLICT (id) DO UPDATE SET
-                last_opened_at = NOW()
-            `
-
-            // Save assistant response
-            await sql`
-              INSERT INTO messages (project_id, role, content)
-              VALUES (${projectId}, 'assistant', ${JSON.stringify(finishedMessages)})
-            `
+            await messageService.saveConversation(projectId, messagesToSave)
+            
+            console.log(`[Chat] Saved ${messagesToSave.length} messages for project ${projectId}`)
           } catch (dbError) {
-            console.error("Failed to save message:", dbError)
+            console.error("Failed to save messages:", dbError)
           }
         }
 
@@ -225,4 +239,4 @@ export async function POST(req: Request) {
       headers: { "Content-Type": "application/json" },
     })
   }
-}
+})

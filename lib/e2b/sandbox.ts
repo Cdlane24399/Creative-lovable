@@ -1,9 +1,21 @@
 import { Sandbox } from "e2b"
-import { Sandbox as CodeInterpreter } from "@e2b/code-interpreter"
+import { getSandboxStateMachine, type SandboxState as MachineState } from "./sandbox-state-machine"
+
+// Type alias for CodeInterpreter sandbox
+type CodeInterpreterSandbox = import("@e2b/code-interpreter").Sandbox
+
+// Conditionally import CodeInterpreter to avoid Jest issues
+let CodeInterpreter: typeof import("@e2b/code-interpreter").Sandbox | undefined
+try {
+  const codeInterpreterModule = require("@e2b/code-interpreter")
+  CodeInterpreter = codeInterpreterModule.Sandbox
+} catch {
+  // CodeInterpreter not available
+}
 
 // Sandbox manager to track active sandboxes
 const activeSandboxes = new Map<string, Sandbox>()
-const codeInterpreterSandboxes = new Map<string, CodeInterpreter>()
+const codeInterpreterSandboxes = new Map<string, CodeInterpreterSandbox>()
 const backgroundProcesses = new Map<string, any>() // projectId -> process handle
 const pausedSandboxes = new Map<string, { sandboxId: string; pausedAt: Date }>() // projectId -> paused sandbox info
 
@@ -19,8 +31,80 @@ const RECONNECT_COOLDOWN_MS = 5000 // 5 seconds between attempts
 // - Multiple iterative operations
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000
 
+// TTL for idle sandboxes (30 minutes of inactivity)
+const SANDBOX_TTL_MS = 30 * 60 * 1000
+
+// Cleanup interval (check every 5 minutes)
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000
+
+// Track last activity for each sandbox
+const sandboxLastActivity = new Map<string, number>()
+
 // Get custom template ID from environment (optional)
 const CUSTOM_TEMPLATE_ID = process.env.E2B_TEMPLATE_ID
+
+// Get state machine instance
+const stateMachine = getSandboxStateMachine()
+
+/**
+ * Update last activity timestamp for a sandbox
+ */
+function updateSandboxActivity(projectId: string): void {
+  sandboxLastActivity.set(projectId, Date.now())
+}
+
+/**
+ * Check if a sandbox has exceeded its TTL
+ */
+function isSandboxExpired(projectId: string): boolean {
+  const lastActivity = sandboxLastActivity.get(projectId)
+  if (!lastActivity) return false
+  return Date.now() - lastActivity > SANDBOX_TTL_MS
+}
+
+/**
+ * Clean up expired sandboxes
+ */
+async function cleanupExpiredSandboxes(): Promise<void> {
+  const expiredProjects: string[] = []
+
+  // Find expired sandboxes
+  for (const [projectId] of activeSandboxes) {
+    if (isSandboxExpired(projectId)) {
+      expiredProjects.push(projectId)
+    }
+  }
+
+  // Clean up expired sandboxes
+  for (const projectId of expiredProjects) {
+    console.log(`[Sandbox TTL] Cleaning up expired sandbox for project ${projectId}`)
+    try {
+      // Mark as expired in state machine
+      stateMachine.markExpired(projectId)
+      await closeSandbox(projectId)
+      sandboxLastActivity.delete(projectId)
+    } catch (error) {
+      console.error(`[Sandbox TTL] Failed to cleanup sandbox for ${projectId}:`, error)
+    }
+  }
+
+  if (expiredProjects.length > 0) {
+    console.log(`[Sandbox TTL] Cleaned up ${expiredProjects.length} expired sandboxes`)
+  }
+}
+
+/**
+ * Start the cleanup interval
+ */
+function startCleanupInterval(): void {
+  setInterval(cleanupExpiredSandboxes, CLEANUP_INTERVAL_MS)
+  console.log(`[Sandbox TTL] Started cleanup interval (${CLEANUP_INTERVAL_MS / 1000}s)`)
+}
+
+// Start cleanup on module load
+if (typeof globalThis !== 'undefined') {
+  startCleanupInterval()
+}
 
 // ============================================================
 // DATABASE HELPERS FOR SANDBOX PERSISTENCE
@@ -32,12 +116,9 @@ const CUSTOM_TEMPLATE_ID = process.env.E2B_TEMPLATE_ID
  */
 async function getSandboxIdFromDatabase(projectId: string): Promise<string | null> {
   try {
-    const { getDb } = await import("@/lib/db/neon")
-    const sql = getDb()
-    const result = await sql`
-      SELECT sandbox_id FROM projects WHERE id = ${projectId}
-    `
-    return (result && result[0]?.sandbox_id) || null
+    const { getProjectRepository } = await import("@/lib/db/repositories")
+    const projectRepo = getProjectRepository()
+    return await projectRepo.getSandboxId(projectId)
   } catch (error) {
     console.warn(`Failed to get sandbox ID from database for ${projectId}:`, error)
     return null
@@ -51,16 +132,10 @@ async function getSandboxIdFromDatabase(projectId: string): Promise<string | nul
  */
 async function saveSandboxIdToDatabase(projectId: string, sandboxId: string): Promise<void> {
   try {
-    const { getDb } = await import("@/lib/db/neon")
-    const sql = getDb()
-    // Use UPSERT to ensure the project exists and sandbox ID is saved
-    await sql`
-      INSERT INTO projects (id, name, sandbox_id)
-      VALUES (${projectId}, 'Untitled Project', ${sandboxId})
-      ON CONFLICT (id) DO UPDATE SET
-        sandbox_id = ${sandboxId},
-        updated_at = NOW()
-    `
+    const { getProjectRepository } = await import("@/lib/db/repositories")
+    const projectRepo = getProjectRepository()
+    await projectRepo.ensureExists(projectId)
+    await projectRepo.updateSandbox(projectId, sandboxId)
     console.log(`[Sandbox] Saved sandbox ID ${sandboxId} to database for project ${projectId}`)
   } catch (error) {
     console.warn(`[Sandbox] Failed to save sandbox ID to database for ${projectId}:`, error)
@@ -72,13 +147,120 @@ async function saveSandboxIdToDatabase(projectId: string, sandboxId: string): Pr
  */
 async function clearSandboxIdFromDatabase(projectId: string): Promise<void> {
   try {
-    const { getDb } = await import("@/lib/db/neon")
-    const sql = getDb()
-    await sql`
-      UPDATE projects SET sandbox_id = NULL, updated_at = NOW() WHERE id = ${projectId}
-    `
+    const { getProjectRepository } = await import("@/lib/db/repositories")
+    const projectRepo = getProjectRepository()
+    await projectRepo.updateSandbox(projectId, null)
   } catch (error) {
     console.warn(`Failed to clear sandbox ID from database for ${projectId}:`, error)
+  }
+}
+
+/**
+ * Interface for project snapshot data used for sandbox restoration.
+ */
+export interface ProjectSnapshot {
+  files_snapshot: Record<string, string>
+  dependencies: Record<string, string>
+}
+
+/**
+ * Get project snapshot from database for sandbox restoration.
+ * Returns files and dependencies that can be restored to a new sandbox.
+ */
+export async function getProjectSnapshot(projectId: string): Promise<ProjectSnapshot | null> {
+  try {
+    const { getProjectRepository } = await import("@/lib/db/repositories")
+    const projectRepo = getProjectRepository()
+    return await projectRepo.getFilesSnapshot(projectId)
+  } catch (error) {
+    console.warn(`Failed to get project snapshot for ${projectId}:`, error)
+    return null
+  }
+}
+
+/**
+ * Save files snapshot to database for persistence across sandbox expirations.
+ * This allows restoring project files when a new sandbox is created.
+ * 
+ * @param projectId - Project ID to save snapshot for
+ * @param files - Map of file paths to file contents
+ * @param dependencies - Optional map of npm dependencies (package name -> version)
+ */
+export async function saveFilesSnapshot(
+  projectId: string,
+  files: Record<string, string>,
+  dependencies?: Record<string, string>
+): Promise<void> {
+  try {
+    const { getProjectRepository } = await import("@/lib/db/repositories")
+    const projectRepo = getProjectRepository()
+    await projectRepo.saveFilesSnapshot(projectId, files, dependencies)
+    console.log(`[Sandbox] Saved files snapshot for project ${projectId}: ${Object.keys(files).length} files`)
+  } catch (error) {
+    console.warn(`[Sandbox] Failed to save files snapshot for ${projectId}:`, error)
+  }
+}
+
+/**
+ * Restore files from a project snapshot to a sandbox.
+ * Used when creating a new sandbox after the previous one expired.
+ * 
+ * @param sandbox - The new sandbox to restore files to
+ * @param snapshot - Project snapshot containing files and dependencies
+ * @param projectDir - Project directory path (default: /home/user/project)
+ * @returns Object with success status and counts
+ */
+async function restoreFilesFromSnapshot(
+  sandbox: Sandbox,
+  snapshot: ProjectSnapshot,
+  projectDir: string = "/home/user/project"
+): Promise<{ success: boolean; filesRestored: number; dependenciesInstalled: boolean }> {
+  const result = { success: false, filesRestored: 0, dependenciesInstalled: false }
+  
+  try {
+    const fileEntries = Object.entries(snapshot.files_snapshot)
+    if (fileEntries.length === 0) {
+      console.log("[Sandbox] No files to restore from snapshot")
+      return { success: true, filesRestored: 0, dependenciesInstalled: false }
+    }
+    
+    console.log(`[Sandbox] Restoring ${fileEntries.length} files from snapshot...`)
+    
+    // Create project directory if needed
+    await sandbox.commands.run(`mkdir -p ${projectDir}`)
+    
+    // Prepare files for batch write
+    const filesToWrite = fileEntries.map(([path, content]) => ({
+      path: path.startsWith("/") ? path : `${projectDir}/${path}`,
+      content,
+    }))
+    
+    // Write all files
+    const writeResult = await writeFiles(sandbox, filesToWrite, { useNativeApi: true })
+    result.filesRestored = writeResult.succeeded
+    
+    // Install dependencies if package.json exists and we have dependencies
+    const hasDependencies = Object.keys(snapshot.dependencies || {}).length > 0
+    const hasPackageJson = fileEntries.some(([path]) => path.endsWith("package.json"))
+    
+    if (hasDependencies && hasPackageJson) {
+      console.log("[Sandbox] Installing dependencies...")
+      const installResult = await executeCommand(sandbox, "npm install", {
+        cwd: projectDir,
+        timeoutMs: 600_000, // 10 minutes for npm install
+      })
+      result.dependenciesInstalled = installResult.exitCode === 0
+      if (!result.dependenciesInstalled) {
+        console.warn("[Sandbox] npm install failed:", installResult.stderr)
+      }
+    }
+    
+    result.success = true
+    console.log(`[Sandbox] Restored ${result.filesRestored} files, dependencies installed: ${result.dependenciesInstalled}`)
+    return result
+  } catch (error) {
+    console.error("[Sandbox] Failed to restore files from snapshot:", error)
+    return result
   }
 }
 
@@ -124,6 +306,9 @@ async function tryReconnectSandbox(sandboxId: string, projectId: string): Promis
     // Reset connection attempts on success
     connectionAttempts.delete(sandboxId)
     
+    // Update activity timestamp
+    updateSandboxActivity(projectId)
+    
     console.log(`[Sandbox] Successfully reconnected to sandbox ${sandboxId} for project ${projectId}`)
     return sandbox
   } catch (error) {
@@ -165,12 +350,19 @@ export interface SandboxState {
  * Priority order:
  * 1. Check in-memory cache
  * 2. Try to reconnect using sandbox ID from database
- * 3. Create a new sandbox and persist to database
+ * 3. Create a new sandbox, restore files from snapshot, and persist to database
  *
  * @param projectId - Unique identifier for the project
  * @param templateId - Optional custom template ID (overrides E2B_TEMPLATE_ID env var)
+ * @param options - Optional configuration for sandbox creation
+ * @param options.restoreFromSnapshot - Whether to restore files from snapshot (default: true)
  */
-export async function createSandbox(projectId: string, templateId?: string): Promise<Sandbox> {
+export async function createSandbox(
+  projectId: string,
+  templateId?: string,
+  options?: { restoreFromSnapshot?: boolean }
+): Promise<Sandbox> {
+  const { restoreFromSnapshot = true } = options || {}
   console.log(`[Sandbox] createSandbox called for projectId: ${projectId}`)
 
   // 1. Check if sandbox already exists in memory for this project
@@ -192,13 +384,18 @@ export async function createSandbox(projectId: string, templateId?: string): Pro
   // This handles the case where the sandbox was created in a different API route invocation
   const dbSandboxId = await getSandboxIdFromDatabase(projectId)
   console.log(`[Sandbox] Database sandbox ID for ${projectId}: ${dbSandboxId || 'none'}`)
+  
+  // Track if we need to restore (reconnection failed but we had a previous sandbox)
+  let needsRestore = false
+  
   if (dbSandboxId) {
     const reconnected = await tryReconnectSandbox(dbSandboxId, projectId)
     if (reconnected) {
       console.log(`[Sandbox] Successfully reconnected to sandbox: ${dbSandboxId}`)
       return reconnected
     }
-    console.log(`[Sandbox] Failed to reconnect, will create new sandbox`)
+    console.log(`[Sandbox] Failed to reconnect, will create new sandbox and restore files`)
+    needsRestore = restoreFromSnapshot // Only restore if reconnection failed (sandbox expired)
   }
 
   // 3. Create a new sandbox
@@ -235,8 +432,21 @@ export async function createSandbox(projectId: string, templateId?: string): Pro
     // Reset connection attempts for this sandbox
     connectionAttempts.delete(sandbox.sandboxId)
 
+    // Update activity timestamp
+    updateSandboxActivity(projectId)
+
     // Log template usage for debugging
     console.log(`[Sandbox] Created NEW sandbox ${sandbox.sandboxId} for project ${projectId}${template ? ` using template: ${template}` : ''}`)
+
+    // 4. Restore files from snapshot if this is a replacement for an expired sandbox
+    if (needsRestore) {
+      const snapshot = await getProjectSnapshot(projectId)
+      if (snapshot && Object.keys(snapshot.files_snapshot).length > 0) {
+        console.log(`[Sandbox] Restoring project files from snapshot...`)
+        const restoreResult = await restoreFilesFromSnapshot(sandbox, snapshot)
+        console.log(`[Sandbox] Restore complete: ${restoreResult.filesRestored} files, deps installed: ${restoreResult.dependenciesInstalled}`)
+      }
+    }
 
     return sandbox
   } catch (error) {
@@ -256,6 +466,8 @@ export async function getSandbox(projectId: string): Promise<Sandbox | undefined
     try {
       // Verify sandbox is still alive
       await sandbox.setTimeout(DEFAULT_TIMEOUT_MS)
+      // Update activity timestamp
+      updateSandboxActivity(projectId)
       return sandbox
     } catch (error) {
       // Sandbox expired, remove from cache
@@ -269,6 +481,8 @@ export async function getSandbox(projectId: string): Promise<Sandbox | undefined
   if (dbSandboxId) {
     const reconnected = await tryReconnectSandbox(dbSandboxId, projectId)
     if (reconnected) {
+      // Update activity timestamp
+      updateSandboxActivity(projectId)
       return reconnected
     }
     // Clear stale sandbox ID from database if reconnection failed
@@ -299,6 +513,8 @@ export async function closeSandbox(projectId: string): Promise<void> {
       connectionAttempts.delete(sandbox.sandboxId)
       // Clear sandbox ID from database
       await clearSandboxIdFromDatabase(projectId)
+      // Clean up activity tracking
+      sandboxLastActivity.delete(projectId)
     }
   }
 }
@@ -468,7 +684,7 @@ export function getPausedSandboxInfo(projectId: string): SandboxState | undefine
  *
  * @param projectId - Unique identifier for the project
  */
-export async function getCodeInterpreterSandbox(projectId: string): Promise<CodeInterpreter> {
+export async function getCodeInterpreterSandbox(projectId: string): Promise<CodeInterpreterSandbox> {
   // Check if code interpreter sandbox already exists
   const existing = codeInterpreterSandboxes.get(projectId)
   if (existing) {
@@ -478,6 +694,11 @@ export async function getCodeInterpreterSandbox(projectId: string): Promise<Code
     } catch {
       codeInterpreterSandboxes.delete(projectId)
     }
+  }
+
+  // Check if CodeInterpreter is available
+  if (!CodeInterpreter) {
+    throw new Error("@e2b/code-interpreter package is not available")
   }
 
   // Create new code interpreter sandbox
@@ -490,7 +711,7 @@ export async function getCodeInterpreterSandbox(projectId: string): Promise<Code
   const sandbox = await CodeInterpreter.create({
     timeoutMs: DEFAULT_TIMEOUT_MS,
     metadata: metadata as any,
-  })
+  }) as CodeInterpreterSandbox
 
   codeInterpreterSandboxes.set(projectId, sandbox)
   return sandbox
@@ -505,14 +726,14 @@ export async function getCodeInterpreterSandbox(projectId: string): Promise<Code
  * @param language - The programming language (default: "python")
  */
 export async function executeCode(
-  sandbox: Sandbox | CodeInterpreter,
+  sandbox: Sandbox | CodeInterpreterSandbox,
   code: string,
   language: CodeLanguage = "python"
 ) {
   // If it's a CodeInterpreter instance and language is Python, use runCode for better output
   if ("runCode" in sandbox && language === "python") {
     try {
-      const execution = await sandbox.runCode(code)
+      const execution = await (sandbox as any).runCode(code)
       return {
         logs: {
           stdout: execution.logs.stdout,
@@ -619,7 +840,7 @@ export interface ExecuteCommandOptions {
  * })
  */
 export async function executeCommand(
-  sandbox: Sandbox | CodeInterpreter,
+  sandbox: Sandbox | CodeInterpreterSandbox,
   command: string,
   optionsOrTimeout?: number | ExecuteCommandOptions
 ): Promise<{ stdout: string; stderr: string; exitCode: number; durationMs: number }> {
@@ -653,7 +874,7 @@ export async function executeCommand(
     const result = await sandbox.commands.run(command, {
       timeoutMs: effectiveTimeout,
       cwd: options.cwd,
-      onStdout: (data) => {
+      onStdout: (data: string) => {
         stdoutLines.push(data)
         options.onStdout?.(data)
         // Report progress for long-running commands
@@ -661,7 +882,7 @@ export async function executeCommand(
           onProgress?.("output", data.trim().slice(0, 80))
         }
       },
-      onStderr: (data) => {
+      onStderr: (data: string) => {
         stderrLines.push(data)
         options.onStderr?.(data)
       },
@@ -722,7 +943,7 @@ export async function executeCommand(
  * @returns true if directory exists, false otherwise
  */
 export async function directoryExists(
-  sandbox: Sandbox | CodeInterpreter,
+  sandbox: Sandbox | CodeInterpreterSandbox,
   path: string
 ): Promise<boolean> {
   const result = await executeCommand(sandbox, `test -d ${path} && echo "exists" || echo "not_exists"`)
@@ -738,7 +959,7 @@ export async function directoryExists(
  * @returns true if file exists, false otherwise
  */
 export async function fileExists(
-  sandbox: Sandbox | CodeInterpreter,
+  sandbox: Sandbox | CodeInterpreterSandbox,
   path: string
 ): Promise<boolean> {
   const result = await executeCommand(sandbox, `test -f ${path} && echo "exists" || echo "not_exists"`)
@@ -769,7 +990,7 @@ function convertToE2BData(content: string | Buffer): string | ArrayBuffer {
  * @param content - File content (string or Buffer)
  */
 export async function writeFile(
-  sandbox: Sandbox | CodeInterpreter,
+  sandbox: Sandbox | CodeInterpreterSandbox,
   path: string,
   content: string | Buffer
 ) {
@@ -815,7 +1036,7 @@ export interface WriteFilesOptions {
  * })
  */
 export async function writeFiles(
-  sandbox: Sandbox | CodeInterpreter,
+  sandbox: Sandbox | CodeInterpreterSandbox,
   files: Array<{ path: string; content: string | Buffer }>,
   options?: WriteFilesOptions
 ) {
@@ -917,7 +1138,7 @@ function chunkArray<T>(array: T[], size: number): T[][] {
  * @param sandbox - The E2B sandbox instance
  * @param path - Absolute path to read from
  */
-export async function readFile(sandbox: Sandbox | CodeInterpreter, path: string) {
+export async function readFile(sandbox: Sandbox | CodeInterpreterSandbox, path: string) {
   try {
     const content = await sandbox.files.read(path)
     return { content, path, success: true }
@@ -961,7 +1182,7 @@ export function getHostUrl(sandbox: Sandbox, port: number = 3000): string {
  * @returns Object with success status and optional error
  */
 export async function waitForDevServer(
-  sandbox: Sandbox | CodeInterpreter,
+  sandbox: Sandbox | CodeInterpreterSandbox,
   port: number = 3000,
   maxWaitMs: number = 30000,
   pollInterval: number = 1000
@@ -1005,7 +1226,7 @@ export async function waitForDevServer(
  * @returns Object with running status and active port
  */
 export async function checkDevServerStatus(
-  sandbox: Sandbox | CodeInterpreter,
+  sandbox: Sandbox | CodeInterpreterSandbox,
   ports: number[] = [3000, 3001, 3002, 3003, 3004, 3005]
 ): Promise<{ isRunning: boolean; port: number | null; httpCode?: string }> {
   // Check all ports in parallel

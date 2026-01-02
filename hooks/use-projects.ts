@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import type { Project, ProjectCardData, CreateProjectRequest, UpdateProjectRequest } from "@/lib/db/types"
+import type { Project, ProjectCardData, CreateProjectRequest, UpdateProjectRequest, Message } from "@/lib/db/types"
 import { projectToCardData } from "@/lib/db/types"
 
 interface UseProjectsOptions {
@@ -156,6 +156,7 @@ export function useProjects(options: UseProjectsOptions = {}): UseProjectsReturn
 // Hook for a single project
 interface UseProjectReturn {
   project: Project | null
+  messages: Message[]
   isLoading: boolean
   error: string | null
   refetch: () => Promise<void>
@@ -165,6 +166,7 @@ interface UseProjectReturn {
 
 export function useProject(projectId: string | null): UseProjectReturn {
   const [project, setProject] = useState<Project | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -180,6 +182,7 @@ export function useProject(projectId: string | null): UseProjectReturn {
       // Handle 404 for new projects gracefully
       if (response.status === 404) {
         setProject(null)
+        setMessages([])
         return
       }
 
@@ -190,6 +193,7 @@ export function useProject(projectId: string | null): UseProjectReturn {
       }
 
       setProject(data.project)
+      setMessages(data.messages || [])
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to fetch project"
       setError(message)
@@ -255,11 +259,13 @@ export function useProject(projectId: string | null): UseProjectReturn {
       fetchProject()
     } else {
       setProject(null)
+      setMessages([])
     }
   }, [projectId, fetchProject])
 
   return {
     project,
+    messages,
     isLoading,
     error,
     refetch: fetchProject,

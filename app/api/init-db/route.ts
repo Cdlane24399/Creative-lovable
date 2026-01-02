@@ -71,10 +71,41 @@ export async function GET() {
         EXECUTE FUNCTION update_updated_at_column()
     `
 
+    // Create agent_context table for AI agent state persistence per project
+    await sql`
+      CREATE TABLE IF NOT EXISTS agent_context (
+        project_id UUID PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+        project_name VARCHAR(255),
+        project_dir TEXT,
+        sandbox_id VARCHAR(255),
+        files JSONB DEFAULT '{}',
+        dependencies JSONB DEFAULT '{}',
+        build_status JSONB,
+        server_state JSONB,
+        tool_history JSONB DEFAULT '[]',
+        error_history JSONB DEFAULT '[]',
+        current_plan JSONB,
+        completed_steps JSONB DEFAULT '[]',
+        task_graph JSONB,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `
+
+    // Create indexes for agent_context
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_agent_context_sandbox_id
+      ON agent_context(sandbox_id)
+      WHERE sandbox_id IS NOT NULL
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_agent_context_updated_at
+      ON agent_context(updated_at)
+    `
+
     return NextResponse.json({
       success: true,
       message: "Database schema initialized successfully",
-      tables: ["projects", "messages"],
+      tables: ["projects", "messages", "agent_context"],
       indexes: [
         "idx_projects_user_id",
         "idx_projects_starred",
@@ -82,6 +113,8 @@ export async function GET() {
         "idx_projects_last_opened_at",
         "idx_messages_project_id",
         "idx_messages_created_at",
+        "idx_agent_context_sandbox_id",
+        "idx_agent_context_updated_at",
       ],
     })
   } catch (error) {

@@ -1,107 +1,60 @@
-import { getDb } from "@/lib/db/neon"
 import { NextRequest, NextResponse } from "next/server"
-import type { CreateProjectRequest, Project } from "@/lib/db/types"
+import type { CreateProjectRequest } from "@/lib/db/types"
+import { withAuth } from "@/lib/auth"
+import { asyncErrorHandler } from "@/lib/errors"
+import { getProjectService } from "@/lib/services"
 
-// GET /api/projects - List all projects
-export async function GET(request: NextRequest) {
-  try {
-    const sql = getDb()
-    const { searchParams } = new URL(request.url)
+/**
+ * GET /api/projects - List all projects
+ * 
+ * Query params:
+ * - starred: boolean - Filter by starred status
+ * - limit: number (1-100, default 50) - Max results
+ * - offset: number (default 0) - Skip results
+ */
+export const GET = withAuth(asyncErrorHandler(async (request: NextRequest) => {
+  const projectService = getProjectService()
+  const { searchParams } = new URL(request.url)
 
-    // Query params for filtering
-    const starred = searchParams.get("starred")
-    const limit = parseInt(searchParams.get("limit") || "50")
-    const offset = parseInt(searchParams.get("offset") || "0")
+  // Parse query params
+  const starred = searchParams.get("starred")
+  const limit = parseInt(searchParams.get("limit") || "50")
+  const offset = parseInt(searchParams.get("offset") || "0")
 
-    let projects: Project[]
-
-    // Use simple tagged template queries with fixed ORDER BY
-    // The Neon serverless driver doesn't support dynamic identifiers well
-    if (starred === "true") {
-      projects = await sql`
-        SELECT * FROM projects
-        WHERE starred = true
-        ORDER BY updated_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      ` as Project[]
-    } else if (starred === "false") {
-      projects = await sql`
-        SELECT * FROM projects
-        WHERE starred = false
-        ORDER BY updated_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      ` as Project[]
-    } else {
-      projects = await sql`
-        SELECT * FROM projects
-        ORDER BY updated_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      ` as Project[]
-    }
-
-    return NextResponse.json({ projects: projects || [] })
-  } catch (error) {
-    console.error("Error in GET /api/projects:", error)
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    )
+  // Build filters
+  const filters = {
+    starred: starred === "true" ? true : starred === "false" ? false : undefined,
   }
-}
 
-// POST /api/projects - Create a new project
-export async function POST(request: NextRequest) {
-  try {
-    const sql = getDb()
-    const body: CreateProjectRequest & { id?: string } = await request.json()
+  // Fetch projects (service handles validation, caching)
+  const result = await projectService.listProjects({
+    filters,
+    limit,
+    offset,
+  })
 
-    // Validate required fields
-    if (!body.name || body.name.trim().length === 0) {
-      return NextResponse.json(
-        { error: "Project name is required" },
-        { status: 400 }
-      )
-    }
+  return NextResponse.json(result)
+}))
 
-    const name = body.name.trim()
-    const description = body.description || null
-    const screenshot_base64 = body.screenshot_base64 || null
-    const sandbox_id = body.sandbox_id || null
-    const sandbox_url = body.sandbox_url || null
-    const files_snapshot = body.files_snapshot || {}
-    const dependencies = body.dependencies || {}
+/**
+ * POST /api/projects - Create a new project
+ * 
+ * Body:
+ * - name: string (required)
+ * - description?: string
+ * - id?: string - Optional custom ID
+ * - screenshot_base64?: string
+ * - sandbox_id?: string
+ * - sandbox_url?: string
+ * - files_snapshot?: Record<string, string>
+ * - dependencies?: Record<string, string>
+ */
+export const POST = withAuth(asyncErrorHandler(async (request: NextRequest) => {
+  const projectService = getProjectService()
+  const body: CreateProjectRequest & { id?: string } = await request.json()
 
-    let project: Project[]
+  // Create project (service handles validation)
+  const project = await projectService.createProject(body)
 
-    if (body.id) {
-      // Use provided ID
-      project = await sql`
-        INSERT INTO projects (id, name, description, screenshot_base64, sandbox_id, sandbox_url, files_snapshot, dependencies, starred)
-        VALUES (${body.id}, ${name}, ${description}, ${screenshot_base64}, ${sandbox_id}, ${sandbox_url}, ${JSON.stringify(files_snapshot)}, ${JSON.stringify(dependencies)}, false)
-        RETURNING *
-      ` as Project[]
-    } else {
-      // Let database generate ID
-      project = await sql`
-        INSERT INTO projects (name, description, screenshot_base64, sandbox_id, sandbox_url, files_snapshot, dependencies, starred)
-        VALUES (${name}, ${description}, ${screenshot_base64}, ${sandbox_id}, ${sandbox_url}, ${JSON.stringify(files_snapshot)}, ${JSON.stringify(dependencies)}, false)
-        RETURNING *
-      ` as Project[]
-    }
-
-    if (!project || project.length === 0) {
-      return NextResponse.json(
-        { error: "Failed to create project" },
-        { status: 500 }
-      )
-    }
-
-    return NextResponse.json({ project: project[0] }, { status: 201 })
-  } catch (error) {
-    console.error("Error in POST /api/projects:", error)
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    )
-  }
-}
+  return NextResponse.json({ project }, { status: 201 })
+}))

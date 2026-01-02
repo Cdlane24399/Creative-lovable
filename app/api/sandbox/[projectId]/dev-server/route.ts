@@ -15,8 +15,10 @@ import {
   killBackgroundProcess,
   checkDevServerStatus,
 } from "@/lib/e2b/sandbox"
+import { withAuth } from "@/lib/auth"
+import { type ReadableStreamDefaultController } from "node:stream/web"
 
-export const maxDuration = 60
+export const maxDuration = 300
 
 interface DevServerStatus {
   isRunning: boolean
@@ -36,98 +38,146 @@ const startingProjects = new Map<string, Promise<any>>()
 
 /**
  * GET /api/sandbox/[projectId]/dev-server
- * Get the current status of the dev server (with caching to reduce log noise)
+ * Stream dev server status using Server-Sent Events (SSE)
  */
-export async function GET(
+export const GET = withAuth(async (
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
-) {
+) => {
   const { projectId } = await params
 
-  // Check cache first to reduce redundant status checks
-  const cached = statusCache.get(projectId)
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    return NextResponse.json(cached.status)
-  }
+  // Set up SSE headers
+  const responseStream = new ReadableStream({
+    start(controller: ReadableStreamDefaultController) {
+      let isClosed = false
+      let interval: NodeJS.Timeout | null = null
 
-  try {
-    const sandbox = await getSandbox(projectId)
-    
-    if (!sandbox) {
-      const status: DevServerStatus = {
-        isRunning: false,
-        port: null,
-        url: null,
-        logs: [],
-        errors: [],
-        lastChecked: new Date().toISOString(),
+      // Helper to safely enqueue data
+      const safeEnqueue = (data: string) => {
+        if (isClosed) return false
+        try {
+          controller.enqueue(data)
+          return true
+        } catch {
+          // Controller is closed
+          isClosed = true
+          if (interval) {
+            clearInterval(interval)
+            interval = null
+          }
+          return false
+        }
       }
-      statusCache.set(projectId, { status, timestamp: Date.now() })
-      return NextResponse.json(status)
-    }
 
-    // Check if server is responding using curl (more reliable than nc -z)
-    // This verifies the server can actually serve HTTP requests, not just that port is open
-    const serverStatus = await checkDevServerStatus(sandbox)
-    const isRunning = serverStatus.isRunning
-    const activePort = serverStatus.port || 3000
+      // Send initial status
+      const sendStatus = async () => {
+        if (isClosed) return
 
-    // Only fetch logs if server is running and we need them for error checking
-    let logs: string[] = []
-    let errors: string[] = []
+        try {
+          const sandbox = await getSandbox(projectId)
 
-    if (isRunning) {
-      // Minimal log fetch - just check for recent errors
-      const logsResult = await executeCommand(
-        sandbox,
-        `tail -n 20 /tmp/server.log 2>/dev/null | grep -i -E "error|failed|cannot" || echo ""`,
-        { timeoutMs: 3000 }
-      )
-      const errorLines = logsResult.stdout.trim()
-      if (errorLines) {
-        errors = errorLines.split("\n").filter(Boolean)
+          if (!sandbox) {
+            const status: DevServerStatus = {
+              isRunning: false,
+              port: null,
+              url: null,
+              logs: [],
+              errors: [],
+              lastChecked: new Date().toISOString(),
+            }
+            safeEnqueue(`data: ${JSON.stringify(status)}\n\n`)
+            return
+          }
+
+          // Check if server is responding using curl (more reliable than nc -z)
+          const serverStatus = await checkDevServerStatus(sandbox)
+          const isRunning = serverStatus.isRunning
+          const activePort = serverStatus.port || 3000
+
+          // Fetch logs if server is running
+          const errors: string[] = []
+
+          if (isRunning) {
+            // Minimal log fetch - just check for recent errors
+            const logsResult = await executeCommand(
+              sandbox,
+              `tail -n 20 /tmp/server.log 2>/dev/null | grep -i -E "error|failed|cannot" || echo ""`,
+              { timeoutMs: 3000 }
+            )
+            const errorLines = logsResult.stdout.trim()
+            if (errorLines) {
+              errors.push(...errorLines.split("\n").filter(Boolean))
+            }
+          }
+
+          const url = isRunning ? getHostUrl(sandbox, activePort) : null
+
+          const status: DevServerStatus = {
+            isRunning,
+            port: isRunning ? activePort : null,
+            url,
+            logs: [], // Don't send full logs in SSE - use getLogs endpoint if needed
+            errors,
+            lastChecked: new Date().toISOString(),
+          }
+
+          safeEnqueue(`data: ${JSON.stringify(status)}\n\n`)
+        } catch (error) {
+          if (isClosed) return
+          console.error("[SSE] Error sending status:", error)
+          const errorStatus: DevServerStatus = {
+            isRunning: false,
+            port: null,
+            url: null,
+            logs: [],
+            errors: ["Failed to check server status"],
+            lastChecked: new Date().toISOString(),
+          }
+          safeEnqueue(`data: ${JSON.stringify(errorStatus)}\n\n`)
+        }
       }
+
+      // Send initial status
+      sendStatus()
+
+      // Set up interval to send updates every 2 seconds
+      interval = setInterval(sendStatus, 2000)
+
+      // Clean up on client disconnect
+      req.signal.addEventListener('abort', () => {
+        isClosed = true
+        if (interval) {
+          clearInterval(interval)
+          interval = null
+        }
+        try {
+          controller.close()
+        } catch {
+          // Already closed
+        }
+      })
     }
+  })
 
-    const url = isRunning ? getHostUrl(sandbox, activePort) : null
-
-    const status: DevServerStatus = {
-      isRunning,
-      port: isRunning ? activePort : null,
-      url,
-      logs: [], // Don't send full logs on every poll - use getLogs endpoint if needed
-      errors,
-      lastChecked: new Date().toISOString(),
-    }
-
-    // Cache the result
-    statusCache.set(projectId, { status, timestamp: Date.now() })
-
-    return NextResponse.json(status)
-  } catch (error) {
-    // Silent error - don't log every failed status check
-    
-    // Return not running status on error
-    const status: DevServerStatus = {
-      isRunning: false,
-      port: null,
-      url: null,
-      logs: [],
-      errors: error instanceof Error ? [error.message] : ["Failed to check server status"],
-      lastChecked: new Date().toISOString(),
-    }
-    return NextResponse.json(status)
-  }
-}
+  return new Response(responseStream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Cache-Control',
+    },
+  })
+})
 
 /**
  * POST /api/sandbox/[projectId]/dev-server
  * Start the dev server (fast startup, let client handle loading state)
  */
-export async function POST(
+export const POST = withAuth(async (
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
-) {
+) => {
   const { projectId } = await params
   console.log("[dev-server POST] Starting for projectId:", projectId)
 
@@ -188,13 +238,16 @@ export async function POST(
         )
       }
 
-      // Kill any existing processes if force restart
-      if (forceRestart) {
-        console.log("[dev-server POST] Force restart requested, killing existing processes")
+      // Kill any existing processes if force restart OR if server isn't responding
+      // This prevents lock file issues when a stale process is holding the lock
+      const shouldCleanup = forceRestart || !(await checkDevServerStatus(sandbox)).isRunning
+
+      if (shouldCleanup) {
+        console.log("[dev-server POST] Cleaning up existing processes and lock files")
         await killBackgroundProcess(projectId)
         await executeCommand(
-          sandbox, 
-          `pkill -f "next dev" 2>/dev/null || true`, 
+          sandbox,
+          `pkill -f "next dev" 2>/dev/null || true`,
           { timeoutMs: 5000 }
         )
         // Kill all ports in range
@@ -205,6 +258,12 @@ export async function POST(
             { timeoutMs: 2000 }
           )
         }
+        // Remove Next.js lock file to prevent "Unable to acquire lock" errors
+        await executeCommand(
+          sandbox,
+          `rm -rf ${projectDir}/.next/dev/lock 2>/dev/null || true`,
+          { timeoutMs: 2000 }
+        )
         await new Promise(resolve => setTimeout(resolve, 500))
       }
 
@@ -239,8 +298,8 @@ export async function POST(
       })
       console.log("[dev-server POST] Background process started")
 
-      // Extended wait for server startup (30 seconds max to account for slower environments)
-      const maxWaitMs = 30000
+      // Extended wait for server startup (120 seconds max to account for slower environments and first-time builds)
+      const maxWaitMs = 120000
       const pollInterval = 1000
       const maxPolls = Math.ceil(maxWaitMs / pollInterval)
 
@@ -314,7 +373,7 @@ export async function POST(
         
         return NextResponse.json(
           { 
-            error: "Dev server failed to start within 30 seconds. The server may still be starting up in the background.",
+            error: "Dev server failed to start within 120 seconds. The server may still be starting up in the background.",
             logs: logsResult.stdout,
             hint: "Try refreshing the page in a few seconds, or check the server logs for errors."
           },
@@ -353,16 +412,16 @@ export async function POST(
   startingProjects.set(projectId, startPromise)
 
   return startPromise
-}
+})
 
 /**
  * DELETE /api/sandbox/[projectId]/dev-server
  * Stop the dev server
  */
-export async function DELETE(
+export const DELETE = withAuth(async (
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
-) {
+) => {
   const { projectId } = await params
 
   try {
@@ -404,4 +463,4 @@ export async function DELETE(
       { status: 500 }
     )
   }
-}
+})

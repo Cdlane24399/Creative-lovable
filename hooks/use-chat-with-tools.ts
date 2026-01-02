@@ -1,9 +1,10 @@
 "use client"
 
-import { useMemo, useCallback } from "react"
+import { useMemo, useCallback, useEffect, useRef } from "react"
 import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
 import type { ChatMessage } from "@/app/api/chat/route"
+import type { Message } from "@/lib/db/types"
 
 // Progress state for a single tool call (for future use with data streaming)
 export interface ToolProgress {
@@ -19,8 +20,24 @@ export interface ToolProgress {
 
 interface UseChatWithToolsOptions {
   projectId?: string
-  model?: "anthropic" | "sonnet" | "google" | "googleFlash" | "openai"
+  model?: "anthropic" | "opus" | "google" | "googlePro" | "openai"
   onError?: (error: Error) => void
+  /** Initial messages to restore from database */
+  initialMessages?: Message[]
+}
+
+/**
+ * Convert database messages to AI SDK message format.
+ * Handles the parts field which may contain tool calls.
+ */
+function convertDbMessagesToAiMessages(dbMessages: Message[]): ChatMessage[] {
+  return dbMessages.map((msg) => ({
+    id: msg.id,
+    role: msg.role,
+    content: msg.content,
+    parts: msg.parts || [{ type: "text", text: msg.content }],
+    createdAt: new Date(msg.created_at),
+  })) as ChatMessage[]
 }
 
 /**
@@ -31,8 +48,18 @@ interface UseChatWithToolsOptions {
  * - Multi-model support (Anthropic, Google, OpenAI)
  * - Project context tracking via projectId
  * - Convenient status helpers for UI state management
+ * - Initial message restoration from database
  */
-export function useChatWithTools({ projectId, model = "anthropic", onError }: UseChatWithToolsOptions = {}) {
+export function useChatWithTools({ projectId, model = "anthropic", onError, initialMessages }: UseChatWithToolsOptions = {}) {
+  // Track if we've initialized with messages
+  const hasInitializedRef = useRef(false)
+  
+  // Convert initial messages to AI SDK format
+  const convertedInitialMessages = useMemo(() => {
+    if (!initialMessages || initialMessages.length === 0) return undefined
+    return convertDbMessagesToAiMessages(initialMessages)
+  }, [initialMessages])
+  
   // Recreate transport when model or projectId changes to ensure correct model is used
   const transport = useMemo(
     () =>
@@ -45,6 +72,7 @@ export function useChatWithTools({ projectId, model = "anthropic", onError }: Us
 
   const chat = useChat<ChatMessage>({
     transport,
+    messages: convertedInitialMessages,
     onError: (error) => {
       console.error("Chat error:", error)
       onError?.(error)
@@ -81,5 +109,7 @@ export function useChatWithTools({ projectId, model = "anthropic", onError }: Us
     assistantMessages: chat.messages.filter(m => m.role === "assistant"),
     // Placeholder for future real-time progress
     getToolProgress,
+    // Flag to check if chat was restored from history
+    hasRestoredHistory: convertedInitialMessages !== undefined && convertedInitialMessages.length > 0,
   }
 }

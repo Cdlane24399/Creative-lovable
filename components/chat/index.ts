@@ -1,5 +1,3 @@
 export { ChatMarkdown } from "./chat-markdown"
 export { ToolCallDisplay, ToolCallsGroup } from "./tool-call-display"
-export { StreamingStatus } from "./streaming-status"
 export { ChatError, ChatEmptyState } from "./chat-error"
-export { ToolProgressIndicator, InlineToolProgress } from "./tool-progress"
