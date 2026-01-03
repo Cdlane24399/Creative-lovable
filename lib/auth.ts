@@ -1,14 +1,26 @@
 import { NextRequest, NextResponse } from "next/server"
 import { checkRateLimit } from "./rate-limit"
 import { AuthenticationError, AuthorizationError, RateLimitError } from "./errors"
+import { createClient } from "@/lib/supabase/server"
 
 // Track if auth warning has been logged to avoid spam
 let authWarningLogged = false
 
-// API Key authentication middleware
-export function authenticateRequest(request: NextRequest | Request): { isAuthenticated: boolean; error?: NextResponse | Response } {
-  const apiKey = request.headers.get("x-api-key") || request.headers.get("authorization")?.replace("Bearer ", "")
+// Authentication middleware
+export async function authenticateRequest(request: NextRequest | Request): Promise<{ isAuthenticated: boolean; error?: NextResponse | Response }> {
+  // 1. Try Supabase Auth (Cookies)
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      return { isAuthenticated: true }
+    }
+  } catch (error) {
+    // Ignore error and try API Key
+  }
 
+  // 2. Try API Key
+  const apiKey = request.headers.get("x-api-key") || request.headers.get("authorization")?.replace("Bearer ", "")
   const expectedApiKey = process.env.API_KEY || process.env.NEXT_PUBLIC_API_KEY
 
   if (!expectedApiKey) {
@@ -91,7 +103,7 @@ export function withAuth<T extends any[]>(
       }
     }
 
-    const auth = authenticateRequest(request)
+    const auth = await authenticateRequest(request)
 
     if (!auth.isAuthenticated) {
       return auth.error!

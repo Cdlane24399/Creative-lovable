@@ -1,9 +1,13 @@
 "use client"
 
-import { useState } from "react"
-import { Menu, X, Github, User, Settings, CreditCard, LogOut, Heart, ChevronDown } from "lucide-react"
+import { useState, useEffect } from "react"
+import { Menu, X, Github, User, Settings, CreditCard, LogOut, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { LovableLogo } from "@/components/shared/icons"
+import { createClient } from "@/lib/supabase/client"
+import { User as SupabaseUser } from "@supabase/supabase-js"
+import Link from "next/link"
 
 const navLinks = [
   { label: "Features", href: "#features" },
@@ -15,6 +19,25 @@ const navLinks = [
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [user, setUser] = useState<SupabaseUser | null>(null)
+  const supabase = createClient()
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+        setUser(user)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const handleSignOut = async () => {
+      await supabase.auth.signOut()
+      window.location.reload()
+  }
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50">
@@ -27,7 +50,7 @@ export function Header() {
             {/* Logo */}
             <a href="#" className="flex items-center gap-2.5 group">
               <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 shadow-sm group-hover:bg-emerald-500 transition-colors">
-                <Heart className="w-4 h-4 text-white" fill="white" />
+                <LovableLogo className="w-4 h-4 text-white" />
               </span>
               <span className="text-lg font-semibold tracking-tight text-white">Lovable</span>
             </a>
@@ -58,53 +81,68 @@ export function Header() {
                 </a>
               </Button>
 
-              {/* Profile Dropdown */}
-              <div className="relative">
-                <button
-                  onClick={() => setProfileOpen(!profileOpen)}
-                  className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-lg hover:bg-zinc-800 border border-transparent hover:border-zinc-700 transition-all"
-                >
-                  <div className="h-8 w-8 rounded-md bg-zinc-800 flex items-center justify-center border border-zinc-700">
-                    <span className="text-xs font-medium text-white">C</span>
-                  </div>
-                  <ChevronDown className={cn(
-                    "w-4 h-4 text-zinc-400 transition-transform",
-                    profileOpen && "rotate-180"
-                  )} />
-                </button>
-
-                {profileOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
-                    <div className="absolute right-0 top-full mt-2 w-60 bg-[#18181B] rounded-xl py-2 shadow-xl border border-zinc-800 z-50">
-                      <div className="px-4 py-3 border-b border-zinc-800">
-                        <p className="text-sm font-medium text-white">Chris Anderson</p>
-                        <p className="text-xs text-zinc-500">chris@example.com</p>
-                      </div>
-                      <div className="py-1">
-                        <button className="w-full px-4 py-2.5 text-left text-sm text-zinc-300 hover:bg-zinc-800 flex items-center gap-3 transition-colors">
-                          <User className="w-4 h-4 text-zinc-500" />
-                          Profile
-                        </button>
-                        <button className="w-full px-4 py-2.5 text-left text-sm text-zinc-300 hover:bg-zinc-800 flex items-center gap-3 transition-colors">
-                          <CreditCard className="w-4 h-4 text-zinc-500" />
-                          Billing
-                        </button>
-                        <button className="w-full px-4 py-2.5 text-left text-sm text-zinc-300 hover:bg-zinc-800 flex items-center gap-3 transition-colors">
-                          <Settings className="w-4 h-4 text-zinc-500" />
-                          Settings
-                        </button>
-                      </div>
-                      <div className="border-t border-zinc-800 pt-1">
-                        <button className="w-full px-4 py-2.5 text-left text-sm text-red-400 hover:bg-zinc-800 flex items-center gap-3 transition-colors">
-                          <LogOut className="w-4 h-4" />
-                          Log out
-                        </button>
-                      </div>
+              {/* Profile Dropdown or Login */}
+              {user ? (
+                <div className="relative">
+                  <button
+                    onClick={() => setProfileOpen(!profileOpen)}
+                    className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-lg hover:bg-zinc-800 border border-transparent hover:border-zinc-700 transition-all"
+                  >
+                    <div className="h-8 w-8 rounded-md bg-zinc-800 flex items-center justify-center border border-zinc-700">
+                      <span className="text-xs font-medium text-white">
+                        {user.email?.[0].toUpperCase()}
+                      </span>
                     </div>
-                  </>
-                )}
-              </div>
+                    <ChevronDown className={cn(
+                      "w-4 h-4 text-zinc-400 transition-transform",
+                      profileOpen && "rotate-180"
+                    )} />
+                  </button>
+
+                  {profileOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
+                      <div className="absolute right-0 top-full mt-2 w-60 bg-[#18181B] rounded-xl py-2 shadow-xl border border-zinc-800 z-50">
+                        <div className="px-4 py-3 border-b border-zinc-800">
+                          <p className="text-sm font-medium text-white truncate">{user.email}</p>
+                        </div>
+                        <div className="py-1">
+                          <button className="w-full px-4 py-2.5 text-left text-sm text-zinc-300 hover:bg-zinc-800 flex items-center gap-3 transition-colors">
+                            <User className="w-4 h-4 text-zinc-500" />
+                            Profile
+                          </button>
+                          <button className="w-full px-4 py-2.5 text-left text-sm text-zinc-300 hover:bg-zinc-800 flex items-center gap-3 transition-colors">
+                            <CreditCard className="w-4 h-4 text-zinc-500" />
+                            Billing
+                          </button>
+                          <button className="w-full px-4 py-2.5 text-left text-sm text-zinc-300 hover:bg-zinc-800 flex items-center gap-3 transition-colors">
+                            <Settings className="w-4 h-4 text-zinc-500" />
+                            Settings
+                          </button>
+                        </div>
+                        <div className="border-t border-zinc-800 pt-1">
+                          <button 
+                            onClick={handleSignOut}
+                            className="w-full px-4 py-2.5 text-left text-sm text-red-400 hover:bg-zinc-800 flex items-center gap-3 transition-colors"
+                          >
+                            <LogOut className="w-4 h-4" />
+                            Log out
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" asChild>
+                    <Link href="/login">Login</Link>
+                  </Button>
+                  <Button asChild>
+                    <Link href="/signup">Sign Up</Link>
+                  </Button>
+                </div>
+              )}
             </div>
 
             {/* Mobile menu button */}
@@ -137,15 +175,28 @@ export function Header() {
                 ))}
               </div>
               <div className="mt-4 pt-4 border-t border-zinc-800">
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <div className="h-10 w-10 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center">
-                    <span className="text-sm font-medium text-white">C</span>
+                {user ? (
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <div className="h-10 w-10 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center">
+                      <span className="text-sm font-medium text-white">
+                        {user.email?.[0].toUpperCase()}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-white truncate max-w-[200px]">{user.email}</p>
+                      <button onClick={handleSignOut} className="text-xs text-red-400 hover:underline">Log out</button>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">Chris Anderson</p>
-                    <p className="text-xs text-zinc-500">chris@example.com</p>
+                ) : (
+                  <div className="flex flex-col gap-2 px-4">
+                    <Button variant="outline" asChild className="w-full justify-center">
+                      <Link href="/login">Login</Link>
+                    </Button>
+                    <Button asChild className="w-full justify-center">
+                      <Link href="/signup">Sign Up</Link>
+                    </Button>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           )}

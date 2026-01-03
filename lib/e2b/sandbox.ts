@@ -216,18 +216,23 @@ async function restoreFilesFromSnapshot(
   projectDir: string = "/home/user/project"
 ): Promise<{ success: boolean; filesRestored: number; dependenciesInstalled: boolean }> {
   const result = { success: false, filesRestored: 0, dependenciesInstalled: false }
-  
+
   try {
     const fileEntries = Object.entries(snapshot.files_snapshot)
     if (fileEntries.length === 0) {
       console.log("[Sandbox] No files to restore from snapshot")
       return { success: true, filesRestored: 0, dependenciesInstalled: false }
     }
-    
+
     console.log(`[Sandbox] Restoring ${fileEntries.length} files from snapshot...`)
-    
+
     // Create project directory if needed
     await sandbox.commands.run(`mkdir -p ${projectDir}`)
+
+    // CRITICAL: Clear .next cache to ensure restored files are used
+    // The E2B template may have pre-built files that would override restored content
+    console.log("[Sandbox] Clearing .next cache to ensure fresh build...")
+    await sandbox.commands.run(`rm -rf ${projectDir}/.next 2>/dev/null || true`)
     
     // Prepare files for batch write
     const filesToWrite = fileEntries.map(([path, content]) => ({
@@ -392,6 +397,16 @@ export async function createSandbox(
     const reconnected = await tryReconnectSandbox(dbSandboxId, projectId)
     if (reconnected) {
       console.log(`[Sandbox] Successfully reconnected to sandbox: ${dbSandboxId}`)
+      // Even if reconnection succeeds, we should restore files if requested
+      // This handles the case where the sandbox exists but files were lost (e.g., template reset)
+      if (restoreFromSnapshot) {
+        const snapshot = await getProjectSnapshot(projectId)
+        if (snapshot && Object.keys(snapshot.files_snapshot).length > 0) {
+          console.log(`[Sandbox] Restoring files to reconnected sandbox to ensure content is current...`)
+          const restoreResult = await restoreFilesFromSnapshot(reconnected, snapshot)
+          console.log(`[Sandbox] Restore to reconnected sandbox complete: ${restoreResult.filesRestored} files`)
+        }
+      }
       return reconnected
     }
     console.log(`[Sandbox] Failed to reconnect, will create new sandbox and restore files`)

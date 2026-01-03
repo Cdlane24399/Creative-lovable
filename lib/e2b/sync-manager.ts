@@ -463,16 +463,18 @@ export class SyncManager {
    */
   private async saveSnapshotToDb(snapshot: Record<string, string>): Promise<boolean> {
     try {
-      const { getDb } = await import("@/lib/db/neon")
-      const sql = getDb()
+      const { createAdminClient } = await import("@/lib/supabase/admin")
+      const client = createAdminClient()
 
-      await sql`
-        UPDATE projects
-        SET files_snapshot = ${JSON.stringify(snapshot)}::jsonb,
-            updated_at = NOW()
-        WHERE id = ${this.config.projectId}::uuid
-      `
+      const { error } = await client
+        .from('projects')
+        .update({
+            files_snapshot: snapshot,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', this.config.projectId)
 
+      if (error) throw error
       return true
     } catch (error) {
       console.error("[SyncManager] Error saving snapshot:", error)

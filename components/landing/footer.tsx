@@ -1,6 +1,7 @@
 "use client"
 
 import { Github, Twitter, Linkedin, Youtube, Heart } from "lucide-react"
+import { LovableLogo } from "@/components/shared/icons"
 
 const navigation = {
   product: [
@@ -44,7 +45,7 @@ export function Footer() {
           <div className="col-span-2">
             <a href="#" className="flex items-center gap-2.5 mb-4 group">
               <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 shadow-sm group-hover:bg-emerald-500 transition-colors">
-                <Heart className="w-4 h-4 text-white" fill="white" />
+                <LovableLogo className="w-4 h-4 text-white" />
               </span>
               <span className="text-xl font-semibold tracking-tight text-white">Lovable</span>
             </a>

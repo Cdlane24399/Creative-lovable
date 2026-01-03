@@ -39,7 +39,7 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
   }, [sandboxUrl])
 
   // Load existing project data
-  const { project, messages: savedMessages, isLoading: isProjectLoading, updateProject, saveScreenshot } = useProject(projectId || null)
+  const { project, messages: savedMessages, isLoading: isProjectLoading, updateProject, saveScreenshot, refetchProject } = useProject(projectId || null)
 
   // Dev server management - only enable polling when actively starting a server
   const [isPollingEnabled, setIsPollingEnabled] = useState(false)
@@ -119,6 +119,9 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
     startDevServer()
   }, [pendingServerStart, projectId, pendingSandboxId, startDevServer])
 
+  // Track if sandbox validation is in progress
+  const validatingSandboxRef = useRef(false)
+
   // Restore project state when loading an existing project
   useEffect(() => {
     if (project) {
@@ -127,11 +130,35 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
       if (project.name && project.name !== "Untitled Project") {
         titleGeneratedRef.current = true
       }
-      if (project.sandbox_url) {
+      if (project.sandbox_url && !validatingSandboxRef.current) {
         lastSavedUrlRef.current = project.sandbox_url
-        // Restore the sandbox URL from saved project
-        console.log("[EditorLayout] Restoring sandbox URL from project:", project.sandbox_url)
-        setSandboxUrl(project.sandbox_url)
+        // Don't immediately set the sandbox URL - validate it first
+        // by checking if the sandbox is still accessible
+        console.log("[EditorLayout] Validating saved sandbox URL:", project.sandbox_url)
+        validatingSandboxRef.current = true
+
+        // Check if sandbox is still valid by checking restore status
+        // If we can restore (files exist), sandbox may have expired
+        fetch(`/api/projects/${project.id}/restore`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.canRestore && data.fileCount > 0) {
+              // Project has saved files - trigger restoration to ensure sandbox has them
+              console.log("[EditorLayout] Project has saved files, triggering restoration...")
+              // Don't set sandbox URL yet - let restoration handle it
+            } else {
+              // No files to restore, use saved URL directly
+              console.log("[EditorLayout] No files to restore, using saved sandbox URL")
+              setSandboxUrl(project.sandbox_url)
+            }
+            validatingSandboxRef.current = false
+          })
+          .catch(() => {
+            // On error, try to use saved URL
+            console.log("[EditorLayout] Validation failed, using saved sandbox URL")
+            setSandboxUrl(project.sandbox_url)
+            validatingSandboxRef.current = false
+          })
       }
     }
   }, [project])
@@ -389,8 +416,15 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
       }
       // Trigger dev server start with the project name
       setPendingServerStart(newProjectName)
+
+      // Refetch project to get updated files_snapshot for Code Tab
+      // Small delay to ensure files are saved to DB
+      setTimeout(() => {
+        console.log("[EditorLayout] Refetching project to get files_snapshot...")
+        refetchProject()
+      }, 2000)
     }
-  }, [])
+  }, [refetchProject])
 
   // Handle sandbox URL update (from createWebsite tool result)
   const handleSandboxUrlUpdate = useCallback((url: string | null) => {

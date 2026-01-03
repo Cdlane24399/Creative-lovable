@@ -2,16 +2,10 @@
  * Project Repository
  * 
  * Handles all database operations for the projects table.
- * Consolidates scattered SQL queries from API routes into a single, type-safe location.
- * 
- * Features:
- * - CRUD operations for projects
- * - Sandbox ID management
- * - Files snapshot persistence
- * - Proper type conversions for JSONB fields
+ * Uses Supabase Client for database access.
  */
 
-import { BaseRepository, generateId, parseJsonSafe, toJsonString, type FindOptions, type PaginatedResult } from "./base.repository"
+import { BaseRepository, generateId, parseJsonSafe, type FindOptions } from "./base.repository"
 import type { Project, CreateProjectRequest, UpdateProjectRequest } from "../types"
 
 // =============================================================================
@@ -34,26 +28,6 @@ export interface ProjectQueryOptions extends FindOptions {
   filters?: ProjectFilters
 }
 
-/**
- * Project row as returned from database (with JSONB as strings)
- */
-interface ProjectRow {
-  id: string
-  name: string
-  description: string | null
-  screenshot_url: string | null
-  screenshot_base64: string | null
-  sandbox_id: string | null
-  sandbox_url: string | null
-  files_snapshot: string | Record<string, string>
-  dependencies: string | Record<string, string>
-  starred: boolean
-  created_at: string
-  updated_at: string
-  last_opened_at: string
-  user_id: string | null
-}
-
 // =============================================================================
 // Repository Implementation
 // =============================================================================
@@ -67,7 +41,7 @@ export class ProjectRepository extends BaseRepository<Project> {
    * Transform database row to Project type
    * Handles JSONB field parsing
    */
-  private transformRow(row: ProjectRow): Project {
+  private transformRow(row: any): Project {
     return {
       ...row,
       files_snapshot: parseJsonSafe<Record<string, string>>(row.files_snapshot, {}),
@@ -79,208 +53,191 @@ export class ProjectRepository extends BaseRepository<Project> {
    * Find all projects with optional filters and pagination
    */
   async findAll(options: ProjectQueryOptions = {}): Promise<Project[]> {
-    const { 
-      limit = 50, 
-      offset = 0, 
-      orderBy = "updated_at", 
-      orderDir = "DESC",
-      filters = {}
-    } = options
+    try {
+      const client = await this.getClient()
+      let query = client.from(this.tableName).select('*')
 
-    return this.executeQuery(async (sql) => {
-      let result: ProjectRow[]
-
-      // Handle different filter combinations
-      // Note: Neon serverless doesn't support dynamic identifiers well,
-      // so we use explicit queries for each case
-      if (filters.starred === true) {
-        result = await sql`
-          SELECT * FROM projects
-          WHERE starred = true
-          ORDER BY updated_at DESC
-          LIMIT ${limit} OFFSET ${offset}
-        ` as unknown as ProjectRow[]
-      } else if (filters.starred === false) {
-        result = await sql`
-          SELECT * FROM projects
-          WHERE starred = false
-          ORDER BY updated_at DESC
-          LIMIT ${limit} OFFSET ${offset}
-        ` as unknown as ProjectRow[]
-      } else if (filters.hasSandbox === true) {
-        result = await sql`
-          SELECT * FROM projects
-          WHERE sandbox_id IS NOT NULL
-          ORDER BY updated_at DESC
-          LIMIT ${limit} OFFSET ${offset}
-        ` as unknown as ProjectRow[]
-      } else {
-        result = await sql`
-          SELECT * FROM projects
-          ORDER BY updated_at DESC
-          LIMIT ${limit} OFFSET ${offset}
-        ` as unknown as ProjectRow[]
+      // Apply filters
+      if (options.filters?.starred !== undefined) {
+        query = query.eq('starred', options.filters.starred)
+      }
+      if (options.filters?.hasSandbox) {
+        query = query.not('sandbox_id', 'is', null)
+      }
+      // userId filter is automatically handled by RLS if configured,
+      // but we can explicitly add it if needed for admin contexts or specific queries
+      if (options.filters?.userId) {
+          query = query.eq('user_id', options.filters.userId)
       }
 
-      return result.map(row => this.transformRow(row))
-    }, "findAll")
+      // Order
+      const orderBy = options.orderBy || "updated_at"
+      const ascending = options.orderDir === "ASC"
+      query = query.order(orderBy, { ascending })
+
+      // Pagination
+      const limit = options.limit || 50
+      const offset = options.offset || 0
+      query = query.range(offset, offset + limit - 1)
+
+      const { data, error } = await query
+      if (error) throw error
+
+      return data.map(row => this.transformRow(row))
+    } catch (error) {
+      this.handleError(error, "findAll")
+    }
   }
 
   /**
    * Find a project by ID
    */
   async findById(id: string): Promise<Project | null> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        SELECT * FROM projects 
-        WHERE id = ${id}
-        LIMIT 1
-      ` as unknown as ProjectRow[]
+    try {
+      const client = await this.getClient()
+      const { data, error } = await client
+        .from(this.tableName)
+        .select('*')
+        .eq('id', id)
+        .single()
 
-      if (result.length === 0) {
-        return null
+      if (error) {
+        if (error.code === 'PGRST116') return null // Not found
+        throw error
       }
 
-      return this.transformRow(result[0])
-    }, "findById")
+      return this.transformRow(data)
+    } catch (error) {
+      this.handleError(error, "findById")
+    }
   }
 
   /**
    * Find a project by sandbox ID
    */
   async findBySandboxId(sandboxId: string): Promise<Project | null> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        SELECT * FROM projects 
-        WHERE sandbox_id = ${sandboxId}
-        LIMIT 1
-      ` as unknown as ProjectRow[]
+    try {
+      const client = await this.getClient()
+      const { data, error } = await client
+        .from(this.tableName)
+        .select('*')
+        .eq('sandbox_id', sandboxId)
+        .single()
 
-      if (result.length === 0) {
-        return null
+      if (error) {
+        if (error.code === 'PGRST116') return null
+        throw error
       }
 
-      return this.transformRow(result[0])
-    }, "findBySandboxId")
+      return this.transformRow(data)
+    } catch (error) {
+      this.handleError(error, "findBySandboxId")
+    }
   }
 
   /**
    * Create a new project
    */
   async create(data: CreateProjectRequest & { id?: string }): Promise<Project> {
-    const id = data.id || generateId()
-    
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        INSERT INTO projects (
-          id, 
-          name, 
-          description, 
-          screenshot_base64, 
-          sandbox_id, 
-          sandbox_url, 
-          files_snapshot, 
-          dependencies, 
-          starred
-        )
-        VALUES (
-          ${id}, 
-          ${data.name.trim()}, 
-          ${data.description || null}, 
-          ${data.screenshot_base64 || null}, 
-          ${data.sandbox_id || null}, 
-          ${data.sandbox_url || null}, 
-          ${toJsonString(data.files_snapshot || {})}, 
-          ${toJsonString(data.dependencies || {})}, 
-          false
-        )
-        RETURNING *
-      ` as unknown as ProjectRow[]
+    try {
+      const id = data.id || generateId()
+      const client = await this.getClient()
 
-      return this.transformRow(result[0])
-    }, "create")
+      const { data: result, error } = await client
+        .from(this.tableName)
+        .insert({
+          id,
+          name: data.name.trim(),
+          description: data.description || null,
+          screenshot_base64: data.screenshot_base64 || null,
+          sandbox_id: data.sandbox_id || null,
+          sandbox_url: data.sandbox_url || null,
+          files_snapshot: data.files_snapshot || {},
+          dependencies: data.dependencies || {},
+          starred: false
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      return this.transformRow(result)
+    } catch (error) {
+      this.handleError(error, "create")
+    }
   }
 
   /**
-   * Create a project if it doesn't exist (upsert with no update on conflict)
-   * Useful for ensuring project exists before saving context
+   * Create a project if it doesn't exist (upsert)
    */
   async ensureExists(id: string, defaultName: string = "Untitled Project"): Promise<Project> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        INSERT INTO projects (id, name, description, files_snapshot, dependencies, starred)
-        VALUES (${id}, ${defaultName}, 'Auto-created', '{}', '{}', false)
-        ON CONFLICT (id) DO UPDATE SET
-          updated_at = NOW()
-        RETURNING *
-      ` as unknown as ProjectRow[]
+    try {
+      const client = await this.getClient()
+      
+      // Upsert: Try to insert, if conflict on ID, update updated_at
+      const { data, error } = await client
+        .from(this.tableName)
+        .upsert({
+          id,
+          name: defaultName,
+          description: 'Auto-created',
+          files_snapshot: {},
+          dependencies: {},
+          starred: false,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' })
+        .select()
+        .single()
 
-      return this.transformRow(result[0])
-    }, "ensureExists")
+      if (error) throw error
+
+      return this.transformRow(data)
+    } catch (error) {
+      this.handleError(error, "ensureExists")
+    }
   }
 
   /**
    * Update a project
    */
   async update(id: string, data: UpdateProjectRequest): Promise<Project | null> {
-    // Build update object with only provided fields
-    // We need to update each field separately due to Neon template limitations
+    try {
+      const client = await this.getClient()
+      
+      const updateData: any = { updated_at: new Date().toISOString() }
+      if (data.name !== undefined) updateData.name = data.name.trim()
+      if (data.description !== undefined) updateData.description = data.description
+      if (data.screenshot_base64 !== undefined) updateData.screenshot_base64 = data.screenshot_base64
+      if (data.screenshot_url !== undefined) updateData.screenshot_url = data.screenshot_url
+      if (data.sandbox_id !== undefined) updateData.sandbox_id = data.sandbox_id
+      if (data.sandbox_url !== undefined) updateData.sandbox_url = data.sandbox_url
+      if (data.files_snapshot !== undefined) updateData.files_snapshot = data.files_snapshot
+      if (data.dependencies !== undefined) updateData.dependencies = data.dependencies
+      if (data.starred !== undefined) updateData.starred = data.starred
 
-    return this.executeQuery(async (sql) => {
-      // First verify project exists
-      const exists = await this.exists(id)
-      if (!exists) {
-        return null
-      }
+      const { data: result, error } = await client
+        .from(this.tableName)
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single()
 
-      // Update individual fields if provided
-      if (data.name !== undefined) {
-        await sql`UPDATE projects SET name = ${data.name.trim()}, updated_at = NOW() WHERE id = ${id}`
-      }
-      if (data.description !== undefined) {
-        await sql`UPDATE projects SET description = ${data.description}, updated_at = NOW() WHERE id = ${id}`
-      }
-      if (data.screenshot_base64 !== undefined) {
-        await sql`UPDATE projects SET screenshot_base64 = ${data.screenshot_base64}, updated_at = NOW() WHERE id = ${id}`
-      }
-      if (data.screenshot_url !== undefined) {
-        await sql`UPDATE projects SET screenshot_url = ${data.screenshot_url}, updated_at = NOW() WHERE id = ${id}`
-      }
-      if (data.sandbox_id !== undefined) {
-        await sql`UPDATE projects SET sandbox_id = ${data.sandbox_id}, updated_at = NOW() WHERE id = ${id}`
-      }
-      if (data.sandbox_url !== undefined) {
-        await sql`UPDATE projects SET sandbox_url = ${data.sandbox_url}, updated_at = NOW() WHERE id = ${id}`
-      }
-      if (data.files_snapshot !== undefined) {
-        await sql`UPDATE projects SET files_snapshot = ${toJsonString(data.files_snapshot)}, updated_at = NOW() WHERE id = ${id}`
-      }
-      if (data.dependencies !== undefined) {
-        await sql`UPDATE projects SET dependencies = ${toJsonString(data.dependencies)}, updated_at = NOW() WHERE id = ${id}`
-      }
-      if (data.starred !== undefined) {
-        await sql`UPDATE projects SET starred = ${data.starred}, updated_at = NOW() WHERE id = ${id}`
+      if (error) {
+        if (error.code === 'PGRST116') return null
+        throw error
       }
 
-      // Return updated project
-      return this.findById(id)
-    }, "update")
+      return this.transformRow(result)
+    } catch (error) {
+      this.handleError(error, "update")
+    }
   }
 
   /**
    * Update sandbox information for a project
    */
   async updateSandbox(id: string, sandboxId: string | null, sandboxUrl?: string | null): Promise<void> {
-    await this.executeQuery(async (sql) => {
-      await sql`
-        UPDATE projects 
-        SET 
-          sandbox_id = ${sandboxId}, 
-          sandbox_url = ${sandboxUrl ?? null},
-          updated_at = NOW() 
-        WHERE id = ${id}
-      `
-    }, "updateSandbox")
+    await this.update(id, { sandbox_id: sandboxId, sandbox_url: sandboxUrl })
   }
 
   /**
@@ -291,68 +248,48 @@ export class ProjectRepository extends BaseRepository<Project> {
     files: Record<string, string>, 
     dependencies?: Record<string, string>
   ): Promise<void> {
-    await this.executeQuery(async (sql) => {
-      if (dependencies !== undefined) {
-        await sql`
-          UPDATE projects 
-          SET 
-            files_snapshot = ${toJsonString(files)},
-            dependencies = ${toJsonString(dependencies)},
-            updated_at = NOW()
-          WHERE id = ${id}
-        `
-      } else {
-        await sql`
-          UPDATE projects 
-          SET 
-            files_snapshot = ${toJsonString(files)},
-            updated_at = NOW()
-          WHERE id = ${id}
-        `
-      }
-    }, "saveFilesSnapshot")
+    const updateData: UpdateProjectRequest = { files_snapshot: files }
+    if (dependencies) updateData.dependencies = dependencies
+    await this.update(id, updateData)
   }
 
   /**
    * Update last opened timestamp
    */
   async updateLastOpened(id: string): Promise<void> {
-    await this.executeQuery(async (sql) => {
-      await sql`
-        UPDATE projects 
-        SET last_opened_at = NOW() 
-        WHERE id = ${id}
-      `
-    }, "updateLastOpened")
+    try {
+        const client = await this.getClient()
+        await client
+            .from(this.tableName)
+            .update({ last_opened_at: new Date().toISOString() })
+            .eq('id', id)
+    } catch (error) {
+        this.handleError(error, "updateLastOpened")
+    }
   }
 
   /**
    * Toggle starred status
    */
   async toggleStarred(id: string): Promise<boolean> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        UPDATE projects 
-        SET starred = NOT starred, updated_at = NOW() 
-        WHERE id = ${id}
-        RETURNING starred
-      ` as unknown as { starred: boolean }[]
-
-      return result[0]?.starred ?? false
-    }, "toggleStarred")
+    try {
+        const project = await this.findById(id)
+        if (!project) throw new NotFoundError(`Project ${id} not found`)
+        
+        const newStarred = !project.starred
+        await this.update(id, { starred: newStarred })
+        return newStarred
+    } catch (error) {
+        this.handleError(error, "toggleStarred")
+    }
   }
 
   /**
    * Get sandbox ID for a project
    */
   async getSandboxId(id: string): Promise<string | null> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        SELECT sandbox_id FROM projects WHERE id = ${id}
-      ` as unknown as { sandbox_id: string | null }[]
-
-      return result[0]?.sandbox_id ?? null
-    }, "getSandboxId")
+    const project = await this.findById(id)
+    return project?.sandbox_id ?? null
   }
 
   /**
@@ -362,68 +299,64 @@ export class ProjectRepository extends BaseRepository<Project> {
     files_snapshot: Record<string, string>
     dependencies: Record<string, string>
   } | null> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        SELECT files_snapshot, dependencies FROM projects WHERE id = ${id}
-      ` as unknown as ProjectRow[]
-
-      if (result.length === 0) {
-        return null
-      }
-
-      return {
-        files_snapshot: parseJsonSafe<Record<string, string>>(result[0].files_snapshot, {}),
-        dependencies: parseJsonSafe<Record<string, string>>(result[0].dependencies, {}),
-      }
-    }, "getFilesSnapshot")
+    const project = await this.findById(id)
+    if (!project) return null
+    return {
+        files_snapshot: project.files_snapshot,
+        dependencies: project.dependencies
+    }
   }
 
   /**
-   * Delete a project by ID (messages cascade deleted via FK)
+   * Delete a project by ID
    */
   async delete(id: string): Promise<boolean> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        DELETE FROM projects WHERE id = ${id}
-        RETURNING id
-      ` as unknown as { id: string }[]
-
-      return result.length > 0
-    }, "delete")
+    try {
+        const client = await this.getClient()
+        const { error } = await client.from(this.tableName).delete().eq('id', id)
+        if (error) throw error
+        return true
+    } catch (error) {
+        this.handleError(error, "delete")
+    }
   }
 
   /**
    * Check if a project exists
    */
   async exists(id: string): Promise<boolean> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        SELECT 1 FROM projects 
-        WHERE id = ${id}
-        LIMIT 1
-      ` as unknown as { "?column?"?: number }[]
-
-      return result.length > 0
-    }, "exists")
+    try {
+        const client = await this.getClient()
+        const { count, error } = await client
+            .from(this.tableName)
+            .select('*', { count: 'exact', head: true })
+            .eq('id', id)
+        
+        if (error) throw error
+        return (count ?? 0) > 0
+    } catch (error) {
+        this.handleError(error, "exists")
+    }
   }
 
   /**
    * Count all projects
    */
   async count(filters: ProjectFilters = {}): Promise<number> {
-    return this.executeQuery(async (sql) => {
-      let result: { count: string }[]
+    try {
+        const client = await this.getClient()
+        let query = client.from(this.tableName).select('*', { count: 'exact', head: true })
 
-      if (filters.starred === true) {
-        result = await sql`SELECT COUNT(*) as count FROM projects WHERE starred = true` as unknown as { count: string }[]
-      } else if (filters.starred === false) {
-        result = await sql`SELECT COUNT(*) as count FROM projects WHERE starred = false` as unknown as { count: string }[]
-      } else {
-        result = await sql`SELECT COUNT(*) as count FROM projects` as unknown as { count: string }[]
-      }
-
-      return parseInt(result[0]?.count || "0", 10)
-    }, "count")
+        if (filters.starred !== undefined) {
+            query = query.eq('starred', filters.starred)
+        }
+        
+        const { count, error } = await query
+        if (error) throw error
+        return count ?? 0
+    } catch (error) {
+        this.handleError(error, "count")
+    }
   }
 }
 

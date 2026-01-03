@@ -54,7 +54,7 @@ export function EditorHeader({
   }, [urlExpanded])
 
   return (
-    <header className="flex h-14 items-center justify-between px-4 bg-[#111111] border-b border-zinc-800">
+    <header className="flex h-14 items-center justify-between px-4 bg-[#111111]">
       {/* Left - Project Title Dropdown */}
       <div className="flex items-center gap-2">
         <DropdownMenu>

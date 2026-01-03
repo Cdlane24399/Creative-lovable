@@ -46,6 +46,7 @@ import {
   saveFilesSnapshot,
   type CodeLanguage,
 } from "@/lib/e2b/sandbox"
+import { quickSyncToDatabase } from "@/lib/e2b/sync-manager"
 
 // ============================================================================
 // CONSTANTS
@@ -1143,25 +1144,15 @@ export function createContextAwareTools(projectId: string) {
           setProjectInfo(projectId, { projectName: name, projectDir, sandboxId: sandbox.sandboxId })
 
           // Save files snapshot for restoration after sandbox expiration
-          const context = ctx()
-          const filesSnapshot: Record<string, string> = {}
-          const dependenciesSnapshot: Record<string, string> = {}
-          
-          // Collect all file contents from context for snapshot
-          for (const [filePath, fileInfo] of context.files.entries()) {
-            if (fileInfo.content) {
-              filesSnapshot[filePath] = fileInfo.content
+          // Use quickSyncToDatabase to read files directly from sandbox (more reliable than in-memory context)
+          console.log(`[createWebsite] Starting file sync for project ${projectId}, dir: ${projectDir}`)
+          quickSyncToDatabase(sandbox, projectId, projectDir).then((syncResult) => {
+            console.log(`[createWebsite] Sync completed: ${syncResult.filesWritten} files synced, success: ${syncResult.success}`)
+            if (syncResult.errors && syncResult.errors.length > 0) {
+              console.warn("[createWebsite] Sync errors:", syncResult.errors)
             }
-          }
-          
-          // Collect dependencies from context
-          for (const [pkg, version] of context.dependencies.entries()) {
-            dependenciesSnapshot[pkg] = version
-          }
-          
-          // Save snapshot to database asynchronously (don't block)
-          saveFilesSnapshot(projectId, filesSnapshot, dependenciesSnapshot).catch((err) => {
-            console.warn("[createWebsite] Failed to save files snapshot:", err)
+          }).catch((err) => {
+            console.warn("[createWebsite] Failed to sync files to database:", err)
           })
 
           recordToolExecution(

@@ -160,6 +160,8 @@ interface UseProjectReturn {
   isLoading: boolean
   error: string | null
   refetch: () => Promise<void>
+  /** Refetch project data only (not messages) - useful after files are saved */
+  refetchProject: () => Promise<void>
   updateProject: (data: UpdateProjectRequest) => Promise<Project | null>
   saveScreenshot: (base64: string, sandboxUrl?: string) => Promise<boolean>
 }
@@ -254,6 +256,25 @@ export function useProject(projectId: string | null): UseProjectReturn {
     }
   }, [projectId])
 
+  /**
+   * Refetch project data only (without messages).
+   * Useful after files are saved to get updated files_snapshot.
+   */
+  const refetchProject = useCallback(async () => {
+    if (!projectId) return
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}`)
+      if (response.ok) {
+        const data = await response.json()
+        setProject(data.project)
+        console.log("[useProject] Refetched project data, files_snapshot keys:", Object.keys(data.project?.files_snapshot || {}).length)
+      }
+    } catch (err) {
+      console.error("Error refetching project:", err)
+    }
+  }, [projectId])
+
   useEffect(() => {
     if (projectId) {
       fetchProject()
@@ -269,6 +290,7 @@ export function useProject(projectId: string | null): UseProjectReturn {
     isLoading,
     error,
     refetch: fetchProject,
+    refetchProject,
     updateProject,
     saveScreenshot,
   }

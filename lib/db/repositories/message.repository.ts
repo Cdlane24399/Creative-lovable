@@ -2,42 +2,16 @@
  * Message Repository
  * 
  * Handles all database operations for the messages table.
- * Implements AI SDK v6 best practices for message persistence:
- * - Stores messages in UIMessage format
- * - Server-side ID generation for consistency
- * - Proper parts serialization
- * 
- * Features:
- * - CRUD operations for messages
- * - Batch operations for efficient saves
- * - Message pagination for large conversations
- * - Proper type conversions for JSONB parts field
+ * Uses Supabase Client.
  */
 
 import { BaseRepository, generateId, parseJsonSafe, toJsonString } from "./base.repository"
 import type { Message, MessagePart } from "../types"
-import { DatabaseError } from "@/lib/errors"
 
 // =============================================================================
 // Types
 // =============================================================================
 
-/**
- * Message row as returned from database
- */
-interface MessageRow {
-  id: string
-  project_id: string
-  role: "user" | "assistant" | "system"
-  content: string
-  parts: string | MessagePart[] | null
-  model: string | null
-  created_at: string
-}
-
-/**
- * Data for creating a new message
- */
 export interface CreateMessageData {
   projectId: string
   role: "user" | "assistant" | "system"
@@ -46,22 +20,16 @@ export interface CreateMessageData {
   model?: string
 }
 
-/**
- * Options for querying messages
- */
 export interface MessageQueryOptions {
   limit?: number
   offset?: number
   orderDir?: "ASC" | "DESC"
 }
 
-/**
- * Batch of messages to save (for efficient multi-message saves)
- */
 export interface MessageBatch {
   projectId: string
   messages: Array<{
-    id?: string  // Optional - server generates if not provided
+    id?: string
     role: "user" | "assistant" | "system"
     content: string
     parts?: MessagePart[]
@@ -78,223 +46,147 @@ export class MessageRepository extends BaseRepository<Message> {
     super("messages")
   }
 
-  /**
-   * Transform database row to Message type
-   * Handles JSONB parts field parsing
-   */
-  private transformRow(row: MessageRow): Message {
+  private transformRow(row: any): Message {
     return {
       ...row,
       parts: parseJsonSafe<MessagePart[] | null>(row.parts, null),
     }
   }
 
-  /**
-   * Find message by ID
-   */
   async findById(id: string): Promise<Message | null> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        SELECT * FROM messages
-        WHERE id = ${id}
-        LIMIT 1
-      ` as unknown as MessageRow[]
-
-      if (result.length === 0) {
-        return null
+    try {
+      const client = await this.getClient()
+      const { data, error } = await client.from(this.tableName).select('*').eq('id', id).single()
+      if (error) {
+          if (error.code === 'PGRST116') return null
+          throw error
       }
-
-      return this.transformRow(result[0])
-    }, "findById")
+      return this.transformRow(data)
+    } catch (error) {
+      this.handleError(error, "findById")
+    }
   }
 
-  /**
-   * Check if message exists
-   */
   async exists(id: string): Promise<boolean> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        SELECT 1 FROM messages
-        WHERE id = ${id}
-        LIMIT 1
-      ` as unknown as { "?column?"?: number }[]
-
-      return result.length > 0
-    }, "exists")
+    try {
+      const client = await this.getClient()
+      const { count, error } = await client.from(this.tableName).select('*', { count: 'exact', head: true }).eq('id', id)
+      if (error) throw error
+      return (count ?? 0) > 0
+    } catch (error) {
+      this.handleError(error, "exists")
+    }
   }
 
-  /**
-   * Delete message by ID
-   */
   async delete(id: string): Promise<boolean> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        DELETE FROM messages
-        WHERE id = ${id}
-        RETURNING id
-      ` as unknown as { id: string }[]
-
-      return result.length > 0
-    }, "delete")
+    try {
+      const client = await this.getClient()
+      const { error } = await client.from(this.tableName).delete().eq('id', id)
+      if (error) throw error
+      return true
+    } catch (error) {
+      this.handleError(error, "delete")
+    }
   }
 
-  /**
-   * Count all messages
-   */
   async count(): Promise<number> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        SELECT COUNT(*) as count FROM messages
-      ` as unknown as { count: string }[]
-
-      return parseInt(result[0]?.count || "0", 10)
-    }, "count")
+    try {
+      const client = await this.getClient()
+      const { count, error } = await client.from(this.tableName).select('*', { count: 'exact', head: true })
+      if (error) throw error
+      return count ?? 0
+    } catch (error) {
+      this.handleError(error, "count")
+    }
   }
 
-  /**
-   * Find all messages for a project
-   */
   async findByProjectId(
     projectId: string,
     options: MessageQueryOptions = {}
   ): Promise<Message[]> {
-    const { 
-      limit = 1000, 
-      offset = 0, 
-      orderDir = "ASC" 
-    } = options
+    try {
+      const client = await this.getClient()
+      let query = client.from(this.tableName).select('*').eq('project_id', projectId)
+      
+      const orderBy = "created_at"
+      const ascending = options.orderDir !== "DESC" // Default ASC
+      query = query.order(orderBy, { ascending })
 
-    return this.executeQuery(async (sql) => {
-      // Order by created_at to maintain conversation flow
-      // ASC = oldest first (natural conversation order)
-      let result: MessageRow[]
+      if (options.limit) query = query.limit(options.limit)
+      if (options.offset) query = query.range(options.offset, options.offset + (options.limit || 1000) - 1)
 
-      if (orderDir === "DESC") {
-        result = await sql`
-          SELECT * FROM messages
-          WHERE project_id = ${projectId}
-          ORDER BY created_at DESC
-          LIMIT ${limit} OFFSET ${offset}
-        ` as unknown as MessageRow[]
-      } else {
-        result = await sql`
-          SELECT * FROM messages
-          WHERE project_id = ${projectId}
-          ORDER BY created_at ASC
-          LIMIT ${limit} OFFSET ${offset}
-        ` as unknown as MessageRow[]
-      }
-
-      return result.map(row => this.transformRow(row))
-    }, "findByProjectId")
+      const { data, error } = await query
+      if (error) throw error
+      return data.map(row => this.transformRow(row))
+    } catch (error) {
+      this.handleError(error, "findByProjectId")
+    }
   }
 
-  /**
-   * Find the most recent messages for a project
-   * Useful for getting recent context without loading full history
-   */
   async findRecentByProjectId(
     projectId: string, 
     count: number = 10
   ): Promise<Message[]> {
-    return this.executeQuery(async (sql) => {
-      // Get most recent messages, then reverse to maintain order
-      const result = await sql`
-        SELECT * FROM messages
-        WHERE project_id = ${projectId}
-        ORDER BY created_at DESC
-        LIMIT ${count}
-      ` as unknown as MessageRow[]
+    try {
+      const client = await this.getClient()
+      const { data, error } = await client
+        .from(this.tableName)
+        .select('*')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false })
+        .limit(count)
 
+      if (error) throw error
       // Reverse to get chronological order
-      return result.reverse().map(row => this.transformRow(row))
-    }, "findRecentByProjectId")
-  }
-
-  /**
-   * Create a single message with server-side ID generation
-   * Following AI SDK v6 best practice for persistence
-   */
-  async create(data: CreateMessageData): Promise<Message> {
-    const id = generateId() // Server-side ID generation
-
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        INSERT INTO messages (
-          id, 
-          project_id, 
-          role, 
-          content, 
-          parts, 
-          model
-        )
-        VALUES (
-          ${id}, 
-          ${data.projectId}, 
-          ${data.role}, 
-          ${data.content}, 
-          ${data.parts ? toJsonString(data.parts) : null}, 
-          ${data.model || null}
-        )
-        RETURNING *
-      ` as unknown as MessageRow[]
-
-      return this.transformRow(result[0])
-    }, "create")
-  }
-
-  /**
-   * Create multiple messages in a batch
-   * More efficient than individual inserts for saving conversation history
-   */
-  async createBatch(batch: MessageBatch): Promise<Message[]> {
-    if (batch.messages.length === 0) {
-      return []
+      return data.reverse().map(row => this.transformRow(row))
+    } catch (error) {
+      this.handleError(error, "findRecentByProjectId")
     }
-
-    return this.executeQuery(async (sql) => {
-      const createdMessages: Message[] = []
-
-      // Insert messages sequentially to maintain order
-      // (Parallel insert would lose ordering)
-      for (const msg of batch.messages) {
-        const id = msg.id || generateId()
-        
-        const result = await sql`
-          INSERT INTO messages (
-            id, 
-            project_id, 
-            role, 
-            content, 
-            parts, 
-            model
-          )
-          VALUES (
-            ${id}, 
-            ${batch.projectId}, 
-            ${msg.role}, 
-            ${msg.content}, 
-            ${msg.parts ? toJsonString(msg.parts) : null}, 
-            ${msg.model || null}
-          )
-          RETURNING *
-        ` as unknown as MessageRow[]
-
-        createdMessages.push(this.transformRow(result[0]))
-      }
-
-      return createdMessages
-    }, "createBatch")
   }
 
-  /**
-   * Save conversation messages (replaces all messages for a project)
-   * Used when syncing full conversation state from client
-   * 
-   * @param projectId - Project ID
-   * @param messages - Array of UIMessage objects
-   * @returns Created messages
-   */
+  async create(data: CreateMessageData): Promise<Message> {
+    try {
+      const id = generateId()
+      const client = await this.getClient()
+      
+      const { data: result, error } = await client.from(this.tableName).insert({
+          id,
+          project_id: data.projectId,
+          role: data.role,
+          content: data.content,
+          parts: data.parts ? data.parts : null, // Supabase handles JSON
+          model: data.model || null
+      }).select().single()
+
+      if (error) throw error
+      return this.transformRow(result)
+    } catch (error) {
+      this.handleError(error, "create")
+    }
+  }
+
+  async createBatch(batch: MessageBatch): Promise<Message[]> {
+    if (batch.messages.length === 0) return []
+    try {
+      const client = await this.getClient()
+      const rows = batch.messages.map(msg => ({
+          // Always generate proper UUID - AI SDK IDs are not valid UUIDs
+          id: generateId(),
+          project_id: batch.projectId,
+          role: msg.role,
+          content: msg.content,
+          parts: msg.parts ? msg.parts : null,
+          model: msg.model || null
+      }))
+
+      const { data, error } = await client.from(this.tableName).upsert(rows, { onConflict: 'id' }).select()
+      if (error) throw error
+      return data.map(row => this.transformRow(row))
+    } catch (error) {
+      this.handleError(error, "createBatch")
+    }
+  }
+
   async saveConversation(
     projectId: string, 
     messages: Array<{
@@ -305,58 +197,37 @@ export class MessageRepository extends BaseRepository<Message> {
       model?: string
     }>
   ): Promise<Message[]> {
-    return this.executeQuery(async (sql) => {
-      // Delete existing messages for this project
-      await sql`DELETE FROM messages WHERE project_id = ${projectId}`
+    try {
+      const client = await this.getClient()
+      
+      // Delete existing
+      await client.from(this.tableName).delete().eq('project_id', projectId)
 
-      if (messages.length === 0) {
-        return []
-      }
+      if (messages.length === 0) return []
 
-      // Insert new messages
-      const createdMessages: Message[] = []
+      const rows = messages.map(msg => {
+          const content = msg.content ||
+            msg.parts?.filter(p => p.type === "text").map(p => p.text).join("") || ""
 
-      for (const msg of messages) {
-        const id = msg.id || generateId()
-        
-        // Extract content from parts if not provided directly
-        const content = msg.content || 
-          msg.parts?.filter(p => p.type === "text")
-            .map(p => p.text)
-            .join("") || 
-          ""
+          return {
+            // Always generate proper UUID - AI SDK IDs are not valid UUIDs
+            id: generateId(),
+            project_id: projectId,
+            role: msg.role,
+            content,
+            parts: msg.parts ? msg.parts : null,
+            model: msg.model || null
+          }
+      })
 
-        const result = await sql`
-          INSERT INTO messages (
-            id, 
-            project_id, 
-            role, 
-            content, 
-            parts, 
-            model
-          )
-          VALUES (
-            ${id}, 
-            ${projectId}, 
-            ${msg.role}, 
-            ${content}, 
-            ${msg.parts ? toJsonString(msg.parts) : null}, 
-            ${msg.model || null}
-          )
-          RETURNING *
-        ` as unknown as MessageRow[]
-
-        createdMessages.push(this.transformRow(result[0]))
-      }
-
-      return createdMessages
-    }, "saveConversation")
+      const { data, error } = await client.from(this.tableName).insert(rows).select()
+      if (error) throw error
+      return data.map(row => this.transformRow(row))
+    } catch (error) {
+      this.handleError(error, "saveConversation")
+    }
   }
 
-  /**
-   * Append a message to a conversation
-   * Used for streaming completions where we add the assistant response
-   */
   async appendMessage(
     projectId: string,
     message: {
@@ -376,112 +247,103 @@ export class MessageRepository extends BaseRepository<Message> {
     })
   }
 
-  /**
-   * Update a message's content and parts
-   * Used for updating streaming messages or editing
-   */
   async updateContent(
     id: string,
     content: string,
     parts?: MessagePart[]
   ): Promise<Message | null> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        UPDATE messages
-        SET 
-          content = ${content},
-          parts = ${parts ? toJsonString(parts) : null}
-        WHERE id = ${id}
-        RETURNING *
-      ` as unknown as MessageRow[]
-
-      if (result.length === 0) {
-        return null
+    try {
+      const client = await this.getClient()
+      const { data, error } = await client
+        .from(this.tableName)
+        .update({ 
+            content, 
+            parts: parts ? parts : null 
+        })
+        .eq('id', id)
+        .select()
+        .single()
+      
+      if (error) {
+          if (error.code === 'PGRST116') return null
+          throw error
       }
-
-      return this.transformRow(result[0])
-    }, "updateContent")
+      return this.transformRow(data)
+    } catch (error) {
+      this.handleError(error, "updateContent")
+    }
   }
 
-  /**
-   * Delete all messages for a project
-   */
   async deleteByProjectId(projectId: string): Promise<number> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        DELETE FROM messages
-        WHERE project_id = ${projectId}
-        RETURNING id
-      ` as unknown as { id: string }[]
-
-      return result.length
-    }, "deleteByProjectId")
+    try {
+        const client = await this.getClient()
+        // Delete returns null data usually unless select() is called
+        // But we want count.
+        // Actually Supabase delete doesn't return count easily unless we select.
+        // We can just delete.
+        const { count, error } = await client.from(this.tableName).delete({ count: 'exact' }).eq('project_id', projectId)
+        if (error) throw error
+        return count ?? 0
+    } catch (error) {
+        this.handleError(error, "deleteByProjectId")
+    }
   }
 
-  /**
-   * Count messages for a project
-   */
   async countByProjectId(projectId: string): Promise<number> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        SELECT COUNT(*) as count FROM messages
-        WHERE project_id = ${projectId}
-      ` as unknown as { count: string }[]
-
-      return parseInt(result[0]?.count || "0", 10)
-    }, "countByProjectId")
+    try {
+        const client = await this.getClient()
+        const { count, error } = await client.from(this.tableName).select('*', { count: 'exact', head: true }).eq('project_id', projectId)
+        if (error) throw error
+        return count ?? 0
+    } catch (error) {
+        this.handleError(error, "countByProjectId")
+    }
   }
 
-  /**
-   * Get the last message for a project
-   */
   async findLastByProjectId(projectId: string): Promise<Message | null> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        SELECT * FROM messages
-        WHERE project_id = ${projectId}
-        ORDER BY created_at DESC
-        LIMIT 1
-      ` as unknown as MessageRow[]
-
-      if (result.length === 0) {
-        return null
-      }
-
-      return this.transformRow(result[0])
-    }, "findLastByProjectId")
+    try {
+        const client = await this.getClient()
+        const { data, error } = await client
+            .from(this.tableName)
+            .select('*')
+            .eq('project_id', projectId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single()
+        
+        if (error) {
+            if (error.code === 'PGRST116') return null
+            throw error
+        }
+        return this.transformRow(data)
+    } catch (error) {
+        this.handleError(error, "findLastByProjectId")
+    }
   }
 
-  /**
-   * Find messages by role for a project
-   * Useful for extracting just user or assistant messages
-   */
   async findByRole(
     projectId: string,
     role: "user" | "assistant" | "system"
   ): Promise<Message[]> {
-    return this.executeQuery(async (sql) => {
-      const result = await sql`
-        SELECT * FROM messages
-        WHERE project_id = ${projectId}
-        AND role = ${role}
-        ORDER BY created_at ASC
-      ` as unknown as MessageRow[]
-
-      return result.map(row => this.transformRow(row))
-    }, "findByRole")
+    try {
+        const client = await this.getClient()
+        const { data, error } = await client
+            .from(this.tableName)
+            .select('*')
+            .eq('project_id', projectId)
+            .eq('role', role)
+            .order('created_at', { ascending: true })
+        
+        if (error) throw error
+        return data.map(row => this.transformRow(row))
+    } catch (error) {
+        this.handleError(error, "findByRole")
+    }
   }
 }
 
-// =============================================================================
-// Singleton Instance
-// =============================================================================
-
 let messageRepositoryInstance: MessageRepository | null = null
 
-/**
- * Get the singleton MessageRepository instance
- */
 export function getMessageRepository(): MessageRepository {
   if (!messageRepositoryInstance) {
     messageRepositoryInstance = new MessageRepository()

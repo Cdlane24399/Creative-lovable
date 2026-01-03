@@ -1,21 +1,6 @@
-/**
- * Base Repository
- * 
- * Provides common database operations and patterns for all repositories.
- * Uses the Neon serverless driver with tagged template literals for safe queries.
- * 
- * Best Practices Applied:
- * - Consistent error handling with custom error classes
- * - Type-safe query results
- * - Connection pooling awareness
- * - Standardized CRUD operations
- * 
- * Note: Due to Neon's tagged template literal syntax, dynamic table names
- * cannot be used. Each repository must implement table-specific queries.
- */
-
-import { getDb } from "../neon"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { DatabaseError, NotFoundError, ValidationError } from "@/lib/errors"
+import { SupabaseClient } from "@supabase/supabase-js"
 
 // =============================================================================
 // Types
@@ -66,9 +51,6 @@ export interface MutationResult<T> {
 /**
  * Abstract base repository providing common database operations.
  * Extend this class for specific entity repositories.
- * 
- * Note: Neon serverless driver requires tagged template literals,
- * so most methods should be overridden in concrete repositories.
  */
 export abstract class BaseRepository<T extends BaseEntity> {
   protected readonly tableName: string
@@ -78,33 +60,31 @@ export abstract class BaseRepository<T extends BaseEntity> {
   }
 
   /**
-   * Execute a query with standardized error handling
+   * Get Supabase admin client (bypasses RLS)
    */
-  protected async executeQuery<R>(
-    queryFn: (sql: ReturnType<typeof getDb>) => Promise<R>,
-    operationName: string
-  ): Promise<R> {
-    try {
-      const sql = getDb()
-      return await queryFn(sql)
-    } catch (error) {
-      console.error(`[${this.tableName}] ${operationName} failed:`, error)
-      
-      if (error instanceof DatabaseError || 
-          error instanceof NotFoundError || 
-          error instanceof ValidationError) {
-        throw error
-      }
-      
-      throw new DatabaseError(
-        `${operationName} failed: ${error instanceof Error ? error.message : "Unknown error"}`
-      )
+  protected async getClient(): Promise<SupabaseClient> {
+    return createAdminClient()
+  }
+
+  /**
+   * Handle database errors
+   */
+  protected handleError(error: any, operationName: string): never {
+    console.error(`[${this.tableName}] ${operationName} failed:`, error)
+    
+    if (error instanceof DatabaseError || 
+        error instanceof NotFoundError || 
+        error instanceof ValidationError) {
+      throw error
     }
+    
+    throw new DatabaseError(
+      `${operationName} failed: ${error.message || "Unknown error"}`
+    )
   }
 
   /**
    * Find a single entity by ID
-   * Must be overridden in concrete repositories due to Neon's tagged template syntax
    */
   abstract findById(id: string): Promise<T | null>
 
@@ -121,19 +101,16 @@ export abstract class BaseRepository<T extends BaseEntity> {
 
   /**
    * Check if an entity exists by ID
-   * Must be overridden in concrete repositories
    */
   abstract exists(id: string): Promise<boolean>
 
   /**
    * Delete an entity by ID
-   * Must be overridden in concrete repositories
    */
   abstract delete(id: string): Promise<boolean>
 
   /**
    * Count total entities
-   * Must be overridden in concrete repositories
    */
   abstract count(): Promise<number>
 }
@@ -170,5 +147,6 @@ export function parseJsonSafe<T>(value: unknown, fallback: T): T {
  * Stringify JSON for storage
  */
 export function toJsonString(value: unknown): string {
+  if (typeof value === "string") return value
   return JSON.stringify(value)
 }
