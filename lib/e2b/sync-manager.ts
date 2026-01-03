@@ -427,6 +427,8 @@ export class SyncManager {
       }
 
       const paths = result.stdout.trim().split("\n").filter(Boolean)
+      console.log(`[SyncManager] Found ${paths.length} files in sandbox. First few:`, paths.slice(0, 5))
+
 
       // Read files in batches
       const batches = chunkArray(paths, this.config.concurrency)
@@ -469,8 +471,8 @@ export class SyncManager {
       const { error } = await client
         .from('projects')
         .update({
-            files_snapshot: snapshot,
-            updated_at: new Date().toISOString()
+          files_snapshot: snapshot,
+          updated_at: new Date().toISOString()
         })
         .eq('id', this.config.projectId)
 

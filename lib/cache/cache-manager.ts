@@ -5,7 +5,7 @@
  * - Consistent TTLs across cache types
  * - Unified invalidation logic
  * - Event emission for cache operations
- * - Fallback to no-op when KV not configured
+ * - In-memory LRU fallback when KV not configured
  * 
  * Usage:
  * ```typescript
@@ -25,12 +25,12 @@ import { kv } from "@vercel/kv"
 // Configuration
 // =============================================================================
 
-/** Cache TTL in seconds */
+/** Cache TTL in seconds - Production-appropriate values */
 const CACHE_TTL = {
-  PROJECT: 60,          // 1 minute for project data
-  PROJECTS_LIST: 60,    // 1 minute for project lists
-  MESSAGES: 30,         // 30 seconds for messages (more volatile)
-  CONTEXT: 120,         // 2 minutes for context (less volatile)
+  PROJECT: 300,         // 5 minutes for project data (was 60s)
+  PROJECTS_LIST: 180,   // 3 minutes for project lists (was 60s)
+  MESSAGES: 120,        // 2 minutes for messages (was 30s)
+  CONTEXT: 600,         // 10 minutes for context (was 120s)
 } as const
 
 /** Cache key prefixes */
@@ -40,6 +40,88 @@ const CACHE_KEYS = {
   MESSAGES: "messages:",
   CONTEXT: "context:",
 } as const
+
+/** Max entries for in-memory LRU cache */
+const LRU_MAX_ENTRIES = 500
+
+// =============================================================================
+// In-Memory LRU Cache (Fallback)
+// =============================================================================
+
+interface LRUEntry<T> {
+  value: T
+  expiresAt: number
+}
+
+/**
+ * Simple LRU cache implementation for fallback when KV is unavailable
+ */
+class LRUCache {
+  private cache = new Map<string, LRUEntry<unknown>>()
+  private readonly maxSize: number
+
+  constructor(maxSize: number = LRU_MAX_ENTRIES) {
+    this.maxSize = maxSize
+  }
+
+  get<T>(key: string): T | null {
+    const entry = this.cache.get(key)
+    if (!entry) return null
+
+    // Check expiration
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key)
+      return null
+    }
+
+    // Move to end (most recently used)
+    this.cache.delete(key)
+    this.cache.set(key, entry)
+
+    return entry.value as T
+  }
+
+  set(key: string, value: unknown, ttlSeconds: number): void {
+    // Evict oldest if at capacity
+    if (this.cache.size >= this.maxSize) {
+      const oldestKey = this.cache.keys().next().value
+      if (oldestKey) {
+        this.cache.delete(oldestKey)
+      }
+    }
+
+    this.cache.set(key, {
+      value,
+      expiresAt: Date.now() + (ttlSeconds * 1000),
+    })
+  }
+
+  delete(key: string): void {
+    this.cache.delete(key)
+  }
+
+  deletePattern(pattern: string): number {
+    const regex = new RegExp('^' + pattern.replace('*', '.*') + '$')
+    let count = 0
+
+    for (const key of this.cache.keys()) {
+      if (regex.test(key)) {
+        this.cache.delete(key)
+        count++
+      }
+    }
+
+    return count
+  }
+
+  clear(): void {
+    this.cache.clear()
+  }
+
+  get size(): number {
+    return this.cache.size
+  }
+}
 
 // =============================================================================
 // Types
@@ -67,6 +149,7 @@ type CacheEventHandler = (event: CacheEvent) => void
 
 export class CacheManager {
   private readonly isConfigured: boolean
+  private readonly lruCache: LRUCache
   private eventHandlers: CacheEventHandler[] = []
 
   constructor() {
@@ -74,13 +157,22 @@ export class CacheManager {
       process.env.KV_REST_API_URL && 
       process.env.KV_REST_API_TOKEN
     )
+    // Always create LRU cache as fallback
+    this.lruCache = new LRUCache(LRU_MAX_ENTRIES)
   }
 
   /**
-   * Check if cache is configured
+   * Check if KV cache is configured (LRU fallback always available)
    */
   get enabled(): boolean {
     return this.isConfigured
+  }
+
+  /**
+   * Check if cache is functional (KV or LRU fallback)
+   */
+  get available(): boolean {
+    return true // LRU fallback always available
   }
 
   /**
@@ -112,68 +204,92 @@ export class CacheManager {
   // ===========================================================================
 
   /**
-   * Get a value from cache
+   * Get a value from cache (KV or LRU fallback)
    */
   private async get<T>(key: string): Promise<T | null> {
-    if (!this.isConfigured) return null
-
-    try {
-      const data = await kv.get(key)
-      this.emit({ type: "get", key, success: true })
-      return data as T
-    } catch (error) {
-      console.warn(`[CacheManager] Get failed for ${key}:`, error)
-      this.emit({ type: "get", key, success: false })
-      return null
+    // Try KV first if configured
+    if (this.isConfigured) {
+      try {
+        const data = await kv.get(key)
+        this.emit({ type: "get", key, success: true })
+        if (data !== null) {
+          return data as T
+        }
+      } catch (error) {
+        console.warn(`[CacheManager] KV get failed for ${key}, using LRU fallback:`, error)
+      }
     }
+
+    // Fallback to LRU
+    const lruData = this.lruCache.get<T>(key)
+    this.emit({ type: "get", key, success: lruData !== null })
+    return lruData
   }
 
   /**
-   * Set a value in cache
+   * Set a value in cache (KV and LRU)
    */
   private async set(key: string, value: unknown, ttl: number): Promise<void> {
-    if (!this.isConfigured) return
+    // Always set in LRU
+    this.lruCache.set(key, value, ttl)
 
-    try {
-      await kv.set(key, value, { ex: ttl })
+    // Also try KV if configured
+    if (this.isConfigured) {
+      try {
+        await kv.set(key, value, { ex: ttl })
+        this.emit({ type: "set", key, success: true })
+      } catch (error) {
+        console.warn(`[CacheManager] KV set failed for ${key}:`, error)
+        this.emit({ type: "set", key, success: false })
+      }
+    } else {
       this.emit({ type: "set", key, success: true })
-    } catch (error) {
-      console.warn(`[CacheManager] Set failed for ${key}:`, error)
-      this.emit({ type: "set", key, success: false })
     }
   }
 
   /**
-   * Delete a value from cache
+   * Delete a value from cache (KV and LRU)
    */
   private async delete(key: string): Promise<void> {
-    if (!this.isConfigured) return
+    // Always delete from LRU
+    this.lruCache.delete(key)
 
-    try {
-      await kv.del(key)
+    // Also try KV if configured
+    if (this.isConfigured) {
+      try {
+        await kv.del(key)
+        this.emit({ type: "delete", key, success: true })
+      } catch (error) {
+        console.warn(`[CacheManager] KV delete failed for ${key}:`, error)
+        this.emit({ type: "delete", key, success: false })
+      }
+    } else {
       this.emit({ type: "delete", key, success: true })
-    } catch (error) {
-      console.warn(`[CacheManager] Delete failed for ${key}:`, error)
-      this.emit({ type: "delete", key, success: false })
     }
   }
 
   /**
-   * Delete all keys matching a pattern
+   * Delete all keys matching a pattern (KV and LRU)
    */
   private async deletePattern(pattern: string): Promise<number> {
-    if (!this.isConfigured) return 0
+    // Always delete from LRU
+    const lruCount = this.lruCache.deletePattern(pattern)
 
-    try {
-      const keys = await kv.keys(pattern)
-      if (keys.length > 0) {
-        await kv.del(...keys)
+    // Also try KV if configured
+    if (this.isConfigured) {
+      try {
+        const keys = await kv.keys(pattern)
+        if (keys.length > 0) {
+          await kv.del(...keys)
+        }
+        return Math.max(keys.length, lruCount)
+      } catch (error) {
+        console.warn(`[CacheManager] KV delete pattern failed for ${pattern}:`, error)
+        return lruCount
       }
-      return keys.length
-    } catch (error) {
-      console.warn(`[CacheManager] Delete pattern failed for ${pattern}:`, error)
-      return 0
     }
+
+    return lruCount
   }
 
   // ===========================================================================

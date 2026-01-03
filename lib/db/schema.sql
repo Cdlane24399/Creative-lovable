@@ -119,3 +119,40 @@ WHERE sandbox_id IS NOT NULL;
 -- Index for cleanup of stale contexts
 CREATE INDEX IF NOT EXISTS idx_agent_context_updated_at
 ON agent_context(updated_at);
+
+-- Profiles table: Stores user profile information
+CREATE TABLE IF NOT EXISTS profiles (
+  id UUID PRIMARY KEY, -- Matches Supabase Auth User ID
+  username TEXT UNIQUE,
+  full_name TEXT,
+  avatar_url TEXT,
+  bio TEXT,
+  website TEXT,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Integrations table: Stores tokens for external services
+CREATE TABLE IF NOT EXISTS integrations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  provider VARCHAR(50) NOT NULL, -- e.g., 'github', 'vercel'
+  access_token TEXT, -- Encrypted at rest (application level encryption recommended)
+  refresh_token TEXT, -- Encrypted at rest
+  expires_at TIMESTAMP WITH TIME ZONE,
+  scope TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(user_id, provider)
+);
+
+-- Trigger to auto-update updated_at on profiles
+CREATE TRIGGER update_profiles_updated_at
+  BEFORE UPDATE ON profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+-- Trigger to auto-update updated_at on integrations
+CREATE TRIGGER update_integrations_updated_at
+  BEFORE UPDATE ON integrations
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();

@@ -7,6 +7,7 @@
 
 import { BaseRepository, generateId, parseJsonSafe, type FindOptions } from "./base.repository"
 import type { Project, CreateProjectRequest, UpdateProjectRequest } from "../types"
+import { NotFoundError } from "@/lib/errors"
 
 // =============================================================================
 // Types
@@ -67,7 +68,7 @@ export class ProjectRepository extends BaseRepository<Project> {
       // userId filter is automatically handled by RLS if configured,
       // but we can explicitly add it if needed for admin contexts or specific queries
       if (options.filters?.userId) {
-          query = query.eq('user_id', options.filters.userId)
+        query = query.eq('user_id', options.filters.userId)
       }
 
       // Order
@@ -173,7 +174,7 @@ export class ProjectRepository extends BaseRepository<Project> {
   async ensureExists(id: string, defaultName: string = "Untitled Project"): Promise<Project> {
     try {
       const client = await this.getClient()
-      
+
       // Upsert: Try to insert, if conflict on ID, update updated_at
       const { data, error } = await client
         .from(this.tableName)
@@ -203,7 +204,7 @@ export class ProjectRepository extends BaseRepository<Project> {
   async update(id: string, data: UpdateProjectRequest): Promise<Project | null> {
     try {
       const client = await this.getClient()
-      
+
       const updateData: any = { updated_at: new Date().toISOString() }
       if (data.name !== undefined) updateData.name = data.name.trim()
       if (data.description !== undefined) updateData.description = data.description
@@ -237,15 +238,15 @@ export class ProjectRepository extends BaseRepository<Project> {
    * Update sandbox information for a project
    */
   async updateSandbox(id: string, sandboxId: string | null, sandboxUrl?: string | null): Promise<void> {
-    await this.update(id, { sandbox_id: sandboxId, sandbox_url: sandboxUrl })
+    await this.update(id, { sandbox_id: sandboxId as any, sandbox_url: sandboxUrl as any })
   }
 
   /**
    * Save files snapshot for a project
    */
   async saveFilesSnapshot(
-    id: string, 
-    files: Record<string, string>, 
+    id: string,
+    files: Record<string, string>,
     dependencies?: Record<string, string>
   ): Promise<void> {
     const updateData: UpdateProjectRequest = { files_snapshot: files }
@@ -258,13 +259,13 @@ export class ProjectRepository extends BaseRepository<Project> {
    */
   async updateLastOpened(id: string): Promise<void> {
     try {
-        const client = await this.getClient()
-        await client
-            .from(this.tableName)
-            .update({ last_opened_at: new Date().toISOString() })
-            .eq('id', id)
+      const client = await this.getClient()
+      await client
+        .from(this.tableName)
+        .update({ last_opened_at: new Date().toISOString() })
+        .eq('id', id)
     } catch (error) {
-        this.handleError(error, "updateLastOpened")
+      this.handleError(error, "updateLastOpened")
     }
   }
 
@@ -273,14 +274,14 @@ export class ProjectRepository extends BaseRepository<Project> {
    */
   async toggleStarred(id: string): Promise<boolean> {
     try {
-        const project = await this.findById(id)
-        if (!project) throw new NotFoundError(`Project ${id} not found`)
-        
-        const newStarred = !project.starred
-        await this.update(id, { starred: newStarred })
-        return newStarred
+      const project = await this.findById(id)
+      if (!project) throw new NotFoundError(`Project ${id} not found`)
+
+      const newStarred = !project.starred
+      await this.update(id, { starred: newStarred })
+      return newStarred
     } catch (error) {
-        this.handleError(error, "toggleStarred")
+      this.handleError(error, "toggleStarred")
     }
   }
 
@@ -302,8 +303,8 @@ export class ProjectRepository extends BaseRepository<Project> {
     const project = await this.findById(id)
     if (!project) return null
     return {
-        files_snapshot: project.files_snapshot,
-        dependencies: project.dependencies
+      files_snapshot: project.files_snapshot,
+      dependencies: project.dependencies
     }
   }
 
@@ -312,12 +313,12 @@ export class ProjectRepository extends BaseRepository<Project> {
    */
   async delete(id: string): Promise<boolean> {
     try {
-        const client = await this.getClient()
-        const { error } = await client.from(this.tableName).delete().eq('id', id)
-        if (error) throw error
-        return true
+      const client = await this.getClient()
+      const { error } = await client.from(this.tableName).delete().eq('id', id)
+      if (error) throw error
+      return true
     } catch (error) {
-        this.handleError(error, "delete")
+      this.handleError(error, "delete")
     }
   }
 
@@ -326,16 +327,16 @@ export class ProjectRepository extends BaseRepository<Project> {
    */
   async exists(id: string): Promise<boolean> {
     try {
-        const client = await this.getClient()
-        const { count, error } = await client
-            .from(this.tableName)
-            .select('*', { count: 'exact', head: true })
-            .eq('id', id)
-        
-        if (error) throw error
-        return (count ?? 0) > 0
+      const client = await this.getClient()
+      const { count, error } = await client
+        .from(this.tableName)
+        .select('*', { count: 'exact', head: true })
+        .eq('id', id)
+
+      if (error) throw error
+      return (count ?? 0) > 0
     } catch (error) {
-        this.handleError(error, "exists")
+      this.handleError(error, "exists")
     }
   }
 
@@ -344,18 +345,18 @@ export class ProjectRepository extends BaseRepository<Project> {
    */
   async count(filters: ProjectFilters = {}): Promise<number> {
     try {
-        const client = await this.getClient()
-        let query = client.from(this.tableName).select('*', { count: 'exact', head: true })
+      const client = await this.getClient()
+      let query = client.from(this.tableName).select('*', { count: 'exact', head: true })
 
-        if (filters.starred !== undefined) {
-            query = query.eq('starred', filters.starred)
-        }
-        
-        const { count, error } = await query
-        if (error) throw error
-        return count ?? 0
+      if (filters.starred !== undefined) {
+        query = query.eq('starred', filters.starred)
+      }
+
+      const { count, error } = await query
+      if (error) throw error
+      return count ?? 0
     } catch (error) {
-        this.handleError(error, "count")
+      this.handleError(error, "count")
     }
   }
 }

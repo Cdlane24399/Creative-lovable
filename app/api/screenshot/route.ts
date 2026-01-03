@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { withAuth } from "@/lib/auth"
 
-// ScreenshotAPI.net configuration
-const SCREENSHOT_API_KEY = process.env.SCREENSHOT_API_KEY || "WEGHFPQ-NVZM1J1-J7XV1VF-J1FQM7F"
+// ScreenshotAPI.net configuration - API key required via environment
+const SCREENSHOT_API_KEY = process.env.SCREENSHOT_API_KEY
 const SCREENSHOT_API_URL = "https://shot.screenshotapi.net/screenshot"
 
 /**
@@ -15,6 +15,17 @@ export const POST = withAuth(async (req: NextRequest) => {
 
     if (!url || typeof url !== "string") {
       return NextResponse.json({ error: "URL is required" }, { status: 400 })
+    }
+
+    // If API key not configured, return placeholder
+    if (!SCREENSHOT_API_KEY) {
+      const svg = generateWebsitePreviewSVG(projectName || "Project Preview", url, width, height)
+      const base64 = Buffer.from(svg).toString("base64")
+      return NextResponse.json({
+        screenshot_base64: `data:image/svg+xml;base64,${base64}`,
+        source: "placeholder",
+        message: "Screenshot API not configured"
+      })
     }
 
     // Try to capture real screenshot using ScreenshotAPI.net

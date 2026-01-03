@@ -16,6 +16,11 @@ import type {
   TaskExecutionResult,
 } from "./types"
 import { incrementRetryCount, resetTask, updateTaskStatus } from "./task-graph"
+import { 
+  calculateDelay as calculateDelayFromRetry,
+  isTransientError as isTransientErrorFromRetry,
+  isPermanentError as isPermanentErrorFromRetry 
+} from "@/lib/utils/retry"
 
 // =============================================================================
 // Error Pattern Matching
@@ -352,6 +357,7 @@ function findTasksAfterCheckpoint(graph: TaskGraph, checkpointTaskId: string): s
 
 /**
  * Calculate recommended retry delay based on attempt number
+ * @deprecated Use calculateDelay from @/lib/utils/retry instead
  */
 export function calculateRetryDelay(
   attempt: number,
@@ -359,62 +365,24 @@ export function calculateRetryDelay(
   maxDelayMs: number = 30000,
   jitter: boolean = true
 ): number {
-  // Exponential backoff
-  let delay = baseDelayMs * Math.pow(2, attempt)
-
-  // Cap at max delay
-  delay = Math.min(delay, maxDelayMs)
-
-  // Add jitter (±25%)
-  if (jitter) {
-    const jitterFactor = 0.75 + Math.random() * 0.5
-    delay = Math.round(delay * jitterFactor)
-  }
-
-  return delay
+  // Delegate to centralized retry utility
+  return calculateDelayFromRetry(attempt, { baseDelayMs, maxDelayMs, jitter, backoffMultiplier: 2 })
 }
 
 /**
  * Determine if an error is transient (likely to succeed on retry)
+ * @deprecated Use isTransientError from @/lib/utils/retry instead
  */
 export function isTransientError(errorMessage: string): boolean {
-  const transientPatterns = [
-    /timeout/i,
-    /ETIMEDOUT/i,
-    /ECONNREFUSED/i,
-    /ECONNRESET/i,
-    /network/i,
-    /rate.?limit/i,
-    /429/i,
-    /503/i,
-    /502/i,
-    /504/i,
-    /temporary/i,
-    /busy/i,
-  ]
-
-  return transientPatterns.some((pattern) => pattern.test(errorMessage))
+  return isTransientErrorFromRetry(new Error(errorMessage))
 }
 
 /**
  * Determine if an error is permanent (retry won't help)
+ * @deprecated Use isPermanentError from @/lib/utils/retry instead
  */
 export function isPermanentError(errorMessage: string): boolean {
-  const permanentPatterns = [
-    /not.?found/i,
-    /404/i,
-    /permission/i,
-    /forbidden/i,
-    /403/i,
-    /401/i,
-    /syntax/i,
-    /invalid/i,
-    /malformed/i,
-    /ENOENT/i,
-    /EACCES/i,
-  ]
-
-  return permanentPatterns.some((pattern) => pattern.test(errorMessage))
+  return isPermanentErrorFromRetry(new Error(errorMessage))
 }
 
 // =============================================================================

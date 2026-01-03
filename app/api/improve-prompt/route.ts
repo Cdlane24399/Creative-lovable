@@ -1,5 +1,10 @@
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { generateText } from "ai"
+import { withAuth } from "@/lib/auth"
+import { asyncErrorHandler } from "@/lib/errors"
+import { ValidationError, ExternalServiceError } from "@/lib/errors"
+import { improvePromptSchema, createValidationErrorResponse, ValidationError as ZodValidationError } from "@/lib/validations"
+import { logger } from "@/lib/logger"
 
 export const maxDuration = 30
 
@@ -31,37 +36,38 @@ Output: "Design a creative portfolio website with an immersive hero section feat
 
 Return ONLY the improved prompt, nothing else.`
 
-export async function POST(req: Request) {
-  try {
-    const { prompt } = await req.json()
-
-    if (!prompt || typeof prompt !== "string") {
-      return Response.json({ error: "Prompt is required" }, { status: 400 })
-    }
-
-    // Check if API key is available
-    if (!process.env.ANTHROPIC_API_KEY) {
-      console.error("ANTHROPIC_API_KEY is not set")
-      return Response.json({ error: "API key not configured" }, { status: 500 })
-    }
-
-    const anthropic = createAnthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    })
-
-    const result = await generateText({
-      model: anthropic("claude-sonnet-4-20250514"),
-      system: PROMPT_IMPROVER_SYSTEM,
-      prompt: prompt,
-      maxOutputTokens: 300,
-    })
-
-    return Response.json({ improvedPrompt: result.text.trim() })
-  } catch (error) {
-    console.error("Prompt improvement error:", error)
-
-    // Return more specific error message
-    const errorMessage = error instanceof Error ? error.message : "Unknown error"
-    return Response.json({ error: `Failed to improve prompt: ${errorMessage}` }, { status: 500 })
+export const POST = withAuth(asyncErrorHandler(async (req: Request) => {
+  const requestId = req.headers.get('x-request-id') ?? 'unknown'
+  const log = logger.child({ requestId, operation: 'improve-prompt' })
+  
+  const body = await req.json()
+  
+  // Validate with Zod schema
+  const validation = improvePromptSchema.safeParse(body)
+  if (!validation.success) {
+    return createValidationErrorResponse(
+      new ZodValidationError('Invalid improve-prompt request', validation.error.issues)
+    )
   }
-}
+  
+  const { prompt } = validation.data
+  log.info('Improving prompt', { promptLength: prompt.length })
+
+  // Check if API key is available
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new ExternalServiceError("Anthropic API key not configured", "anthropic")
+  }
+
+  const anthropic = createAnthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+  })
+
+  const result = await generateText({
+    model: anthropic("claude-sonnet-4-20250514"),
+    system: PROMPT_IMPROVER_SYSTEM,
+    prompt: prompt,
+    maxOutputTokens: 300,
+  })
+
+  return Response.json({ improvedPrompt: result.text.trim() })
+}))

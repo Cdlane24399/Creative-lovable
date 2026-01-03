@@ -1,3 +1,6 @@
 export { ChatMarkdown } from "./chat-markdown"
 export { ToolCallDisplay, ToolCallsGroup } from "./tool-call-display"
 export { ChatError, ChatEmptyState } from "./chat-error"
+export { Message } from "./message"
+export { MessageList } from "./message-list"
+export { PromptInput } from "./prompt-input"

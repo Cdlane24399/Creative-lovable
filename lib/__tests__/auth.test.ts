@@ -15,51 +15,67 @@ describe('Authentication', () => {
   })
 
   describe('authenticateRequest', () => {
-    it('should authenticate with valid API key in header', () => {
+    it('should authenticate with valid API key in header', async () => {
       const request = new NextRequest('http://localhost:3000/api/test', {
         headers: { 'x-api-key': 'test-api-key' }
       })
 
-      const result = authenticateRequest(request)
+      const result = await authenticateRequest(request)
       expect(result.isAuthenticated).toBe(true)
       expect(result.error).toBeUndefined()
     })
 
-    it('should authenticate with valid API key in authorization header', () => {
+    it('should authenticate with valid API key in authorization header', async () => {
       const request = new NextRequest('http://localhost:3000/api/test', {
         headers: { 'authorization': 'Bearer test-api-key' }
       })
 
-      const result = authenticateRequest(request)
+      const result = await authenticateRequest(request)
       expect(result.isAuthenticated).toBe(true)
       expect(result.error).toBeUndefined()
     })
 
-    it('should reject without API key', () => {
+    it('should reject without API key', async () => {
       const request = new NextRequest('http://localhost:3000/api/test')
 
-      const result = authenticateRequest(request)
+      const result = await authenticateRequest(request)
       expect(result.isAuthenticated).toBe(false)
       expect(result.error).toBeDefined()
       expect(result.error?.status).toBe(401)
     })
 
-    it('should reject with invalid API key', () => {
+    it('should reject with invalid API key', async () => {
       const request = new NextRequest('http://localhost:3000/api/test', {
         headers: { 'x-api-key': 'invalid-key' }
       })
 
-      const result = authenticateRequest(request)
+      const result = await authenticateRequest(request)
       expect(result.isAuthenticated).toBe(false)
       expect(result.error).toBeDefined()
       expect(result.error?.status).toBe(403)
     })
 
-    it('should skip authentication when API_KEY not set', () => {
+    it('should reject when API_KEY not set in production mode', async () => {
       delete process.env.API_KEY
+      // Use Object.defineProperty to override read-only NODE_ENV
+      Object.defineProperty(process.env, 'NODE_ENV', { value: 'production', writable: true })
       const request = new NextRequest('http://localhost:3000/api/test')
 
-      const result = authenticateRequest(request)
+      const result = await authenticateRequest(request)
+      // SECURITY: In production, must reject when API_KEY not configured
+      expect(result.isAuthenticated).toBe(false)
+      expect(result.error).toBeDefined()
+      expect(result.error?.status).toBe(500)
+    })
+
+    it('should allow requests in development mode when API_KEY not set', async () => {
+      delete process.env.API_KEY
+      // Use Object.defineProperty to override read-only NODE_ENV
+      Object.defineProperty(process.env, 'NODE_ENV', { value: 'development', writable: true })
+      const request = new NextRequest('http://localhost:3000/api/test')
+
+      const result = await authenticateRequest(request)
+      // In development, allow for easier testing
       expect(result.isAuthenticated).toBe(true)
       expect(result.error).toBeUndefined()
     })

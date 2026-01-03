@@ -94,10 +94,20 @@ async function cleanupExpiredSandboxes(): Promise<void> {
 }
 
 /**
- * Start the cleanup interval
+ * Start the cleanup interval with singleton pattern to work with Next.js HMR
  */
+const CLEANUP_INTERVAL_KEY = "e2b_sandbox_cleanup_interval"
+
 function startCleanupInterval(): void {
-  setInterval(cleanupExpiredSandboxes, CLEANUP_INTERVAL_MS)
+  const globalAny = globalThis as any
+
+  if (globalAny[CLEANUP_INTERVAL_KEY]) {
+    // Interval already running, don't start another one
+    return
+  }
+
+  // Start new interval
+  globalAny[CLEANUP_INTERVAL_KEY] = setInterval(cleanupExpiredSandboxes, CLEANUP_INTERVAL_MS)
   console.log(`[Sandbox TTL] Started cleanup interval (${CLEANUP_INTERVAL_MS / 1000}s)`)
 }
 
@@ -233,21 +243,21 @@ async function restoreFilesFromSnapshot(
     // The E2B template may have pre-built files that would override restored content
     console.log("[Sandbox] Clearing .next cache to ensure fresh build...")
     await sandbox.commands.run(`rm -rf ${projectDir}/.next 2>/dev/null || true`)
-    
+
     // Prepare files for batch write
     const filesToWrite = fileEntries.map(([path, content]) => ({
       path: path.startsWith("/") ? path : `${projectDir}/${path}`,
       content,
     }))
-    
+
     // Write all files
     const writeResult = await writeFiles(sandbox, filesToWrite, { useNativeApi: true })
     result.filesRestored = writeResult.succeeded
-    
+
     // Install dependencies if package.json exists and we have dependencies
     const hasDependencies = Object.keys(snapshot.dependencies || {}).length > 0
     const hasPackageJson = fileEntries.some(([path]) => path.endsWith("package.json"))
-    
+
     if (hasDependencies && hasPackageJson) {
       console.log("[Sandbox] Installing dependencies...")
       const installResult = await executeCommand(sandbox, "npm install", {
@@ -259,7 +269,7 @@ async function restoreFilesFromSnapshot(
         console.warn("[Sandbox] npm install failed:", installResult.stderr)
       }
     }
-    
+
     result.success = true
     console.log(`[Sandbox] Restored ${result.filesRestored} files, dependencies installed: ${result.dependenciesInstalled}`)
     return result
@@ -278,7 +288,7 @@ async function tryReconnectSandbox(sandboxId: string, projectId: string): Promis
   const attempts = connectionAttempts.get(sandboxId)
   if (attempts) {
     const timeSinceLastAttempt = Date.now() - attempts.lastAttempt
-    
+
     if (attempts.count >= MAX_RECONNECT_ATTEMPTS) {
       if (timeSinceLastAttempt < RECONNECT_COOLDOWN_MS) {
         console.warn(`[Sandbox] Reconnection rate-limited for ${sandboxId}, ${attempts.count} attempts`)
@@ -298,30 +308,30 @@ async function tryReconnectSandbox(sandboxId: string, projectId: string): Promis
 
   try {
     console.log(`[Sandbox] Attempting to reconnect to sandbox ${sandboxId} for project ${projectId}`)
-    
+
     const sandbox = await Sandbox.connect(sandboxId, {
       timeoutMs: DEFAULT_TIMEOUT_MS,
     })
-    
+
     // Test connection by extending timeout
     await sandbox.setTimeout(DEFAULT_TIMEOUT_MS)
-    
+
     activeSandboxes.set(projectId, sandbox)
-    
+
     // Reset connection attempts on success
     connectionAttempts.delete(sandboxId)
-    
+
     // Update activity timestamp
     updateSandboxActivity(projectId)
-    
+
     console.log(`[Sandbox] Successfully reconnected to sandbox ${sandboxId} for project ${projectId}`)
     return sandbox
   } catch (error) {
     console.warn(`[Sandbox] Failed to reconnect to sandbox ${sandboxId}:`, error)
-    
+
     // Clear from database if reconnection fails
     await clearSandboxIdFromDatabase(projectId)
-    
+
     return undefined
   }
 }
@@ -389,10 +399,10 @@ export async function createSandbox(
   // This handles the case where the sandbox was created in a different API route invocation
   const dbSandboxId = await getSandboxIdFromDatabase(projectId)
   console.log(`[Sandbox] Database sandbox ID for ${projectId}: ${dbSandboxId || 'none'}`)
-  
+
   // Track if we need to restore (reconnection failed but we had a previous sandbox)
   let needsRestore = false
-  
+
   if (dbSandboxId) {
     const reconnected = await tryReconnectSandbox(dbSandboxId, projectId)
     if (reconnected) {
@@ -431,13 +441,13 @@ export async function createSandbox(
 
     const sandbox = template
       ? await Sandbox.create(template, {
-          timeoutMs: DEFAULT_TIMEOUT_MS,
-          metadata: metadata as any, // E2B accepts Record<string, string>
-        })
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+        metadata: metadata as any, // E2B accepts Record<string, string>
+      })
       : await Sandbox.create({
-          timeoutMs: DEFAULT_TIMEOUT_MS,
-          metadata: metadata as any,
-        })
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+        metadata: metadata as any,
+      })
 
     activeSandboxes.set(projectId, sandbox)
 
@@ -653,15 +663,15 @@ export async function createSandboxWithAutoPause(
     if (autoPause && typeof Sandbox.betaCreate === "function") {
       const sandbox = template
         ? await Sandbox.betaCreate(template, {
-            timeoutMs: DEFAULT_TIMEOUT_MS,
-            autoPause: true,
-            metadata: metadata as any,
-          })
+          timeoutMs: DEFAULT_TIMEOUT_MS,
+          autoPause: true,
+          metadata: metadata as any,
+        })
         : await Sandbox.betaCreate({
-            timeoutMs: DEFAULT_TIMEOUT_MS,
-            autoPause: true,
-            metadata: metadata as any,
-          })
+          timeoutMs: DEFAULT_TIMEOUT_MS,
+          autoPause: true,
+          metadata: metadata as any,
+        })
 
       activeSandboxes.set(projectId, sandbox)
       // Persist sandbox ID to database for cross-route reconnection
@@ -757,13 +767,13 @@ export async function executeCode(
         results: execution.results,
         error: execution.error
           ? {
-              message:
-                execution.error instanceof Error
-                  ? execution.error.message
-                  : typeof execution.error === "string"
-                    ? execution.error
-                    : "Code execution failed",
-            }
+            message:
+              execution.error instanceof Error
+                ? execution.error.message
+                : typeof execution.error === "string"
+                  ? execution.error
+                  : "Code execution failed",
+          }
           : null,
       }
     } catch (error) {
@@ -797,7 +807,7 @@ export async function executeCode(
     })
 
     // Clean up temporary file
-    await sandbox.commands.run(`rm -f ${filename}`).catch(() => {})
+    await sandbox.commands.run(`rm -f ${filename}`).catch(() => { })
 
     return {
       logs: {

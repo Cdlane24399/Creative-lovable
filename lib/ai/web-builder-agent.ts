@@ -423,12 +423,12 @@ export function createContextAwareTools(projectId: string) {
             recentErrors: context.errorHistory.slice(-5),
             planProgress: context.currentPlan
               ? {
-                  total: context.currentPlan.length,
-                  completed: context.completedSteps.length,
-                  remaining: context.currentPlan.length - context.completedSteps.length,
-                  nextStep: context.currentPlan[context.completedSteps.length] ?? null,
-                  completedSteps: context.completedSteps,
-                }
+                total: context.currentPlan.length,
+                completed: context.completedSteps.length,
+                remaining: context.currentPlan.length - context.completedSteps.length,
+                nextStep: context.currentPlan[context.completedSteps.length] ?? null,
+                completedSteps: context.completedSteps,
+              }
               : null,
           }
 
@@ -1146,14 +1146,15 @@ export function createContextAwareTools(projectId: string) {
           // Save files snapshot for restoration after sandbox expiration
           // Use quickSyncToDatabase to read files directly from sandbox (more reliable than in-memory context)
           console.log(`[createWebsite] Starting file sync for project ${projectId}, dir: ${projectDir}`)
-          quickSyncToDatabase(sandbox, projectId, projectDir).then((syncResult) => {
+          try {
+            const syncResult = await quickSyncToDatabase(sandbox, projectId, projectDir)
             console.log(`[createWebsite] Sync completed: ${syncResult.filesWritten} files synced, success: ${syncResult.success}`)
             if (syncResult.errors && syncResult.errors.length > 0) {
               console.warn("[createWebsite] Sync errors:", syncResult.errors)
             }
-          }).catch((err) => {
+          } catch (err) {
             console.warn("[createWebsite] Failed to sync files to database:", err)
-          })
+          }
 
           recordToolExecution(
             projectId,

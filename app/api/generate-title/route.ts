@@ -1,7 +1,14 @@
 import { generateText } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { withAuth } from "@/lib/auth"
+import { asyncErrorHandler } from "@/lib/errors"
+import { ValidationError, ExternalServiceError } from "@/lib/errors"
 import { getProjectService } from "@/lib/services"
+
+// Validate API key at startup
+if (!process.env.ANTHROPIC_API_KEY) {
+  console.warn("[generate-title] ANTHROPIC_API_KEY not configured")
+}
 
 // Use Claude Haiku for fast, cheap title generation
 const anthropic = createAnthropic({
@@ -26,60 +33,53 @@ Examples:
 
 User request: `
 
-export const POST = withAuth(async (req: Request) => {
-  try {
-    const { prompt, projectId } = await req.json()
+export const POST = withAuth(asyncErrorHandler(async (req: Request) => {
+  const { prompt, projectId } = await req.json()
 
-    if (!prompt || typeof prompt !== "string") {
-      return Response.json(
-        { error: "Prompt is required" },
-        { status: 400 }
-      )
-    }
-
-    // Generate a title using Claude Haiku (fast and cheap)
-    const result = await generateText({
-      model,
-      prompt: TITLE_PROMPT + prompt,
-      maxOutputTokens: 20,
-      temperature: 0.3,
-    })
-
-    // Clean up the title - remove quotes, punctuation, extra whitespace
-    let title = result.text
-      .trim()
-      .replace(/^["']|["']$/g, "") // Remove surrounding quotes
-      .replace(/[.!?:;]$/g, "") // Remove trailing punctuation
-      .trim()
-
-    // Ensure title is in Title Case
-    title = title
-      .split(" ")
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(" ")
-
-    // Limit length
-    if (title.length > 50) {
-      title = title.substring(0, 47) + "..."
-    }
-
-    // Update project name in database if projectId provided
-    if (projectId) {
-      try {
-        const projectService = getProjectService()
-        await projectService.updateProject(projectId, { name: title })
-        console.log(`[Generate Title] Updated project ${projectId} to "${title}"`)
-      } catch (dbError) {
-        console.warn("Failed to update project name:", dbError)
-      }
-    }
-
-    return Response.json({ title })
-  } catch (error) {
-    console.error("Generate title error:", error)
-    return Response.json(
-      { error: "Failed to generate title" },
-      { status: 500 }
-    )
+  if (!prompt || typeof prompt !== "string") {
+    throw new ValidationError("Prompt is required", { prompt: ["string required"] })
   }
-})
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new ExternalServiceError("Anthropic API key not configured", "anthropic")
+  }
+
+  // Generate a title using Claude Haiku (fast and cheap)
+  const result = await generateText({
+    model,
+    prompt: TITLE_PROMPT + prompt,
+    maxOutputTokens: 20,
+    temperature: 0.3,
+  })
+
+  // Clean up the title - remove quotes, punctuation, extra whitespace
+  let title = result.text
+    .trim()
+    .replace(/^["']|["']$/g, "") // Remove surrounding quotes
+    .replace(/[.!?:;]$/g, "") // Remove trailing punctuation
+    .trim()
+
+  // Ensure title is in Title Case
+  title = title
+    .split(" ")
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ")
+
+  // Limit length
+  if (title.length > 50) {
+    title = title.substring(0, 47) + "..."
+  }
+
+  // Update project name in database if projectId provided
+  if (projectId) {
+    try {
+      const projectService = getProjectService()
+      await projectService.updateProject(projectId, { name: title })
+    } catch (dbError) {
+      // Log but don't fail the request - title generation succeeded
+      console.warn("[generate-title] Failed to update project name:", dbError)
+    }
+  }
+
+  return Response.json({ title })
+}))

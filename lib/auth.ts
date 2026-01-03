@@ -6,6 +6,15 @@ import { createClient } from "@/lib/supabase/server"
 // Track if auth warning has been logged to avoid spam
 let authWarningLogged = false
 
+// Helper to get current environment values (allows testing)
+function getApiKey(): string | undefined {
+  return process.env.API_KEY
+}
+
+function isDevelopment(): boolean {
+  return process.env.NODE_ENV === "development"
+}
+
 // Authentication middleware
 export async function authenticateRequest(request: NextRequest | Request): Promise<{ isAuthenticated: boolean; error?: NextResponse | Response }> {
   // 1. Try Supabase Auth (Cookies)
@@ -21,58 +30,58 @@ export async function authenticateRequest(request: NextRequest | Request): Promi
 
   // 2. Try API Key
   const apiKey = request.headers.get("x-api-key") || request.headers.get("authorization")?.replace("Bearer ", "")
-  const expectedApiKey = process.env.API_KEY || process.env.NEXT_PUBLIC_API_KEY
+  const expectedApiKey = getApiKey()
 
+  // SECURITY: Only use server-side API_KEY, never NEXT_PUBLIC_* for auth
   if (!expectedApiKey) {
-    // Only log once per process lifecycle to reduce noise
-    if (!authWarningLogged) {
-      console.warn("API_KEY environment variable not set - authentication disabled")
-      authWarningLogged = true
+    // In development, allow requests without API key (with warning)
+    if (isDevelopment()) {
+      if (!authWarningLogged) {
+        console.warn("[auth] API_KEY not set - authentication disabled in development mode")
+        authWarningLogged = true
+      }
+      return { isAuthenticated: true }
     }
-    return { isAuthenticated: true }
+    
+    // SECURITY: In production, fail closed - reject all requests
+    console.error("[auth] CRITICAL: API_KEY not configured in production - rejecting request")
+    const error = new AuthenticationError("Server authentication not configured")
+    const errorResponse = createErrorResponse(request, error.message, error.code, 500)
+    return { isAuthenticated: false, error: errorResponse }
   }
 
   if (!apiKey) {
     const error = new AuthenticationError()
-    const errorResponse = NextRequest.prototype.isPrototypeOf(request)
-      ? NextResponse.json(
-          { error: error.message, code: error.code },
-          {
-            status: error.statusCode,
-            headers: { "WWW-Authenticate": "Bearer" }
-          }
-        )
-      : new Response(JSON.stringify({ error: error.message, code: error.code }), {
-          status: error.statusCode,
-          headers: {
-            "Content-Type": "application/json",
-            "WWW-Authenticate": "Bearer"
-          }
-        })
-    return {
-      isAuthenticated: false,
-      error: errorResponse
-    }
+    const errorResponse = createErrorResponse(request, error.message, error.code, error.statusCode, {
+      "WWW-Authenticate": "Bearer"
+    })
+    return { isAuthenticated: false, error: errorResponse }
   }
 
   if (apiKey !== expectedApiKey) {
     const error = new AuthorizationError("Invalid API key")
-    const errorResponse = NextRequest.prototype.isPrototypeOf(request)
-      ? NextResponse.json(
-          { error: error.message, code: error.code },
-          { status: error.statusCode }
-        )
-      : new Response(JSON.stringify({ error: error.message, code: error.code }), {
-          status: error.statusCode,
-          headers: { "Content-Type": "application/json" }
-        })
-    return {
-      isAuthenticated: false,
-      error: errorResponse
-    }
+    const errorResponse = createErrorResponse(request, error.message, error.code, error.statusCode)
+    return { isAuthenticated: false, error: errorResponse }
   }
 
   return { isAuthenticated: true }
+}
+
+// Helper to create consistent error responses
+function createErrorResponse(
+  request: NextRequest | Request,
+  message: string,
+  code: string | undefined,
+  status: number,
+  headers?: Record<string, string>
+): NextResponse | Response {
+  const body = JSON.stringify({ error: message, code })
+  const responseHeaders = { "Content-Type": "application/json", ...headers }
+  
+  if (NextRequest.prototype.isPrototypeOf(request)) {
+    return NextResponse.json({ error: message, code }, { status, headers: responseHeaders })
+  }
+  return new Response(body, { status, headers: responseHeaders })
 }
 
 // Higher-order function to wrap API route handlers with authentication

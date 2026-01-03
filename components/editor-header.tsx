@@ -232,8 +232,8 @@ export function EditorHeader({
                 disabled={!sandboxUrl}
                 className={cn(
                   "flex items-center justify-center px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800/50 transition-all h-9",
-                  sandboxUrl 
-                    ? "text-zinc-400 hover:text-zinc-300 hover:border-zinc-700 cursor-pointer" 
+                  sandboxUrl
+                    ? "text-zinc-400 hover:text-zinc-300 hover:border-zinc-700 cursor-pointer"
                     : "text-zinc-600 cursor-not-allowed"
                 )}
                 title={sandboxUrl ? "Click to expand URL" : "No preview available"}
@@ -257,15 +257,41 @@ export function EditorHeader({
         >
           <Github className="h-4 w-4" />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 overflow-hidden rounded-full p-0 hover:ring-2 hover:ring-zinc-700"
-        >
-          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-500 to-pink-500">
-            <span className="text-xs font-medium text-white">U</span>
-          </div>
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 overflow-hidden rounded-full p-0 hover:ring-2 hover:ring-zinc-700"
+            >
+              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-500 to-pink-500">
+                <span className="text-xs font-medium text-white">U</span>
+              </div>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48 rounded-xl border-zinc-800 bg-zinc-900 p-1">
+            <DropdownMenuItem asChild>
+              <a href="/profile" className="flex items-center gap-2 rounded-lg text-zinc-300 focus:bg-zinc-800 focus:text-zinc-100 cursor-pointer">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800 text-xs">U</span>
+                <div className="flex flex-col space-y-0.5">
+                  <span className="text-sm font-medium">Username</span>
+                  <span className="text-xs text-zinc-500">View Profile</span>
+                </div>
+              </a>
+            </DropdownMenuItem>
+            <div className="my-1 h-px bg-zinc-800" />
+            <DropdownMenuItem asChild>
+              <a href="/settings" className="flex items-center gap-2 rounded-lg text-zinc-300 focus:bg-zinc-800 focus:text-zinc-100 cursor-pointer">
+                <div className="w-4 h-4" /> {/* Spacer or Icon */}
+                <span>Settings</span>
+              </a>
+            </DropdownMenuItem>
+            <DropdownMenuItem className="flex items-center gap-2 rounded-lg text-red-400 focus:bg-zinc-800 focus:text-red-300 cursor-pointer">
+              <div className="w-4 h-4" /> {/* Spacer or Icon */}
+              <span>Log out</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   )

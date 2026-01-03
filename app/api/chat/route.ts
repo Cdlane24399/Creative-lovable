@@ -15,6 +15,7 @@ import {
 import { setProjectInfo, getAgentContext } from "@/lib/ai/agent-context"
 import { withAuth } from "@/lib/auth"
 import { getProjectService, getMessageService } from "@/lib/services"
+import { logger } from "@/lib/logger"
 
 export const maxDuration = 60
 
@@ -34,6 +35,9 @@ const DEFAULT_PROJECT_ID = "default"
 export type ChatMessage = UIMessage
 
 export const POST = withAuth(async (req: Request) => {
+  const requestId = req.headers.get('x-request-id') ?? 'unknown'
+  const log = logger.child({ requestId, operation: 'chat' })
+  
   try {
     const body = await req.json()
     const {
@@ -45,6 +49,16 @@ export const POST = withAuth(async (req: Request) => {
       projectId?: string
       model?: ModelProvider
     }
+    
+    // Basic validation
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return Response.json({ error: 'At least one message is required' }, { status: 400 })
+    }
+    if (messages.length > 100) {
+      return Response.json({ error: 'Too many messages (max 100)' }, { status: 400 })
+    }
+    
+    log.info('Chat request received', { projectId, model, messageCount: messages.length })
 
     // Get services
     const projectService = getProjectService()

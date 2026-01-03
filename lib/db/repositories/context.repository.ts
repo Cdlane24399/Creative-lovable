@@ -5,48 +5,20 @@
  * Uses Supabase Client.
  */
 
-import { createClient } from "@/lib/supabase/server"
+import { createServiceRoleClient } from "@/lib/supabase/server"
 import { parseJsonSafe } from "./base.repository"
 import { getProjectRepository } from "./project.repository"
 import { DatabaseError, NotFoundError } from "@/lib/errors"
-import type { TaskGraph } from "@/lib/ai/context-types"
+import type { 
+  TaskGraph, 
+  FileInfo, 
+  BuildStatus, 
+  ServerState, 
+  ToolExecution 
+} from "@/lib/ai/context-types"
 
-// =============================================================================
-// Types
-// =============================================================================
-
-export interface FileInfo {
-  path: string
-  content?: string
-  action?: "created" | "updated" | "deleted"
-  lastModified: Date
-}
-
-export interface BuildStatus {
-  hasErrors: boolean
-  hasWarnings: boolean
-  errors: string[]
-  warnings: string[]
-  lastChecked: Date
-}
-
-export interface ServerState {
-  isRunning: boolean
-  port: number
-  url?: string
-  logs: string[]
-  lastStarted?: Date
-}
-
-export interface ToolExecution {
-  toolName: string
-  input: Record<string, unknown>
-  output?: Record<string, unknown>
-  success: boolean
-  error?: string
-  timestamp: Date
-  durationMs: number
-}
+// Re-export types for backward compatibility
+export type { FileInfo, BuildStatus, ServerState, ToolExecution }
 
 export interface AgentContextData {
   projectId: string
@@ -91,7 +63,7 @@ export class ContextRepository {
   private readonly tableName = "agent_context"
 
   private async getClient() {
-    return await createClient()
+    return createServiceRoleClient()
   }
 
   private handleError(error: any, operationName: string): never {
@@ -115,17 +87,17 @@ export class ContextRepository {
         { ...v, lastModified: new Date(v.lastModified) }
       ])),
       dependencies: new Map(Object.entries(dependencies)),
-      buildStatus: row.build_status 
-        ? { 
-            ...parseJsonSafe<BuildStatus>(row.build_status, { 
-              hasErrors: false, 
-              hasWarnings: false, 
-              errors: [], 
-              warnings: [], 
-              lastChecked: new Date() 
-            }),
-            lastChecked: new Date(parseJsonSafe<BuildStatus>(row.build_status, {} as BuildStatus).lastChecked)
-          }
+      buildStatus: row.build_status
+        ? {
+          ...parseJsonSafe<BuildStatus>(row.build_status, {
+            hasErrors: false,
+            hasWarnings: false,
+            errors: [],
+            warnings: [],
+            lastChecked: new Date()
+          }),
+          lastChecked: new Date(parseJsonSafe<BuildStatus>(row.build_status, {} as BuildStatus).lastChecked)
+        }
         : undefined,
       serverState: row.server_state
         ? parseJsonSafe<ServerState>(row.server_state, undefined as unknown as ServerState)
@@ -135,11 +107,11 @@ export class ContextRepository {
         timestamp: new Date(t.timestamp)
       })),
       errorHistory: parseJsonSafe<string[]>(row.error_history, []),
-      taskGraph: row.task_graph 
+      taskGraph: row.task_graph
         ? parseJsonSafe<TaskGraph>(row.task_graph, undefined as unknown as TaskGraph)
         : undefined,
       completedSteps: parseJsonSafe<string[]>(row.completed_steps, []),
-      currentPlan: row.current_plan 
+      currentPlan: row.current_plan
         ? parseJsonSafe<string[]>(row.current_plan, undefined as unknown as string[])
         : undefined,
       createdAt: new Date(row.updated_at),
@@ -153,39 +125,39 @@ export class ContextRepository {
     if (data.projectName !== undefined) row.project_name = data.projectName || null
     if (data.projectDir !== undefined) row.project_dir = data.projectDir || null
     if (data.sandboxId !== undefined) row.sandbox_id = data.sandboxId || null
-    
+
     if (data.files !== undefined) {
       row.files = Object.fromEntries(data.files)
     }
-    
+
     if (data.dependencies !== undefined) {
       row.dependencies = Object.fromEntries(data.dependencies)
     }
-    
+
     if (data.buildStatus !== undefined) {
       row.build_status = data.buildStatus
     }
-    
+
     if (data.serverState !== undefined) {
       row.server_state = data.serverState
     }
-    
+
     if (data.toolHistory !== undefined) {
       row.tool_history = data.toolHistory.slice(-MAX_TOOL_HISTORY)
     }
-    
+
     if (data.errorHistory !== undefined) {
       row.error_history = data.errorHistory.slice(-MAX_ERROR_HISTORY)
     }
-    
+
     if (data.taskGraph !== undefined) {
       row.task_graph = data.taskGraph ? data.taskGraph : null
     }
-    
+
     if (data.completedSteps !== undefined) {
       row.completed_steps = data.completedSteps
     }
-    
+
     if (data.currentPlan !== undefined) {
       row.current_plan = data.currentPlan ? data.currentPlan : null
     }
@@ -233,7 +205,7 @@ export class ContextRepository {
       // Ensure project exists
       const projectRepo = getProjectRepository()
       const projectExists = await projectRepo.exists(projectId)
-      
+
       if (!projectExists) {
         await projectRepo.ensureExists(projectId, data.projectName || "Untitled Project")
       }
@@ -257,7 +229,7 @@ export class ContextRepository {
       // If inserting: `col2` gets default or null.
       // If updating: `col2` is untouched.
       // So this is exactly what we want!
-      
+
       const { error } = await client
         .from(this.tableName)
         .upsert(upsertData, { onConflict: 'project_id' })
@@ -280,24 +252,24 @@ export class ContextRepository {
     if (update.serverState !== undefined) data.serverState = update.serverState
     if (update.taskGraph !== undefined) data.taskGraph = update.taskGraph
 
-    if (update.toolExecution !== undefined || 
-        update.errorMessage !== undefined || 
-        update.completedStep !== undefined) {
-      
+    if (update.toolExecution !== undefined ||
+      update.errorMessage !== undefined ||
+      update.completedStep !== undefined) {
+
       const current = await this.findByProjectId(projectId)
-      
+
       if (update.toolExecution) {
         const history = current?.toolHistory || []
         history.push(update.toolExecution)
         data.toolHistory = history.slice(-MAX_TOOL_HISTORY)
       }
-      
+
       if (update.errorMessage) {
         const errors = current?.errorHistory || []
         errors.push(update.errorMessage)
         data.errorHistory = errors.slice(-MAX_ERROR_HISTORY)
       }
-      
+
       if (update.completedStep) {
         const steps = current?.completedSteps || []
         steps.push(update.completedStep)
@@ -340,12 +312,12 @@ export class ContextRepository {
       const client = await this.getClient()
       const cutoffDate = new Date()
       cutoffDate.setDate(cutoffDate.getDate() - daysOld)
-      
+
       const { count, error } = await client
         .from(this.tableName)
         .delete({ count: 'exact' })
         .lt('updated_at', cutoffDate.toISOString())
-      
+
       if (error) throw error
       return count ?? 0
     } catch (error) {
@@ -370,7 +342,7 @@ export class ContextRepository {
         .select('project_name, task_graph, files, updated_at')
         .eq('project_id', projectId)
         .single()
-      
+
       if (error) {
         if (error.code === 'PGRST116') return null
         throw error

@@ -159,13 +159,17 @@ export const GET = withAuth(async (
     }
   })
 
+  // Get allowed origin from environment or use same-origin
+  const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || req.headers.get('origin') || ''
+
   return new Response(responseStream, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Cache-Control',
+      'Access-Control-Allow-Origin': allowedOrigin,
+      'Access-Control-Allow-Headers': 'Cache-Control, Authorization, X-Api-Key',
+      'Access-Control-Allow-Credentials': 'true',
     },
   })
 })

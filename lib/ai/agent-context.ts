@@ -50,6 +50,60 @@ const loadingContexts = new Map<string, Promise<AgentContext>>()
 /** Flag to enable async persistence (set to true for production) */
 const ENABLE_ASYNC_PERSISTENCE = true
 
+/** Context TTL in milliseconds (30 minutes) */
+const CONTEXT_TTL_MS = 30 * 60 * 1000
+
+/** Maximum number of contexts to keep in memory */
+const MAX_CONTEXTS = 100
+
+/** Cleanup interval in milliseconds (5 minutes) */
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000
+
+/** Track when cleanup was last run */
+let lastCleanup = Date.now()
+
+/**
+ * Cleanup expired contexts to prevent memory leaks
+ * Runs automatically when accessing contexts
+ */
+function cleanupExpiredContexts(): void {
+  const now = Date.now()
+  
+  // Only run cleanup every CLEANUP_INTERVAL_MS
+  if (now - lastCleanup < CLEANUP_INTERVAL_MS) {
+    return
+  }
+  lastCleanup = now
+
+  const expiredKeys: string[] = []
+  const ttlThreshold = now - CONTEXT_TTL_MS
+
+  // Find expired contexts
+  for (const [key, context] of contextStore) {
+    if (context.lastActivity.getTime() < ttlThreshold) {
+      expiredKeys.push(key)
+    }
+  }
+
+  // Remove expired contexts
+  for (const key of expiredKeys) {
+    contextStore.delete(key)
+    console.log(`[agent-context] Expired context removed: ${key}`)
+  }
+
+  // If still over limit, remove oldest contexts
+  if (contextStore.size > MAX_CONTEXTS) {
+    const entries = Array.from(contextStore.entries())
+      .sort((a, b) => a[1].lastActivity.getTime() - b[1].lastActivity.getTime())
+    
+    const toRemove = entries.slice(0, contextStore.size - MAX_CONTEXTS)
+    for (const [key] of toRemove) {
+      contextStore.delete(key)
+      console.log(`[agent-context] Evicted old context: ${key}`)
+    }
+  }
+}
+
 // =============================================================================
 // Context Creation & Retrieval
 // =============================================================================
@@ -76,6 +130,9 @@ function createEmptyContext(projectId: string): AgentContext {
  * Use getAgentContextAsync for database-backed context loading
  */
 export function getAgentContext(projectId: string): AgentContext {
+  // Run cleanup on access
+  cleanupExpiredContexts()
+  
   let context = contextStore.get(projectId)
 
   if (!context) {
