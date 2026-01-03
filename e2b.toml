@@ -1,16 +1,18 @@
 # This is a config for E2B sandbox template.
-# You can use template ID (7jys74b8db8p4ksbtb9d) or template name (nextjs-shadcn-v1) to create a sandbox:
+# You can use template ID (ihmwzjag4k9ialcn2l5d) or template name (nextjs-shadcn-v2) to create a sandbox:
 
 # Python SDK
 # from e2b import Sandbox, AsyncSandbox
-# sandbox = Sandbox.create("nextjs-shadcn-v1") # Sync sandbox
-# sandbox = await AsyncSandbox.create("nextjs-shadcn-v1") # Async sandbox
+# sandbox = Sandbox.create("nextjs-shadcn-v2") # Sync sandbox
+# sandbox = await AsyncSandbox.create("nextjs-shadcn-v2") # Async sandbox
 
 # JS SDK
 # import { Sandbox } from 'e2b'
-# const sandbox = await Sandbox.create('nextjs-shadcn-v1')
+# const sandbox = await Sandbox.create('nextjs-shadcn-v2')
 
-team_id = "4a542cc1-b49a-459d-bee6-f83929e963e6"
+team_id = "1c6b4756-f453-4085-b7fd-299a79b9c8fe"
+memory_mb = 8_192
+cpu_count = 8
 dockerfile = "lib/e2b/templates/nextjs-shadcn.e2b.Dockerfile"
-template_name = "nextjs-shadcn-v1"
-template_id = "7jys74b8db8p4ksbtb9d"
+template_name = "nextjs-shadcn-v2"
+template_id = "ihmwzjag4k9ialcn2l5d"
