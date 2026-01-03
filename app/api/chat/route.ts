@@ -17,7 +17,7 @@ import { withAuth } from "@/lib/auth"
 import { getProjectService, getMessageService } from "@/lib/services"
 import { logger } from "@/lib/logger"
 
-export const maxDuration = 60
+export const maxDuration = 300
 
 // AI SDK v6: Define tool groups for dynamic activation
 const PLANNING_TOOLS = ["planChanges", "markStepComplete", "analyzeProjectState"] as const
