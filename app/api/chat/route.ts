@@ -1,256 +1,174 @@
 import {
   convertToModelMessages,
   streamText,
+  type UIMessage,
   stepCountIs,
   NoSuchToolError,
   InvalidToolInputError,
-  type UIMessage,
-  type StopCondition,
 } from "ai"
-import { SYSTEM_PROMPT, MODEL_OPTIONS, MODEL_SETTINGS, type ModelProvider } from "@/lib/ai/agent"
-import {
-  createContextAwareTools,
-  generateAgenticSystemPrompt,
-} from "@/lib/ai/web-builder-agent"
-import { setProjectInfo, getAgentContext } from "@/lib/ai/agent-context"
-import { withAuth } from "@/lib/auth"
-import { getProjectService, getMessageService } from "@/lib/services"
-import { logger } from "@/lib/logger"
+import { SYSTEM_PROMPT, MODEL_OPTIONS, type ModelProvider } from "@/lib/ai/agent"
+import { agentTools } from "@/lib/ai/agent-tools"
 
-export const maxDuration = 300
+export const maxDuration = 120
 
-// AI SDK v6: Define tool groups for dynamic activation
-const PLANNING_TOOLS = ["planChanges", "markStepComplete", "analyzeProjectState"] as const
-const FILE_TOOLS = ["writeFile", "readFile", "editFile", "getProjectStructure"] as const
-const BUILD_TOOLS = ["runCommand", "installPackage", "getBuildStatus", "startDevServer"] as const
-const CREATION_TOOLS = ["createWebsite"] as const
-const CODE_TOOLS = ["executeCode"] as const
+// Type for the chat request body
+interface ChatRequestBody {
+  messages: UIMessage[]
+  projectId?: string
+  model?: ModelProvider
+  context?: {
+    currentHtml?: string
+    previousDesigns?: string[]
+  }
+}
 
-type ToolName = typeof PLANNING_TOOLS[number] | typeof FILE_TOOLS[number] | typeof BUILD_TOOLS[number] | typeof CREATION_TOOLS[number] | typeof CODE_TOOLS[number]
+// Step tracking for debugging and analytics
+interface StepInfo {
+  stepNumber: number
+  toolCalls: string[]
+  timestamp: number
+}
 
-// Default project ID for sandbox operations
-const DEFAULT_PROJECT_ID = "default"
+export async function POST(req: Request) {
+  const stepHistory: StepInfo[] = []
 
-// Export type for the chat messages
-export type ChatMessage = UIMessage
-
-export const POST = withAuth(async (req: Request) => {
-  const requestId = req.headers.get('x-request-id') ?? 'unknown'
-  const log = logger.child({ requestId, operation: 'chat' })
-  
   try {
-    const body = await req.json()
-    const {
-      messages,
-      projectId = DEFAULT_PROJECT_ID,
-      model = "anthropic",
-    } = body as {
-      messages: UIMessage[]
-      projectId?: string
-      model?: ModelProvider
-    }
-    
-    // Basic validation
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return Response.json({ error: 'At least one message is required' }, { status: 400 })
-    }
-    if (messages.length > 100) {
-      return Response.json({ error: 'Too many messages (max 100)' }, { status: 400 })
-    }
-    
-    log.info('Chat request received', { projectId, model, messageCount: messages.length })
+    const body: ChatRequestBody = await req.json()
+    const { messages, projectId, model = "anthropic", context } = body
 
-    // Get services
-    const projectService = getProjectService()
-    const messageService = getMessageService()
+    console.log("[Agent] Request received:", {
+      model,
+      messageCount: messages?.length,
+      hasContext: !!context,
+      messagesType: typeof messages,
+      isPromise: messages && typeof (messages as any).then === 'function',
+      messages: messages ? JSON.stringify(messages).slice(0, 200) : 'undefined',
+    })
 
-    // Get selected model and its settings
+    // Get selected model instance
     const selectedModel = MODEL_OPTIONS[model] || MODEL_OPTIONS.anthropic
-    const modelSettings = MODEL_SETTINGS[model] || MODEL_SETTINGS.anthropic
+
+    // Build enhanced system prompt with context awareness
+    let enhancedSystemPrompt = SYSTEM_PROMPT
+
+    // Add context about current state if available
+    if (context?.currentHtml) {
+      enhancedSystemPrompt += `\n\n## Current Design Context
+You are working on an existing design. The user may reference "the current design" or ask for modifications.
+When editing, use the editWebsite or addComponent tools instead of generateWebsite.
+Use analyzeDesign if the user asks for feedback.`
+    }
+
+    // Add multi-tool awareness
+    enhancedSystemPrompt += `\n\n## Available Tools
+You have access to multiple specialized tools:
+- **generateWebsite**: Create new websites from scratch
+- **editWebsite**: Modify existing designs with targeted changes
+- **addComponent**: Add specific sections/components to existing pages
+- **analyzeDesign**: Provide feedback and critique (doesn't modify)
+- **thinkStep**: Plan complex multi-step solutions (internal reasoning)
+
+Choose the most appropriate tool for each request. For complex requests, use thinkStep first to plan your approach, then execute with the appropriate action tools.`
 
     // Convert messages for the model
-    const modelMessages = await convertToModelMessages(messages)
+    const modelMessages = convertToModelMessages(messages)
 
-    // Create context-aware tools for this project
-    const tools = createContextAwareTools(projectId)
-
-    // Generate enhanced system prompt with context awareness
-    const systemPrompt = generateAgenticSystemPrompt(projectId, SYSTEM_PROMPT)
-
-    // Initialize project info if this is a new session
-    setProjectInfo(projectId, { projectName: projectId })
-
-    // Ensure project exists in database BEFORE any tool calls can trigger context saves
-    // This prevents foreign key constraint violations
-    if (projectId && projectId !== DEFAULT_PROJECT_ID) {
-      try {
-        await projectService.ensureProjectExists(projectId, "Untitled Project")
-      } catch (dbError) {
-        console.warn("Failed to ensure project exists:", dbError)
-      }
-    }
-
-    // AI SDK v6 best practice: Track steps for debugging and monitoring
-    let currentStepNumber = 0
-
-    // Stream the response with context-aware tools
-    // AI SDK v6 best practices: Use stopWhen, onStepFinish, prepareStep, and experimental_repairToolCall
+    // Stream the response with enhanced configuration
     const result = streamText({
       model: selectedModel,
-      system: systemPrompt,
+      system: enhancedSystemPrompt,
       messages: modelMessages,
-      tools,
+      tools: agentTools,
+
+      // Multi-step execution: allow up to 5 tool calls for complex workflows
+      // Using stopWhen for controlled multi-step execution
+      stopWhen: stepCountIs(5),
+
+      // Abort handling
       abortSignal: req.signal,
-      // AI SDK v6: Use stopWhen with stepCountIs for multi-step agentic behaviors
-      stopWhen: stepCountIs(modelSettings.maxSteps || 50),
-      // Model-specific token limits (important for Gemini)
-      ...(modelSettings.maxTokens && { maxOutputTokens: modelSettings.maxTokens }),
 
-      // AI SDK v6: onStepFinish callback for step tracking
-      onStepFinish: async ({ text, toolCalls, toolResults, finishReason, usage }) => {
-        currentStepNumber++
+      // Step completion callback for tracking and debugging
+      onStepFinish: ({ stepType, toolCalls, text, finishReason }) => {
+        const stepInfo: StepInfo = {
+          stepNumber: stepHistory.length + 1,
+          toolCalls: toolCalls?.map((tc) => tc.toolName) || [],
+          timestamp: Date.now(),
+        }
+        stepHistory.push(stepInfo)
 
-        // Log step completion for debugging
-        console.log(`[Step ${currentStepNumber}] Finished:`, {
+        console.log("[Agent] Step completed:", {
+          step: stepInfo.stepNumber,
+          type: stepType,
+          tools: stepInfo.toolCalls,
           finishReason,
-          toolCallsCount: toolCalls?.length || 0,
-          toolResultsCount: toolResults?.length || 0,
-          textLength: text?.length || 0,
-          tokensUsed: usage?.totalTokens,
+          hasText: !!text,
         })
       },
 
-      // AI SDK v6: prepareStep for dynamic step configuration and activeTools
-      prepareStep: async ({ stepNumber, messages: stepMessages }) => {
-        const context = getAgentContext(projectId)
-        const config: {
-          messages?: typeof stepMessages
-          activeTools?: ToolName[]
-        } = {}
-
-        // For longer agentic loops, compress conversation history
-        if (stepMessages.length > 30) {
-          console.log(`[Step ${stepNumber}] Compressing conversation history`)
-          config.messages = [
-            stepMessages[0], // system message
-            ...stepMessages.slice(-20),
-          ]
+      // Chunk callback for streaming progress
+      onChunk: ({ chunk }) => {
+        if (chunk.type === "tool-call-streaming-start") {
+          console.log("[Agent] Tool streaming started:", chunk.toolName)
         }
-
-        // AI SDK v6: Dynamic activeTools based on context
-        // This optimizes token usage by only including relevant tools
-        if (stepNumber === 0) {
-          // First step: Focus on planning and creation
-          config.activeTools = [...PLANNING_TOOLS, ...CREATION_TOOLS, "getProjectStructure"] as ToolName[]
-        } else if (context.buildStatus?.hasErrors) {
-          // Build errors: Focus on debugging and file operations
-          config.activeTools = [...FILE_TOOLS, ...BUILD_TOOLS] as ToolName[]
-          console.log(`[Step ${stepNumber}] Build errors detected, focusing on debugging tools`)
-        } else if (context.serverState?.isRunning && context.taskGraph) {
-          // Server running with active task graph: Focus on file operations
-          config.activeTools = [...FILE_TOOLS, ...BUILD_TOOLS, "markStepComplete"] as ToolName[]
-        }
-
-        // Return empty object if no modifications needed
-        return Object.keys(config).length > 0 ? config : {}
       },
 
-      // AI SDK v6: Tool call repair for better error recovery
-      experimental_repairToolCall: async ({ toolCall, error, messages: repairMessages }) => {
-        // Don't try to repair unknown tools
-        if (NoSuchToolError.isInstance(error)) {
-          console.warn(`[Tool Repair] Unknown tool: ${toolCall.toolName}`)
-          return null
-        }
-
-        // For invalid inputs, try to fix common issues
-        if (InvalidToolInputError.isInstance(error)) {
-          console.log(`[Tool Repair] Attempting to fix invalid input for: ${toolCall.toolName}`)
-
-          // Common fixes for path-related issues
-          if (typeof toolCall.input === "object" && toolCall.input !== null) {
-            const input = toolCall.input as Record<string, unknown>
-
-            // Fix common path issues
-            if (typeof input.path === "string") {
-              // Remove leading slashes if present
-              input.path = (input.path as string).replace(/^\/+/, "")
-            }
-
-            // Fix projectName issues
-            if (typeof input.projectName === "string") {
-              // Convert to lowercase with hyphens
-              input.projectName = (input.projectName as string)
-                .toLowerCase()
-                .replace(/\s+/g, "-")
-                .replace(/[^a-z0-9-]/g, "")
-            }
-
-            return {
-              ...toolCall,
-              input: JSON.stringify(input),
-            }
-          }
-        }
-
-        // Return null if we can't repair
-        return null
+      // Completion callback
+      onFinish: ({ steps, usage, finishReason }) => {
+        console.log("[Agent] Generation complete:", {
+          totalSteps: steps.length,
+          finishReason,
+          usage: {
+            promptTokens: usage.promptTokens,
+            completionTokens: usage.completionTokens,
+          },
+        })
       },
     })
 
-    // AI SDK v6: Enhanced response with better error handling
+    // Return stream with enhanced error handling
     return result.toUIMessageStreamResponse({
-      originalMessages: messages,
-      // AI SDK v6: Custom error messages for better UX
-      onError: (error) => {
+      // Custom error handling for graceful degradation
+      onError: (error: unknown) => {
+        console.error("[Agent] Stream error:", error)
+
+        // Handle specific error types with user-friendly messages
         if (NoSuchToolError.isInstance(error)) {
-          return "I tried to use an unknown tool. Let me try a different approach."
+          return "I tried to use a tool that doesn't exist. Let me try a different approach."
         }
+
         if (InvalidToolInputError.isInstance(error)) {
-          return "I provided invalid input to a tool. Let me fix that and try again."
-        }
-        // Generic error message
-        return `An error occurred: ${error instanceof Error ? error.message : "Unknown error"}`
-      },
-      onFinish: async ({ messages: finishedMessages }) => {
-        // Save messages to database if projectId provided
-        if (projectId && projectId !== DEFAULT_PROJECT_ID) {
-          try {
-            // Convert UIMessage array to our format and save
-            // AI SDK v6: UIMessage only has parts, no content property
-            const messagesToSave = finishedMessages.map((msg: UIMessage) => ({
-              id: msg.id,
-              role: msg.role as "user" | "assistant" | "system",
-              content: msg.parts?.filter((p: any) => p.type === "text").map((p: any) => p.text).join("") || "",
-              parts: msg.parts as any[],
-            }))
-
-            await messageService.saveConversation(projectId, messagesToSave)
-            
-            console.log(`[Chat] Saved ${messagesToSave.length} messages for project ${projectId}`)
-          } catch (dbError) {
-            console.error("Failed to save messages:", dbError)
-          }
+          return "I had trouble with the tool parameters. Let me try again with corrected inputs."
         }
 
-        // Log completion summary with context
-        const context = getAgentContext(projectId)
-        console.log(`[Chat Complete] Project: ${projectId}, Steps: ${currentStepNumber}, Server: ${context.serverState?.isRunning ? "Running" : "Stopped"}`)
+        // Handle rate limiting
+        if (error instanceof Error && error.message.includes("rate")) {
+          return "I'm being rate limited. Please wait a moment and try again."
+        }
+
+        // Handle context length errors
+        if (error instanceof Error && error.message.includes("context")) {
+          return "The conversation is too long. Try starting a new chat or being more concise."
+        }
+
+        // Generic fallback
+        return "An error occurred while generating. Please try again."
       },
     })
   } catch (error) {
-    console.error("Chat API error:", error)
+    console.error("[Agent] Request error:", error)
 
-    // AI SDK v6 best practice: Provide detailed error responses
-    const errorMessage = error instanceof Error ? error.message : "Failed to process chat request"
-    const errorDetails = {
-      error: errorMessage,
-      timestamp: new Date().toISOString(),
+    // Structured error response
+    const errorResponse = {
+      error: "Failed to process chat request",
+      code: "AGENT_ERROR",
+      details: error instanceof Error ? error.message : "Unknown error",
+      recoverable: true,
+      suggestion: "Please try again or rephrase your request.",
     }
 
-    return new Response(JSON.stringify(errorDetails), {
+    return new Response(JSON.stringify(errorResponse), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     })
   }
-})
+}

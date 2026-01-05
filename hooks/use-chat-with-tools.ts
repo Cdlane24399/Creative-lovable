@@ -1,224 +1,279 @@
 "use client"
 
-import { useMemo, useCallback, useEffect, useRef } from "react"
 import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
-import type { ChatMessage } from "@/app/api/chat/route"
-import type { Message, MessagePart } from "@/lib/db/types"
-
-// Progress state for a single tool call (for future use with data streaming)
-export interface ToolProgress {
-  toolCallId: string
-  toolName: string
-  phase: string
-  message: string
-  detail?: string
-  progress?: number
-  timestamp: number
-  filesWritten: string[]
-}
+import type { ModelProvider } from "@/lib/ai/agent"
+import { useCallback, useMemo } from "react"
 
 interface UseChatWithToolsOptions {
   projectId?: string
-  model?: "anthropic" | "opus" | "google" | "googlePro" | "openai"
+  model?: ModelProvider
+  currentHtml?: string
   onError?: (error: Error) => void
-  /** Initial messages to restore from database */
-  initialMessages?: Message[]
-  /** Called when messages should be saved */
-  onMessagesSaved?: () => void
+  onToolStart?: (toolName: string) => void
+  onToolComplete?: (toolName: string, result: unknown) => void
+  initialMessages?: any[]
 }
 
-/**
- * Convert database messages to AI SDK message format.
- * Handles the parts field which may contain tool calls.
- */
-function convertDbMessagesToAiMessages(dbMessages: Message[]): ChatMessage[] {
-  return dbMessages.map((msg) => ({
-    id: msg.id,
-    role: msg.role,
-    content: msg.content,
-    parts: msg.parts || [{ type: "text", text: msg.content }],
-    createdAt: new Date(msg.created_at),
-  })) as ChatMessage[]
+// Tool result types for type-safe access
+export interface GenerateWebsiteResult {
+  state: "complete"
+  title: string
+  description: string
+  html: string
+  designRationale?: string
+  success: boolean
 }
 
-/**
- * Enhanced chat hook with context-aware tool support.
- *
- * In AI SDK v6, tools with execute functions run server-side and results
- * are streamed back automatically. This hook provides:
- * - Multi-model support (Anthropic, Google, OpenAI)
- * - Project context tracking via projectId
- * - Convenient status helpers for UI state management
- * - Initial message restoration from database
- * - Auto-save of messages after AI responses
- */
-export function useChatWithTools({ projectId, model = "anthropic", onError, initialMessages, onMessagesSaved }: UseChatWithToolsOptions = {}) {
-  // Track if we've initialized with messages
-  const hasInitializedRef = useRef(false)
-  // Track last saved message count to avoid duplicate saves
-  // Initialize to the count of initial messages to prevent re-saving them
-  const lastSavedCountRef = useRef(initialMessages?.length || 0)
-  // Track if we're currently saving
-  const isSavingRef = useRef(false)
+export interface EditWebsiteResult {
+  state: "complete"
+  title: string
+  editSummary: string
+  changesApplied: string[]
+  html: string
+  success: boolean
+}
 
-  // Convert initial messages to AI SDK format
-  const convertedInitialMessages = useMemo(() => {
-    if (!initialMessages || initialMessages.length === 0) return undefined
-    return convertDbMessagesToAiMessages(initialMessages)
-  }, [initialMessages])
+export interface AddComponentResult {
+  state: "complete"
+  componentName: string
+  componentType: string
+  placement: string
+  description: string
+  html: string
+  success: boolean
+}
 
-  // Update lastSavedCount when initialMessages changes (project switch)
-  useEffect(() => {
-    lastSavedCountRef.current = initialMessages?.length || 0
-  }, [initialMessages])
+export interface AnalyzeDesignResult {
+  state: "complete"
+  overallScore: number
+  strengths: string[]
+  improvements: Array<{
+    area: string
+    suggestion: string
+    priority: "high" | "medium" | "low"
+  }>
+  accessibilityNotes: string[]
+  performanceNotes: string[]
+  success: boolean
+}
 
-  // Track if we've restored messages for this project
-  const restoredProjectRef = useRef<string | null>(null)
-  
-  // Recreate transport when model or projectId changes to ensure correct model is used
-  const transport = useMemo(
-    () =>
-      new DefaultChatTransport({
-        api: "/api/chat",
-        body: { projectId, model },
-      }),
-    [projectId, model]
+export interface ThinkStepResult {
+  state: "complete"
+  thought: string
+  interpretation: string
+  plannedApproach: string
+  toolsToUse: string[]
+  success: boolean
+}
+
+export type ToolResult =
+  | GenerateWebsiteResult
+  | EditWebsiteResult
+  | AddComponentResult
+  | AnalyzeDesignResult
+  | ThinkStepResult
+
+// Type guard helpers
+export function isGenerateWebsiteResult(result: unknown): result is GenerateWebsiteResult {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    "state" in result &&
+    result.state === "complete" &&
+    "html" in result &&
+    "title" in result
+  )
+}
+
+export function isEditWebsiteResult(result: unknown): result is EditWebsiteResult {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    "state" in result &&
+    result.state === "complete" &&
+    "editSummary" in result &&
+    "changesApplied" in result
+  )
+}
+
+export function isAddComponentResult(result: unknown): result is AddComponentResult {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    "state" in result &&
+    result.state === "complete" &&
+    "componentName" in result &&
+    "componentType" in result
+  )
+}
+
+export function isAnalyzeDesignResult(result: unknown): result is AnalyzeDesignResult {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    "state" in result &&
+    result.state === "complete" &&
+    "overallScore" in result &&
+    "improvements" in result
+  )
+}
+
+export function isThinkStepResult(result: unknown): result is ThinkStepResult {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    "state" in result &&
+    result.state === "complete" &&
+    "thought" in result &&
+    "plannedApproach" in result
+  )
+}
+
+// Get HTML from any tool result that produces it
+export function getHtmlFromToolResult(result: unknown): string | null {
+  if (isGenerateWebsiteResult(result) || isEditWebsiteResult(result) || isAddComponentResult(result)) {
+    return result.html
+  }
+  return null
+}
+
+export function useChatWithTools({
+  projectId,
+  model = "anthropic",
+  currentHtml,
+  onError,
+  onToolStart,
+  onToolComplete,
+  initialMessages,
+}: UseChatWithToolsOptions = {}) {
+  // Build transport body with context
+  const transportBody = useMemo(
+    () => ({
+      projectId,
+      model,
+      context: currentHtml ? { currentHtml } : undefined,
+    }),
+    [projectId, model, currentHtml]
   )
 
-  const chat = useChat<ChatMessage>({
-    transport,
-    messages: convertedInitialMessages,
+  const chat = useChat({
+    initialMessages: initialMessages || [],
+    transport: new DefaultChatTransport({
+      api: "/api/chat",
+      body: transportBody,
+    }),
     onError: (error) => {
-      console.error("Chat error:", error)
+      console.error("[Agent] Chat hook error:", error)
       onError?.(error)
     },
   })
 
-  // Restore messages when they become available after initial mount
-  // This handles the case where messages are loaded asynchronously from the database
-  useEffect(() => {
-    // Only restore if:
-    // 1. We have messages to restore
-    // 2. We haven't already restored for this project
-    // 3. The chat currently has no messages (initial state)
-    if (
-      convertedInitialMessages &&
-      convertedInitialMessages.length > 0 &&
-      projectId &&
-      restoredProjectRef.current !== projectId &&
-      chat.messages.length === 0
-    ) {
-      console.log("[useChatWithTools] Restoring", convertedInitialMessages.length, "messages for project", projectId)
-      chat.setMessages(convertedInitialMessages)
-      restoredProjectRef.current = projectId
-    }
-  }, [convertedInitialMessages, projectId, chat.messages.length, chat.setMessages])
-
-  // Reset restoration tracking when project changes
-  useEffect(() => {
-    if (projectId && restoredProjectRef.current !== projectId) {
-      // If switching projects, allow restoration for the new project
-      restoredProjectRef.current = null
-    }
-  }, [projectId])
-
-  // Helper to get progress for a specific tool call (placeholder for future data streaming)
-  const getToolProgress = useCallback((_toolCallId: string): ToolProgress | undefined => {
-    // In a future version with data streaming, this would return real-time progress
-    return undefined
-  }, [])
-
-  // Extract useful state from messages
-  const lastMessage = chat.messages[chat.messages.length - 1]
-  const isAssistantMessage = lastMessage?.role === "assistant"
-
-  // Check if the last message has active tool calls (for showing progress)
-  const hasActiveToolCalls = isAssistantMessage && lastMessage?.parts?.some(
-    (part: { type: string; state?: string }) =>
-      part.type.startsWith("tool-") &&
-      (part.state === "input-streaming" || part.state === "input-available")
-  )
-
-  // Save messages to database
-  const saveMessages = useCallback(async () => {
-    if (!projectId || chat.messages.length === 0) return
-    if (isSavingRef.current) return
-    if (chat.messages.length === lastSavedCountRef.current) return
-
-    isSavingRef.current = true
-    
-    try {
-      // Convert messages to the format expected by the API
-      const messagesToSave = chat.messages.map((msg) => {
-        // Extract text content from parts
-        const textContent = msg.parts
-          ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
-          .map((p) => p.text)
-          .join("") || ""
-
-        return {
-          id: msg.id,
-          role: msg.role as "user" | "assistant" | "system",
-          content: textContent,
-          parts: msg.parts as MessagePart[],
+  // Extract the latest HTML from any tool that produces it
+  const latestHtml = useMemo(() => {
+    for (let i = chat.messages.length - 1; i >= 0; i--) {
+      const message = chat.messages[i]
+      if (message.role === "assistant" && message.parts) {
+        for (const part of message.parts as unknown[]) {
+          const typedPart = part as { type?: string; output?: unknown }
+          if (
+            typedPart.type?.startsWith("tool-") &&
+            typedPart.output
+          ) {
+            const html = getHtmlFromToolResult(typedPart.output)
+            if (html) return html
+          }
         }
-      })
-
-      const response = await fetch(`/api/projects/${projectId}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(messagesToSave),
-      })
-
-      if (response.ok) {
-        lastSavedCountRef.current = chat.messages.length
-        console.log(`[useChatWithTools] Saved ${messagesToSave.length} messages for project ${projectId}`)
-        onMessagesSaved?.()
-      } else {
-        console.error("[useChatWithTools] Failed to save messages:", await response.text())
       }
-    } catch (error) {
-      console.error("[useChatWithTools] Error saving messages:", error)
-    } finally {
-      isSavingRef.current = false
     }
-  }, [projectId, chat.messages, onMessagesSaved])
+    return null
+  }, [chat.messages])
 
-  // Auto-save messages when AI stops working (status becomes 'ready')
-  const prevStatusRef = useRef(chat.status)
-  useEffect(() => {
-    const wasWorking = prevStatusRef.current === "submitted" || prevStatusRef.current === "streaming"
-    const isNowReady = chat.status === "ready"
-    
-    // Save when transitioning from working to ready
-    if (wasWorking && isNowReady && chat.messages.length > 0) {
-      // Small delay to ensure all state updates are complete
-      const timer = setTimeout(() => {
-        saveMessages()
-      }, 500)
-      return () => clearTimeout(timer)
+  // Get all tool calls from the conversation
+  const toolCalls = useMemo(() => {
+    const calls: Array<{
+      toolName: string
+      state: string
+      output?: unknown
+      timestamp: number
+    }> = []
+
+    for (const message of chat.messages) {
+      if (message.role === "assistant" && message.parts) {
+        for (const part of message.parts as unknown[]) {
+          const typedPart = part as { type?: string; state?: string; output?: unknown }
+          if (typedPart.type?.startsWith("tool-")) {
+            calls.push({
+              toolName: typedPart.type.replace("tool-", ""),
+              state: typedPart.state || "unknown",
+              output: typedPart.output,
+              timestamp: Date.now(),
+            })
+          }
+        }
+      }
     }
-    
-    prevStatusRef.current = chat.status
-  }, [chat.status, chat.messages.length, saveMessages])
+
+    return calls
+  }, [chat.messages])
+
+  // Get the latest analysis result if any
+  const latestAnalysis = useMemo(() => {
+    for (let i = chat.messages.length - 1; i >= 0; i--) {
+      const message = chat.messages[i]
+      if (message.role === "assistant" && message.parts) {
+        for (const part of message.parts as unknown[]) {
+          const typedPart = part as { type?: string; output?: unknown }
+          if (
+            typedPart.type === "tool-analyzeDesign" &&
+            isAnalyzeDesignResult(typedPart.output)
+          ) {
+            return typedPart.output
+          }
+        }
+      }
+    }
+    return null
+  }, [chat.messages])
+
+  // Enhanced send message with context
+  const sendMessageWithContext = useCallback(
+    async (options: { text: string; images?: File[] }) => {
+      return chat.sendMessage(options)
+    },
+    [chat]
+  )
 
   return {
     ...chat,
-    // Helper to check if AI is currently working
-    // Status can be 'submitted', 'streaming', 'ready', or 'error'
-    isWorking: chat.status === "submitted" || chat.status === "streaming",
-    // More granular: is the model actively calling tools?
-    isCallingTools: hasActiveToolCalls,
-    // Helper to get the last message
-    lastMessage,
-    // Helper to get only assistant messages (for tool result extraction)
-    assistantMessages: chat.messages.filter(m => m.role === "assistant"),
-    // Placeholder for future real-time progress
-    getToolProgress,
-    // Flag to check if chat was restored from history
-    hasRestoredHistory: convertedInitialMessages !== undefined && convertedInitialMessages.length > 0,
-    // Manual save function (auto-save happens automatically)
-    saveMessages,
+    // Enhanced helpers
+    sendMessage: sendMessageWithContext,
+    setMessages: chat.setMessages,
+
+    // Status helpers
+    isWorking: chat.status === "streaming" || chat.status === "submitted" || chat.status === "in_progress",
+    isStreaming: chat.status === "streaming",
+    isSubmitted: chat.status === "submitted",
+
+    // Message helpers
+    lastMessage: chat.messages[chat.messages.length - 1],
+    messageCount: chat.messages.length,
+
+    // Tool result helpers
+    latestHtml,
+    latestAnalysis,
+    toolCalls,
+
+    // Utility to check if any tool is currently running
+    hasActiveToolCall: chat.messages.some((msg) => {
+      if (msg.role !== "assistant" || !msg.parts) return false
+      return (msg.parts as unknown[]).some((part) => {
+        const typedPart = part as { type?: string; state?: string }
+        return (
+          typedPart.type?.startsWith("tool-") &&
+          (typedPart.state === "call" || typedPart.state === "partial-call")
+        )
+      })
+    }),
   }
 }
