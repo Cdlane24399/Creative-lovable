@@ -36,15 +36,85 @@ const CACHE_TTL_MS = 1500 // Cache valid for 1.5 seconds
 // Track in-flight start requests to prevent duplicates
 const startingProjects = new Map<string, Promise<any>>()
 
+// Helper to get server status
+async function getStatus(projectId: string): Promise<DevServerStatus> {
+  try {
+    const sandbox = await getSandbox(projectId)
+
+    if (!sandbox) {
+      return {
+        isRunning: false,
+        port: null,
+        url: null,
+        logs: [],
+        errors: [],
+        lastChecked: new Date().toISOString(),
+      }
+    }
+
+    // Check if server is responding using curl (more reliable than nc -z)
+    const serverStatus = await checkDevServerStatus(sandbox)
+    const isRunning = serverStatus.isRunning
+    const activePort = serverStatus.port || 3000
+
+    // Fetch logs if server is running
+    const errors: string[] = []
+
+    if (isRunning) {
+      // Minimal log fetch - just check for recent errors
+      const logsResult = await executeCommand(
+        sandbox,
+        `tail -n 20 /tmp/server.log 2>/dev/null | grep -i -E "error|failed|cannot" || echo ""`,
+        { timeoutMs: 3000 }
+      )
+      const errorLines = logsResult.stdout.trim()
+      if (errorLines) {
+        errors.push(...errorLines.split("\n").filter(Boolean))
+      }
+    }
+
+    const url = isRunning ? getHostUrl(sandbox, activePort) : null
+
+    return {
+      isRunning,
+      port: isRunning ? activePort : null,
+      url,
+      logs: [], // Don't send full logs in SSE - use getLogs endpoint if needed
+      errors,
+      lastChecked: new Date().toISOString(),
+    }
+  } catch (error) {
+    console.error("[DevServer] Error checking status:", error)
+    return {
+      isRunning: false,
+      port: null,
+      url: null,
+      logs: [],
+      errors: ["Failed to check server status"],
+      lastChecked: new Date().toISOString(),
+    }
+  }
+}
+
 /**
  * GET /api/sandbox/[projectId]/dev-server
- * Stream dev server status using Server-Sent Events (SSE)
+ * Stream dev server status using Server-Sent Events (SSE) or return JSON for polling
  */
 export const GET = withAuth(async (
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) => {
   const { projectId } = await params
+
+  // Check if client wants SSE or JSON
+  const acceptHeader = req.headers.get('accept') || ''
+  const wantsSSE = acceptHeader.includes('text/event-stream')
+
+  // If simple JSON requested (polling), return immediately
+  if (!wantsSSE) {
+    const status = await getStatus(projectId)
+    return NextResponse.json(status)
+  }
 
   // Set up SSE headers
   const responseStream = new ReadableStream({
@@ -74,53 +144,7 @@ export const GET = withAuth(async (
         if (isClosed) return
 
         try {
-          const sandbox = await getSandbox(projectId)
-
-          if (!sandbox) {
-            const status: DevServerStatus = {
-              isRunning: false,
-              port: null,
-              url: null,
-              logs: [],
-              errors: [],
-              lastChecked: new Date().toISOString(),
-            }
-            safeEnqueue(`data: ${JSON.stringify(status)}\n\n`)
-            return
-          }
-
-          // Check if server is responding using curl (more reliable than nc -z)
-          const serverStatus = await checkDevServerStatus(sandbox)
-          const isRunning = serverStatus.isRunning
-          const activePort = serverStatus.port || 3000
-
-          // Fetch logs if server is running
-          const errors: string[] = []
-
-          if (isRunning) {
-            // Minimal log fetch - just check for recent errors
-            const logsResult = await executeCommand(
-              sandbox,
-              `tail -n 20 /tmp/server.log 2>/dev/null | grep -i -E "error|failed|cannot" || echo ""`,
-              { timeoutMs: 3000 }
-            )
-            const errorLines = logsResult.stdout.trim()
-            if (errorLines) {
-              errors.push(...errorLines.split("\n").filter(Boolean))
-            }
-          }
-
-          const url = isRunning ? getHostUrl(sandbox, activePort) : null
-
-          const status: DevServerStatus = {
-            isRunning,
-            port: isRunning ? activePort : null,
-            url,
-            logs: [], // Don't send full logs in SSE - use getLogs endpoint if needed
-            errors,
-            lastChecked: new Date().toISOString(),
-          }
-
+          const status = await getStatus(projectId)
           safeEnqueue(`data: ${JSON.stringify(status)}\n\n`)
         } catch (error) {
           if (isClosed) return
