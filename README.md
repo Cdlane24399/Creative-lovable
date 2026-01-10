@@ -1,10 +1,10 @@
 # Creative-lovable
 
-An AI-powered web development assistant that builds real, working applications in seconds using E2B sandboxes, Next.js 15, and AI SDK v6.
+An AI-powered web development assistant that builds real, working applications in seconds using E2B sandboxes, Next.js 16, and AI SDK v6.
 
-[![Built with Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+[![Built with Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![Powered by E2B](https://img.shields.io/badge/E2B-Sandboxes-blue?style=flat-square)](https://e2b.dev/)
-[![AI SDK v6](https://img.shields.io/badge/AI_SDK-v6_beta-green?style=flat-square)](https://sdk.vercel.ai/)
+[![AI SDK v6](https://img.shields.io/badge/AI_SDK-v6-green?style=flat-square)](https://sdk.vercel.ai/)
 
 ## 🚀 Features
 
@@ -145,7 +145,7 @@ E2B_TEMPLATE_ID=nextjs-shadcn-v1
 - **Without template**: 3-5 minutes cold start
 - **With template**: 2-5 seconds cold start ⚡
 
-📖 **Full instructions**: See [`lib/e2b/templates/README.md`](lib/e2b/templates/README.md)
+📖 **Template file**: See [`lib/e2b/templates/nextjs-shadcn.e2b.Dockerfile`](lib/e2b/templates/nextjs-shadcn.e2b.Dockerfile)
 
 ---
 
@@ -256,7 +256,7 @@ Creative-lovable/
 
 ## 📚 Documentation
 
-- **[E2B Template Setup](lib/e2b/templates/README.md)** - Custom template guide
+- **[E2B Template](lib/e2b/templates/nextjs-shadcn.e2b.Dockerfile)** - Custom template Dockerfile
 - **[CLAUDE.md](CLAUDE.md)** - Project documentation for AI assistants
 
 ---
@@ -368,8 +368,8 @@ MIT License - see LICENSE file for details
 
 **Built with**:
 - [E2B](https://e2b.dev) - Cloud sandboxes for code execution
-- [AI SDK v6](https://sdk.vercel.ai/) - Vercel's AI SDK (beta)
-- [Next.js 15](https://nextjs.org/) - React framework with Turbopack
+- [AI SDK v6](https://sdk.vercel.ai/) - Vercel's AI SDK
+- [Next.js 16](https://nextjs.org/) - React framework with Turbopack
 - [shadcn/ui](https://ui.shadcn.com/) - Beautiful UI components
 - [Tailwind CSS](https://tailwindcss.com/) - Utility-first CSS
 - [Framer Motion](https://www.framer.com/motion/) - Animation library

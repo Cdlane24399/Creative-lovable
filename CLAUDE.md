@@ -4,11 +4,11 @@ This file provides guidance for AI assistants working on the Creative-lovable co
 
 ## Project Overview
 
-Creative-lovable is an AI-powered web development assistant that builds real, working applications using E2B sandboxes, Next.js 15, and AI SDK v6. It features a layered architecture with proper separation of concerns.
+Creative-lovable is an AI-powered web development assistant that builds real, working applications using E2B sandboxes, Next.js 16, and AI SDK v6. It features a layered architecture with proper separation of concerns.
 
 ## Tech Stack
 
-- **Frontend**: Next.js 15, React 18, TypeScript, Tailwind CSS
+- **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS v4
 - **UI Components**: shadcn/ui, Framer Motion, Lucide Icons
 - **AI**: AI SDK v6 (Vercel), Claude/GPT-4o/Gemini support
 - **Database**: Neon (PostgreSQL serverless)
