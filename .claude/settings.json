@@ -1,0 +1,29 @@
+{
+  "commands": [
+    {
+      "name": "dev",
+      "description": "Start the Next.js development server",
+      "prompt": "Run `pnpm dev` to start the development server. This will start Next.js on http://localhost:3000 with hot reloading enabled."
+    },
+    {
+      "name": "test",
+      "description": "Run the test suite",
+      "prompt": "Run `pnpm test` to execute the Jest test suite. For watch mode, use `pnpm test:watch`. For coverage report, use `pnpm test:coverage`."
+    },
+    {
+      "name": "lint",
+      "description": "Run ESLint to check code quality",
+      "prompt": "Run `pnpm lint` to check for linting errors and code quality issues."
+    },
+    {
+      "name": "build",
+      "description": "Build the application for production",
+      "prompt": "Run `pnpm build` to create an optimized production build of the Next.js application."
+    },
+    {
+      "name": "test-e2b",
+      "description": "Run E2B sandbox integration tests",
+      "prompt": "Run `pnpm test:e2b` to test the E2B code interpreter integration and sandbox functionality."
+    }
+  ]
+}
