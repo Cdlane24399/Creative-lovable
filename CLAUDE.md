@@ -1,223 +1,138 @@
-# CLAUDE.md - Project Documentation
+# Creative-lovable Development Guide
 
-This file provides guidance for AI assistants working on the Creative-lovable codebase.
+## Commands
 
-## Project Overview
-
-Creative-lovable is an AI-powered web development assistant that builds real, working applications using E2B sandboxes, Next.js 15, and AI SDK v6. It features a layered architecture with proper separation of concerns.
-
-## Tech Stack
-
-- **Frontend**: Next.js 15, React 18, TypeScript, Tailwind CSS
-- **UI Components**: shadcn/ui, Framer Motion, Lucide Icons
-- **AI**: AI SDK v6 (Vercel), Claude/GPT-4o/Gemini support
-- **Database**: Neon (PostgreSQL serverless)
-- **Sandboxes**: E2B for isolated code execution
-- **Cache**: Vercel KV (optional)
-
-## Architecture Layers
-
-### 1. API Routes Layer (`app/api/`)
-Thin controllers that handle HTTP requests and responses. Use services for all business logic.
-
-```typescript
-// Example: Always use services, not direct DB access
-import { getProjectService } from "@/lib/services"
-
-export const GET = withAuth(asyncErrorHandler(async (request) => {
-  const projectService = getProjectService()
-  const result = await projectService.listProjects(options)
-  return NextResponse.json(result)
-}))
-```
-
-### 2. Services Layer (`lib/services/`)
-Business logic, caching coordination, and cross-entity operations.
-
-- **ProjectService**: Project CRUD, sandbox management, file snapshots
-- **MessageService**: AI SDK v6 message persistence, UIMessage format
-- **ContextService**: Agent context with write-through caching
-
-### 3. Repository Layer (`lib/db/repositories/`)
-Type-safe database operations using Neon serverless driver.
-
-- **BaseRepository**: Abstract base with error handling
-- **ProjectRepository**: Project table operations
-- **MessageRepository**: Message table with proper parts storage
-- **ContextRepository**: Agent context persistence
-
-### 4. Cache Manager (`lib/cache/`)
-Unified caching with Vercel KV.
-
-```typescript
-import { getCacheManager } from "@/lib/cache"
-
-const cache = getCacheManager()
-await cache.invalidateAllForProject(projectId)
-```
-
-### 5. Agent Context (`lib/ai/agent-context.ts`)
-Write-through caching for agent state. **Never debounced** - writes immediately to DB.
-
-```typescript
-import { getAgentContext, updateFileInContext } from "@/lib/ai/agent-context"
-
-// Get context (memory first, DB fallback)
-const context = getAgentContext(projectId)
-
-// Update file (writes to DB immediately)
-updateFileInContext(projectId, "app/page.tsx", content, "updated")
-```
-
-### 6. Planning System (`lib/ai/planning/`)
-TaskGraph-based planning with dependency tracking.
-
-**IMPORTANT**: Legacy string array planning (`setCurrentPlan`) is deprecated. Use TaskGraph:
-
-```typescript
-import { setTaskGraph, updateTaskStatus } from "@/lib/ai/agent-context"
-
-// Set a new task graph
-setTaskGraph(projectId, taskGraph)
-
-// Update task status
-updateTaskStatus(projectId, taskId, "completed")
-```
-
-### 7. Sandbox State Machine (`lib/e2b/sandbox-state-machine.ts`)
-Formal lifecycle management for sandboxes.
-
-States: `idle` → `creating` → `active` → `paused` → `expired` → `error`
-
-```typescript
-import { getSandboxStateMachine } from "@/lib/e2b/sandbox-state-machine"
-
-const machine = getSandboxStateMachine()
-machine.transition(projectId, "CREATE")
-```
-
-## Key Files
-
-| File | Purpose |
-|------|---------|
-| `lib/ai/agent.ts` | System prompt, model configuration |
-| `lib/ai/web-builder-agent.ts` | Context-aware tools for AI |
-| `lib/ai/agent-context.ts` | Context management with write-through |
-| `lib/db/repositories/*.ts` | Database operations |
-| `lib/services/*.ts` | Business logic |
-| `lib/e2b/sandbox.ts` | E2B sandbox management |
-| `lib/cache/cache-manager.ts` | Unified caching |
-| `lib/errors.ts` | Error classes and handlers |
-
-## Code Patterns
-
-### Error Handling
-Always use `asyncErrorHandler` wrapper for API routes:
-
-```typescript
-export const GET = withAuth(asyncErrorHandler(async (request) => {
-  // Errors are automatically caught and formatted
-  throw new ValidationError("Invalid input", { field: ["message"] })
-}))
-```
-
-### Database Access
-Never use raw SQL in routes. Always use repositories:
-
-```typescript
-// ❌ Wrong
-const sql = getDb()
-await sql`SELECT * FROM projects`
-
-// ✅ Correct
-const projectRepo = getProjectRepository()
-const project = await projectRepo.findById(id)
-```
-
-### Caching
-Cache invalidation is centralized:
-
-```typescript
-// ❌ Wrong - scattered invalidation
-await projectCache.invalidate(id)
-await messagesCache.invalidate(id)
-
-// ✅ Correct - unified
-await invalidateProjectCache(id) // or getCacheManager().invalidateAllForProject(id)
-```
-
-### Message Persistence (AI SDK v6)
-Messages must be stored in proper UIMessage format:
-
-```typescript
-// ❌ Wrong - JSON blob
-await sql`INSERT INTO messages (content) VALUES (${JSON.stringify(messages)})`
-
-// ✅ Correct - proper format
-const messageService = getMessageService()
-await messageService.saveConversation(projectId, messages)
-```
-
-## Build & Test
-
+### Development
 ```bash
-# Development
-npm run dev
-
-# Build (with type checking)
-npm run build
-
-# Type check only
-npx tsc --noEmit
-
-# Run tests
-npm test
+pnpm dev          # Start Next.js development server
+pnpm build        # Build for production
+pnpm start        # Start production server
 ```
 
-## Common Issues
-
-### FK Constraint Violations
-Always ensure project exists before saving context:
-
-```typescript
-await projectService.ensureProjectExists(projectId)
+### Testing
+```bash
+pnpm test         # Run Jest tests
+pnpm test:watch   # Run tests in watch mode
+pnpm test:coverage # Run tests with coverage report
+pnpm test:e2b     # Run E2B sandbox tests
 ```
 
-### Sandbox Timeouts
-Sandboxes expire after 10 minutes of inactivity. The state machine handles recreation.
+### Code Quality
+```bash
+pnpm lint         # Run ESLint
+```
 
-### Cache Staleness
-Cache TTLs are short (30-60 seconds). Always invalidate on mutations.
+## Architecture
 
-## File Naming Conventions
+### Tech Stack
+- **Framework**: Next.js (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **UI Components**: Radix UI primitives
+- **AI Integration**: Multiple AI SDKs (Anthropic, OpenAI, Google)
+- **Code Execution**: E2B Code Interpreter
+- **Database**: Neon PostgreSQL
+- **Agent Framework**: Claude Agent SDK
+- **Testing**: Jest
+- **Package Manager**: pnpm
 
-- Repositories: `*.repository.ts`
-- Services: `*.service.ts`
-- Types: `*.types.ts` or in `types.ts`
-- Tests: `*.test.ts` or in `__tests__/`
+### Project Structure
+```
+app/
+├── (auth)/           # Authentication routes
+├── api/              # API routes
+├── auth/             # Auth pages
+├── profile/          # User profile
+├── settings/         # App settings
+├── globals.css       # Global styles
+├── layout.tsx        # Root layout
+└── page.tsx          # Home page
 
-## API Routes
+components/
+├── auth/             # Authentication components
+├── chat/             # Chat interface components
+├── landing/          # Landing page components
+├── profile/          # Profile components
+├── ui/               # Reusable UI components
+├── chat-panel.tsx    # Main chat interface
+├── code-editor.tsx   # Monaco code editor
+├── preview-panel.tsx # Code preview panel
+└── editor-layout.tsx # Main editor layout
 
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/api/projects` | GET | List projects |
-| `/api/projects` | POST | Create project |
-| `/api/projects/[id]` | GET | Get project |
-| `/api/projects/[id]` | PATCH | Update project |
-| `/api/projects/[id]` | DELETE | Delete project |
-| `/api/projects/[id]/messages` | GET | Get messages |
-| `/api/projects/[id]/messages` | POST | Save messages |
-| `/api/projects/[id]/screenshot` | POST | Save screenshot |
-| `/api/chat` | POST | AI chat with tools |
+lib/
+├── e2b/              # E2B integration
+├── auth/             # Authentication logic
+├── db/               # Database utilities
+└── utils/            # Utility functions
+```
 
-## Environment Variables
+## Key Patterns
 
-Required:
-- `E2B_API_KEY` - E2B sandbox API key
-- `NEON_DATABASE_URL` or `DATABASE_URL` - Neon database URL
-- At least one AI provider key
+### Next.js App Router
+- Use `app/` directory structure
+- Server Components by default, use `'use client'` for interactivity
+- API routes in `app/api/`
+- Route groups with `(name)` for organization
+- Loading, error, and not-found pages at route level
 
-Optional:
-- `E2B_TEMPLATE_ID` - Custom template for faster startup
-- `KV_REST_API_URL` + `KV_REST_API_TOKEN` - Vercel KV cache
-- `API_KEY` - API authentication key
+### Component Patterns
+- Radix UI primitives for accessible components
+- Tailwind CSS for styling with design system consistency
+- TypeScript interfaces for props
+- Barrel exports from `components/ui/`
+- Compound components for complex UI (e.g., chat interface)
+
+### AI Integration
+- Multiple AI providers through AI SDK
+- Streaming responses for chat interfaces
+- E2B sandboxes for code execution
+- Claude Agent SDK for specialized agents
+
+### Code Organization
+- Separate concerns: UI, logic, data fetching
+- Custom hooks for reusable logic
+- Utility functions in `lib/utils`
+- Type definitions co-located with components
+
+### Database
+- Neon PostgreSQL with connection pooling
+- Database utilities in `lib/db/`
+- Environment variables for connection strings
+
+## Important Notes
+
+### Development
+- Use `pnpm` for package management (faster, space-efficient)
+- TypeScript strict mode enabled
+- Hot reloading available in dev mode
+- Environment variables required for AI providers and database
+
+### AI Services
+- Multiple AI providers configured (Anthropic, OpenAI, Google)
+- Rate limiting may apply to AI API calls
+- E2B sandboxes for safe code execution
+- Claude Agent SDK for specialized workflows
+
+### Security
+- Environment variables for sensitive API keys
+- Server-side API routes for secure operations
+- Authentication system in place
+- Code execution isolated in E2B sandboxes
+
+### Performance
+- Next.js optimizations (Image, Link components)
+- Streaming for AI responses
+- Code splitting with dynamic imports
+- Tailwind CSS purging for smaller bundles
+
+### Testing
+- Jest configuration for TypeScript
+- Separate E2B integration tests
+- Coverage reporting available
+- Watch mode for development
+
+### Deployment Considerations
+- Build process optimizes for production
+- Static assets served efficiently
+- Environment variables needed in production
+- Database connection pooling for scalability
