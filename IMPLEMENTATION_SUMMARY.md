@@ -1,6 +1,6 @@
 # Implementation Summary
 
-![Implementation overview](public/analytics-dashboard.png)
+![Implementation overview](public/modern-web-dashboard-dark.jpg)
 
 This document summarizes the web app generation features implemented based on `IMPLEMENTATION_PLAN.md`.
 
