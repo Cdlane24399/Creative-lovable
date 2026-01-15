@@ -1,6 +1,8 @@
 # E2B Custom Template Setup
 
-This directory contains the custom E2B template definition for Next.js 15 + shadcn/ui projects.
+![Template build](public/saas-pricing-page-dark.jpg)
+
+This directory contains the custom E2B template definition for generated Next.js 15 + shadcn/ui projects. (The platform UI runs on Next.js 16.)
 
 ## Why Use a Custom Template?
 
@@ -79,7 +81,7 @@ If you see "Unauthorized, please check your credentials":
 - The API key should start with `e2b_`
 
 ### Build Fails
-- Check that all dependencies are installed: `npm install`
+- Check that all dependencies are installed: `pnpm install`
 - Verify the Dockerfile syntax is correct
 - Check build logs for specific errors
 

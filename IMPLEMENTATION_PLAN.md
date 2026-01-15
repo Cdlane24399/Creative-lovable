@@ -1,5 +1,7 @@
 # Web App Generation Implementation Plan
 
+![Plan overview](public/serverless-functions-dashboard-with-metrics.jpg)
+
 ## Overview
 
 This plan outlines how to implement **actual web app generation** in the Creative-lovable project, leveraging E2B sandboxes and AI SDK v6 beta for real-time code generation, execution, and live preview.
@@ -549,9 +551,9 @@ ANTHROPIC_API_KEY=your_anthropic_key
 OPENAI_API_KEY=your_openai_key
 GOOGLE_GENERATIVE_AI_API_KEY=your_google_key
 
-# Supabase (for persistence)
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+# Neon (for persistence)
+NEON_DATABASE_URL=postgres://user:password@host.neon.tech/dbname?sslmode=require
+DATABASE_URL=postgres://user:password@host.neon.tech/dbname?sslmode=require
 \`\`\`
 
 ### E2B Template Build Commands

@@ -1,5 +1,7 @@
 # Implementation Summary
 
+![Implementation overview](public/analytics-dashboard.png)
+
 This document summarizes the web app generation features implemented based on `IMPLEMENTATION_PLAN.md`.
 
 ## 🎉 What Was Implemented
@@ -234,9 +236,9 @@ ANTHROPIC_API_KEY=your_anthropic_key
 OPENAI_API_KEY=your_openai_key
 GOOGLE_GENERATIVE_AI_API_KEY=your_google_key
 
-# Optional: Supabase (for persistence)
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+# Optional: Neon (serverless Postgres) for persistence
+NEON_DATABASE_URL=postgres://user:password@host.neon.tech/dbname?sslmode=require
+DATABASE_URL=postgres://user:password@host.neon.tech/dbname?sslmode=require
 \`\`\`
 
 ---
@@ -308,7 +310,7 @@ AI: Uses getProjectStructure → Lists all files → Can read specific ones
 3. **Advanced Features**:
    - Multi-page applications with routing
    - Backend API routes
-   - Database integration (Supabase/Prisma)
+   - Database integration (Neon/Prisma)
    - Authentication flows
 
 ---

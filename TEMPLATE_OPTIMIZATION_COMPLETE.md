@@ -1,5 +1,7 @@
 # Template Optimization - Implementation Complete ✅
 
+![Template optimization](public/modern-web-dashboard-dark.jpg)
+
 ## 🚀 Executive Summary
 
 **Mission**: Fix long loading times for website previews
@@ -136,7 +138,7 @@ onStepFinish: async ({ text, toolCalls, toolResults, finishReason, usage }) => {
   })
 
   // Optional: Save to database for audit trail
-  await supabase.from("agent_steps").insert({...})
+  await sql`insert into agent_steps (...) values (...)`
 }
 \`\`\`
 
@@ -460,8 +462,9 @@ ANTHROPIC_API_KEY="..." ✅ Set
 OPENAI_API_KEY="..." ✅ Set
 GOOGLE_GENERATIVE_AI_API_KEY="..." ✅ Set
 
-# Supabase (Optional)
-NEXT_PUBLIC_SUPABASE_URL="..." ✅ Set
+# Neon (Optional)
+NEON_DATABASE_URL="..." ✅ Set
+DATABASE_URL="..." ✅ Set
 \`\`\`
 
 ### Template Details:
@@ -614,7 +617,7 @@ await new Promise(resolve => setTimeout(resolve, waitTime))
 
 ### Optional (Recommended):
 1. **Monitor performance**: Check console logs for timing data
-2. **Track metrics**: Enable step logging to Supabase (already implemented)
+2. **Track metrics**: Enable step logging to Neon (already implemented)
 3. **Optimize template**: Add more frequently-used packages to Dockerfile
 4. **Create variants**: Build specialized templates for different use cases
 

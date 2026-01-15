@@ -1,5 +1,7 @@
 # E2B Custom Template Setup - Complete! ✅
 
+![Template performance](public/saas-pricing-page-dark.jpg)
+
 ## 🚀 Performance Improvement Achieved
 
 **Before:** Preview generation took **3-5 minutes** (installing Next.js, Tailwind, shadcn/ui, and all dependencies on each cold start)

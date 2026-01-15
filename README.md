@@ -1,10 +1,13 @@
 # Creative-lovable
 
-An AI-powered web development assistant that builds real, working applications in seconds using E2B sandboxes, Next.js 15, and AI SDK v6.
+![Creative-lovable hero](public/ai-chat-interface-with-code-suggestions.jpg)
 
-[![Built with Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+An AI-powered web development assistant that builds real, working applications in seconds using E2B sandboxes, Next.js 16 (platform), and AI SDK v6.
+
+[![Built with Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![Powered by E2B](https://img.shields.io/badge/E2B-Sandboxes-blue?style=flat-square)](https://e2b.dev/)
 [![AI SDK v6](https://img.shields.io/badge/AI_SDK-v6_beta-green?style=flat-square)](https://sdk.vercel.ai/)
+[![Database](https://img.shields.io/badge/Neon-PostgreSQL-00E599?style=flat-square&logo=postgresql&logoColor=white)](https://neon.tech/)
 
 ## 🚀 Features
 
@@ -33,6 +36,11 @@ An AI-powered web development assistant that builds real, working applications i
 - 🧠 GPT-4o (OpenAI)
 - 🔀 Switch models on-the-fly
 
+### **Production-Ready Persistence**
+- 🗄️ Neon Serverless PostgreSQL for projects + chat history
+- 🔐 Environment-based configuration
+- 📦 Compatible with Prisma or direct SQL
+
 ---
 
 ## 📋 Table of Contents
@@ -43,6 +51,7 @@ An AI-powered web development assistant that builds real, working applications i
 - [Available Tools](#available-tools)
 - [Architecture](#architecture)
 - [Documentation](#documentation)
+- [Screenshots](#screenshots)
 - [Demo Workflow](#demo-workflow)
 
 ---
@@ -64,16 +73,16 @@ git clone https://github.com/yourusername/Creative-lovable.git
 cd Creative-lovable
 
 # Install dependencies
-npm install
+pnpm install
 
-# Copy environment template
-cp .env.example .env.local
+# Create environment file
+touch .env.local
 
 # Add your API keys to .env.local
 # See Environment Setup section below
 
 # Run development server
-npm run dev
+pnpm dev
 \`\`\`
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
@@ -97,9 +106,10 @@ ANTHROPIC_API_KEY=your_anthropic_key
 OPENAI_API_KEY=your_openai_key
 GOOGLE_GENERATIVE_AI_API_KEY=your_google_key
 
-# Optional: Supabase for persistence
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+# Optional: Neon (serverless Postgres) for persistence
+NEON_DATABASE_URL=postgres://user:password@host.neon.tech/dbname?sslmode=require
+# Or use DATABASE_URL if preferred
+DATABASE_URL=postgres://user:password@host.neon.tech/dbname?sslmode=require
 \`\`\`
 
 ---
@@ -137,7 +147,7 @@ E2B_TEMPLATE_ID=nextjs-shadcn-v1
 - **Without template**: 3-5 minutes cold start
 - **With template**: 2-5 seconds cold start ⚡
 
-📖 **Full instructions**: See [`lib/e2b/templates/README.md`](lib/e2b/templates/README.md)
+📖 **Full instructions**: See [lib/e2b/templates/README.md](lib/e2b/templates/README.md)
 
 ---
 
@@ -156,6 +166,7 @@ The AI assistant has access to these tools:
 - **`installPackage`** - Install npm packages dynamically
 - **`getBuildStatus`** - Check dev server logs for errors
 - **`runCommand`** - Execute shell commands
+- **`analyzeProjectState`** - Summarize current context and health
 
 ### Code Execution
 - **`executeCode`** - Run Python, JavaScript, or TypeScript code
@@ -179,12 +190,12 @@ Creative-lovable/
 │   └── ui/                       # shadcn/ui components
 ├── lib/
 │   ├── ai/
-│   │   ├── agent.ts              # System prompt & model config
-│   │   └── tools.ts              # Tool definitions (deprecated)
+│   │   ├── agent.tsx             # System prompt & model config
+│   │   └── web-builder-agent.ts  # Tool definitions
 │   ├── e2b/
 │   │   ├── sandbox.ts            # E2B sandbox management
 │   │   └── templates/            # Custom template definitions
-│   └── supabase/                 # Supabase client setup
+│   └── db/                       # Neon database helpers
 ├── IMPLEMENTATION_PLAN.md        # Original implementation plan
 ├── IMPLEMENTATION_SUMMARY.md     # What was implemented
 └── README.md                     # This file
@@ -197,6 +208,16 @@ Creative-lovable/
 - **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)** - Detailed feature documentation
 - **[Implementation Plan](IMPLEMENTATION_PLAN.md)** - Original technical plan
 - **[E2B Template Setup](lib/e2b/templates/README.md)** - Custom template guide
+- **[E2B Template Setup (Status)](E2B_TEMPLATE_SETUP.md)** - Build + deployment checklist
+- **[Template Optimization Notes](TEMPLATE_OPTIMIZATION_COMPLETE.md)** - Performance deep dive
+
+---
+
+## 🖼️ Screenshots
+
+![Chat + preview experience](public/collaborative-editor-with-multiple-cursors.jpg)
+![AI suggestions + code view](public/ai-chat-interface-with-code-suggestions.jpg)
+![Dashboard style preview](public/modern-web-dashboard-dark.jpg)
 
 ---
 
@@ -278,7 +299,7 @@ Time: ~10 seconds total
 - [ ] **Testing**: Run test suites, get coverage reports
 - [ ] **Performance**: Lighthouse scores, optimization suggestions
 - [ ] **Backend**: API routes, database integration, authentication
-- [ ] **Git Integration**: Version control, commit management
+- [ ] **Git Integration**: Sandbox-aware version control, commit management
 
 ---
 
@@ -287,7 +308,7 @@ Time: ~10 seconds total
 1. **Template Build Time**: First build takes 5-10 minutes (one-time)
 2. **Sandbox Timeout**: Expires after 10 minutes of inactivity
 3. **File Limit**: Reads max 10 files at once to avoid token overflow
-4. **No Version Control**: Git integration not yet implemented
+4. **No Sandbox Git**: Sandboxes do not persist git history by default
 
 ---
 
@@ -308,7 +329,7 @@ MIT License - see LICENSE file for details
 **Built with**:
 - [E2B](https://e2b.dev) - Cloud sandboxes for code execution
 - [AI SDK v6](https://sdk.vercel.ai/) - Vercel's AI SDK (beta)
-- [Next.js 15](https://nextjs.org/) - React framework with Turbopack
+- [Next.js 16](https://nextjs.org/) - React framework with Turbopack
 - [shadcn/ui](https://ui.shadcn.com/) - Beautiful UI components
 - [Tailwind CSS](https://tailwindcss.com/) - Utility-first CSS
 - [Framer Motion](https://www.framer.com/motion/) - Animation library
