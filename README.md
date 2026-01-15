@@ -60,7 +60,7 @@ An AI-powered web development assistant that builds real, working applications i
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - npm or pnpm
 - E2B API key ([sign up](https://e2b.dev))
 - At least one AI provider API key (Anthropic, OpenAI, or Google)
@@ -227,7 +227,7 @@ Creative-lovable/
 \`\`\`
 User: "Build me a landing page for a SaaS product"
 
-AI: 
+AI:
 1. Uses createWebsite tool
 2. Generates Next.js project with:
    - Hero section with gradient background
@@ -282,13 +282,13 @@ Time: ~10 seconds total
 
 ## 🎯 Key Achievements
 
-✅ **60x Faster Startup** - Custom E2B templates eliminate npm install delays  
-✅ **Streaming Progress** - Real-time feedback as files are created  
-✅ **Hot Reload Support** - Changes reflect instantly without restarts  
-✅ **Error Recovery** - AI can detect and fix build errors automatically  
-✅ **Rich Component Library** - shadcn/ui integration for professional UIs  
-✅ **Project Awareness** - AI understands existing project structure  
-✅ **Dynamic Dependencies** - Install packages on-demand  
+✅ **60x Faster Startup** - Custom E2B templates eliminate npm install delays
+✅ **Streaming Progress** - Real-time feedback as files are created
+✅ **Hot Reload Support** - Changes reflect instantly without restarts
+✅ **Error Recovery** - AI can detect and fix build errors automatically
+✅ **Rich Component Library** - shadcn/ui integration for professional UIs
+✅ **Project Awareness** - AI understands existing project structure
+✅ **Dynamic Dependencies** - Install packages on-demand
 
 ---
 
