@@ -1,6 +1,6 @@
 # E2B Custom Template Setup
 
-![Template build](public/saas-pricing-page-dark.jpg)
+![Template build](../../../public/saas-pricing-page-dark.jpg)
 
 This directory contains the custom E2B template definition for generated Next.js 15 + shadcn/ui projects. (The platform UI runs on Next.js 16.)
 
