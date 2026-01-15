@@ -1,6 +1,6 @@
 # Template Optimization - Implementation Complete ✅
 
-![Template optimization](public/modern-web-dashboard-dark.jpg)
+![Template optimization](./public/modern-web-dashboard-dark.jpg)
 
 ## 🚀 Executive Summary
 
