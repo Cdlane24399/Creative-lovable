@@ -7,7 +7,9 @@ module.exports = {
     '**/__tests__/**/*.test.ts',
     '**/__tests__/**/*.spec.ts',
     '**/*.test.ts',
-    '**/*.spec.ts'
+    '**/*.spec.ts',
+    '**/*.test.tsx',
+    '**/*.spec.tsx'
   ],
   collectCoverageFrom: [
     'lib/**/*.ts',

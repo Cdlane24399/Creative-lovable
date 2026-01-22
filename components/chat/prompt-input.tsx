@@ -19,6 +19,12 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu"
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { MODEL_DISPLAY_NAMES, type ModelProvider } from "@/lib/ai/agent"
 
@@ -99,6 +105,7 @@ export function PromptInput({
                             }
                         }}
                         placeholder="Build something wonderful..."
+                        aria-label="Chat prompt"
                         className={cn(
                             "min-h-[48px] w-full resize-none bg-transparent px-1 text-[15px] leading-relaxed text-zinc-100 placeholder:text-zinc-500 focus:outline-none transition-colors",
                             showImproveEffect && "text-violet-300"
@@ -201,33 +208,53 @@ export function PromptInput({
                         </Button>
 
                         {/* Attachment (Visual Only) */}
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 rounded-md p-0 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                        >
-                            <Paperclip className="h-3.5 w-3.5" />
-                        </Button>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 w-7 rounded-md p-0 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                                        aria-label="Attach file"
+                                    >
+                                        <Paperclip className="h-3.5 w-3.5" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-300">
+                                    <p>Attachments coming soon</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
                     </div>
 
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] text-zinc-600 font-medium mr-1 hidden sm:inline-block">
                             {inputValue.length > 0 ? `${inputValue.length} chars` : '⌘ + Enter to send'}
                         </span>
-                        <Button
-                            type="submit"
-                            size="sm"
-                            disabled={isWorking || !isChatEnabled || !inputValue.trim() || isImproving}
-                            className={cn(
-                                "h-8 w-8 rounded-lg p-0 transition-all duration-200 flex items-center justify-center",
-                                inputValue.trim() && !isImproving
-                                    ? "bg-emerald-500 text-black hover:bg-emerald-400 hover:scale-105 shadow-[0_0_15px_-3px_rgba(16,185,129,0.4)]"
-                                    : "bg-zinc-800 text-zinc-500 cursor-not-allowed",
-                            )}
-                        >
-                            {isWorking ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4 stroke-[2.5px]" />}
-                        </Button>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        type="submit"
+                                        size="sm"
+                                        disabled={isWorking || !isChatEnabled || !inputValue.trim() || isImproving}
+                                        aria-label={isWorking ? "Sending message..." : "Send message"}
+                                        className={cn(
+                                            "h-8 w-8 rounded-lg p-0 transition-all duration-200 flex items-center justify-center",
+                                            inputValue.trim() && !isImproving
+                                                ? "bg-emerald-500 text-black hover:bg-emerald-400 hover:scale-105 shadow-[0_0_15px_-3px_rgba(16,185,129,0.4)]"
+                                                : "bg-zinc-800 text-zinc-500 cursor-not-allowed",
+                                        )}
+                                    >
+                                        {isWorking ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4 stroke-[2.5px]" />}
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-300">
+                                    <p>Send message (⌘ + Enter)</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
                     </div>
                 </div>
             </div>
