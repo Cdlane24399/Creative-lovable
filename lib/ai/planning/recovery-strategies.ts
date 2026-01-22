@@ -248,7 +248,13 @@ async function executeSkipRecovery(
     }
   }
 
-  // TODO: Execute fallback task if specified
+  // Execute fallback task if specified
+  if (config.fallbackTaskId) {
+    const fallbackTask = graph.tasks[config.fallbackTaskId]
+    if (fallbackTask) {
+      resetTask(graph, config.fallbackTaskId)
+    }
+  }
 
   return true
 }
