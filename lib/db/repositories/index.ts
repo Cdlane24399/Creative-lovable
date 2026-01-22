@@ -45,3 +45,11 @@ export {
   type AgentContextData,
   type ContextUpdate,
 } from "./context.repository"
+
+// Integration repository
+export {
+  IntegrationRepository,
+  getIntegrationRepository,
+  type Integration,
+  type CreateIntegrationData,
+} from "./integration.repository"
