@@ -3,10 +3,55 @@
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
+import { useState, useRef } from "react"
+import { Copy, Check } from "lucide-react"
 
 interface ChatMarkdownProps {
   content: string
   className?: string
+}
+
+function PreBlock({ children, ...props }: React.ComponentProps<"pre">) {
+  const [isCopied, setIsCopied] = useState(false)
+  const preRef = useRef<HTMLPreElement>(null)
+
+  const onCopy = async () => {
+    if (!preRef.current) return
+    const codeElement = preRef.current.querySelector("code")
+    if (!codeElement) return
+
+    const text = codeElement.innerText
+    try {
+        await navigator.clipboard.writeText(text)
+        setIsCopied(true)
+        setTimeout(() => setIsCopied(false), 2000)
+    } catch (err) {
+        console.error('Failed to copy text: ', err)
+    }
+  }
+
+  return (
+    <div className="relative group">
+      <pre
+        ref={preRef}
+        className="my-2 overflow-x-auto rounded-xl border border-zinc-700/50 bg-zinc-900 p-3 text-xs"
+        {...props}
+      >
+        {children}
+      </pre>
+      <button
+        onClick={onCopy}
+        className={cn(
+          "absolute top-2 right-2 p-1.5 rounded-lg bg-zinc-800/50 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-100 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-zinc-700",
+          isCopied && "text-emerald-400 bg-zinc-800 opacity-100"
+        )}
+        aria-label={isCopied ? "Copied!" : "Copy code"}
+        title="Copy code"
+      >
+        {isCopied ? <Check size={14} /> : <Copy size={14} />}
+      </button>
+    </div>
+  )
 }
 
 export function ChatMarkdown({ content, className }: ChatMarkdownProps) {
@@ -38,16 +83,7 @@ export function ChatMarkdown({ content, className }: ChatMarkdownProps) {
             )
           },
           // Custom pre block styling
-          pre({ children, ...props }) {
-            return (
-              <pre
-                className="my-2 overflow-x-auto rounded-xl border border-zinc-700/50 bg-zinc-900 p-3 text-xs"
-                {...props}
-              >
-                {children}
-              </pre>
-            )
-          },
+          pre: PreBlock,
           // Custom link styling
           a({ href, children, ...props }) {
             return (
