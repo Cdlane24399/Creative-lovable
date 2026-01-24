@@ -634,3 +634,66 @@ export async function quickSyncToDatabase(
     manager.stop()
   }
 }
+
+/**
+ * Quick sync from sandbox to database with retry logic.
+ * Retries up to 3 times with exponential backoff on failure.
+ *
+ * @param sandbox - The E2B sandbox instance
+ * @param projectId - Project ID to sync
+ * @param projectDir - Project directory in sandbox
+ * @returns SyncResult with additional retry count info
+ */
+export async function quickSyncToDatabaseWithRetry(
+  sandbox: Sandbox,
+  projectId: string,
+  projectDir: string = "/home/user/project",
+  maxRetries: number = 3
+): Promise<SyncResult & { retryCount: number }> {
+  let lastError: Error | null = null
+  let retryCount = 0
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const result = await quickSyncToDatabase(sandbox, projectId, projectDir)
+
+      // Validate that files were actually written
+      if (result.success && result.filesWritten > 0) {
+        console.log(`[SyncManager] Sync succeeded on attempt ${attempt + 1}: ${result.filesWritten} files`)
+        return { ...result, retryCount: attempt }
+      }
+
+      // If no files written, treat as failure and retry
+      if (result.filesWritten === 0 && attempt < maxRetries - 1) {
+        console.warn(`[SyncManager] Sync returned 0 files on attempt ${attempt + 1}, retrying...`)
+        retryCount = attempt + 1
+        // Exponential backoff: 500ms, 1000ms, 2000ms
+        await new Promise(resolve => setTimeout(resolve, 500 * Math.pow(2, attempt)))
+        continue
+      }
+
+      return { ...result, retryCount: attempt }
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+      retryCount = attempt + 1
+      console.warn(`[SyncManager] Sync attempt ${attempt + 1} failed:`, lastError.message)
+
+      if (attempt < maxRetries - 1) {
+        // Exponential backoff: 500ms, 1000ms, 2000ms
+        await new Promise(resolve => setTimeout(resolve, 500 * Math.pow(2, attempt)))
+      }
+    }
+  }
+
+  // All retries exhausted
+  console.error(`[SyncManager] All ${maxRetries} sync attempts failed`)
+  return {
+    success: false,
+    filesWritten: 0,
+    filesDeleted: 0,
+    bytesTransferred: 0,
+    duration: 0,
+    errors: [{ path: "", error: lastError?.message || "Sync failed after retries" }],
+    retryCount,
+  }
+}

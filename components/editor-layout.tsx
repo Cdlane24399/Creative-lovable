@@ -26,6 +26,7 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
   const [sandboxUrl, setSandboxUrl] = useState<string | null>(null)
   const [pendingServerStart, setPendingServerStart] = useState<string | null>(null)
   const [pendingSandboxId, setPendingSandboxId] = useState<string | null>(null)
+  const [isFilesLoading, setIsFilesLoading] = useState(false)
   const previewRef = useRef<PreviewPanelHandle>(null)
   const chatRef = useRef<ChatPanelHandle>(null)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -360,6 +361,15 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
     }
   }, [saveScreenshot])
 
+  // Manual screenshot capture handler
+  const handleManualScreenshot = useCallback(async () => {
+    if (!sandboxUrl || !projectName) return
+    console.log("[EditorLayout] Manual screenshot capture triggered")
+    await captureAndSaveScreenshot(projectName, sandboxUrl)
+    // Refetch to show updated screenshot
+    await refetchProject()
+  }, [sandboxUrl, projectName, captureAndSaveScreenshot, refetchProject])
+
   // Extract project name from prompt
   const extractProjectName = (prompt: string | null | undefined): string => {
     if (!prompt) return "Untitled Project"
@@ -417,11 +427,15 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
       // Trigger dev server start with the project name
       setPendingServerStart(newProjectName)
 
+      // Mark files as loading until we refetch
+      setIsFilesLoading(true)
+
       // Refetch project to get updated files_snapshot for Code Tab
       // Small delay to ensure files are saved to DB
-      setTimeout(() => {
+      setTimeout(async () => {
         console.log("[EditorLayout] Refetching project to get files_snapshot...")
-        refetchProject()
+        await refetchProject()
+        setIsFilesLoading(false)
       }, 2000)
     }
   }, [refetchProject])
@@ -488,13 +502,14 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
 
         {/* Right Panel - Preview */}
         <div className="flex-1">
-          <PreviewPanel 
-            ref={previewRef} 
-            content={previewContent} 
+          <PreviewPanel
+            ref={previewRef}
+            content={previewContent}
             sandboxUrl={sandboxUrl}
             isLoading={isPreviewLoading || isDevServerStarting}
             project={project}
             currentView={currentView}
+            onCaptureScreenshot={handleManualScreenshot}
           />
         </div>
       </div>

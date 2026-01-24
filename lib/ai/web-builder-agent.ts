@@ -48,7 +48,7 @@ import {
   startBackgroundProcess,
   type CodeLanguage,
 } from "@/lib/e2b/sandbox"
-import { quickSyncToDatabase } from "@/lib/e2b/sync-manager"
+import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager"
 
 // ============================================================================
 // CONSTANTS
@@ -1167,16 +1167,22 @@ export function createContextAwareTools(projectId: string) {
           setProjectInfo(projectId, { projectName: name, projectDir, sandboxId: sandbox.sandboxId })
 
           // Save files snapshot for restoration after sandbox expiration
-          // Use quickSyncToDatabase to read files directly from sandbox (more reliable than in-memory context)
+          // Use quickSyncToDatabaseWithRetry for resilient syncing with automatic retries
           console.log(`[createWebsite] Starting file sync for project ${projectId}, dir: ${projectDir}`)
+          let syncStatus = { success: false, filesWritten: 0, retryCount: 0 }
           try {
-            const syncResult = await quickSyncToDatabase(sandbox, projectId, projectDir)
-            console.log(`[createWebsite] Sync completed: ${syncResult.filesWritten} files synced, success: ${syncResult.success}`)
+            const syncResult = await quickSyncToDatabaseWithRetry(sandbox, projectId, projectDir)
+            syncStatus = {
+              success: syncResult.success,
+              filesWritten: syncResult.filesWritten,
+              retryCount: syncResult.retryCount
+            }
+            console.log(`[createWebsite] Sync completed: ${syncResult.filesWritten} files synced, success: ${syncResult.success}, retries: ${syncResult.retryCount}`)
             if (syncResult.errors && syncResult.errors.length > 0) {
               console.warn("[createWebsite] Sync errors:", syncResult.errors)
             }
           } catch (err) {
-            console.warn("[createWebsite] Failed to sync files to database:", err)
+            console.warn("[createWebsite] Failed to sync files to database after retries:", err)
           }
 
           recordToolExecution(
@@ -1212,6 +1218,7 @@ export function createContextAwareTools(projectId: string) {
             usedTemplate: hasTemplate && !projectExists,
             totalTimeMs: totalTime,
             detail: `Files written successfully${performanceNote}. Dev server starting automatically...`,
+            syncStatus,
             filesReady: true,
           }
         } catch (error) {

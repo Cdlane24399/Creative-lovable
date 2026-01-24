@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils"
 interface CodeEditorProps {
   files?: Record<string, string>
   readOnly?: boolean
+  isLoading?: boolean
 }
 
 type FileNode = {
@@ -154,7 +155,7 @@ const FileTreeNode = ({
   )
 }
 
-export function CodeEditor({ files = {}, readOnly = true }: CodeEditorProps) {
+export function CodeEditor({ files = {}, readOnly = true, isLoading = false }: CodeEditorProps) {
   const [activeFile, setActiveFile] = React.useState<FileNode | null>(null)
   const fileTree = React.useMemo(() => buildFileTree(files), [files])
 
@@ -203,8 +204,15 @@ export function CodeEditor({ files = {}, readOnly = true }: CodeEditorProps) {
             />
           ))}
           {fileTree.length === 0 && (
-            <div className="px-4 py-2 text-xs text-zinc-500">
-              No files available
+            <div className="px-4 py-8 text-center">
+              {isLoading ? (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-emerald-500" />
+                  <span className="text-xs text-zinc-500">Syncing files...</span>
+                </div>
+              ) : (
+                <span className="text-xs text-zinc-500">No files available</span>
+              )}
             </div>
           )}
         </div>

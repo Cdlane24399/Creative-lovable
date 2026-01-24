@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useImperativeHandle, forwardRef, useRef, useCallback } from "react"
 import { FeaturesCarousel } from "./features-carousel"
-import { Loader2 } from "lucide-react"
+import { Loader2, Camera } from "lucide-react"
 import { CodeEditor } from "./code-editor"
 import { ProjectSettings } from "./project-settings"
 import type { EditorView } from "./editor-header"
@@ -15,6 +15,7 @@ interface PreviewPanelProps {
   isLoading?: boolean
   project?: Project | null
   currentView?: EditorView
+  onCaptureScreenshot?: () => void
 }
 
 export interface PreviewPanelHandle {
@@ -24,7 +25,7 @@ export interface PreviewPanelHandle {
 
 export const PreviewPanel = forwardRef<PreviewPanelHandle, PreviewPanelProps>(
   function PreviewPanel(
-    { content, sandboxUrl, isLoading: externalLoading, project, currentView = "preview" },
+    { content, sandboxUrl, isLoading: externalLoading, project, currentView = "preview", onCaptureScreenshot },
     ref
   ) {
     const [iframeLoading, setIframeLoading] = useState(true)
@@ -207,6 +208,17 @@ export const PreviewPanel = forwardRef<PreviewPanelHandle, PreviewPanelProps>(
                 </div>
               )}
 
+              {/* Screenshot capture button */}
+              {sandboxUrl && !isLoading && !error && onCaptureScreenshot && (
+                <button
+                  onClick={onCaptureScreenshot}
+                  className="absolute top-3 right-3 z-20 p-2 bg-zinc-800/90 hover:bg-zinc-700 rounded-lg transition-colors group"
+                  title="Capture screenshot"
+                >
+                  <Camera className="h-4 w-4 text-zinc-400 group-hover:text-white" />
+                </button>
+              )}
+
               {/* Preview content */}
               <div className="flex h-full items-center justify-center overflow-hidden bg-white">
                 {iframeSrc ? (
@@ -231,7 +243,7 @@ export const PreviewPanel = forwardRef<PreviewPanelHandle, PreviewPanelProps>(
 
           {currentView === "code" && (
             <div className="h-full w-full">
-              <CodeEditor files={project?.files_snapshot || {}} />
+              <CodeEditor files={project?.files_snapshot || {}} isLoading={!project?.files_snapshot} />
             </div>
           )}
 

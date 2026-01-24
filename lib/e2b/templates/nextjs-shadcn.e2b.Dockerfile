@@ -54,6 +54,12 @@ RUN pnpm add \
 # Install development dependencies
 RUN pnpm add -D @types/node @types/react @types/react-dom typescript
 
+# Clean up create-next-app artifacts that break fresh installations
+# - pnpm-workspace.yaml: Conflicts with pnpm install in non-monorepo setup
+# - next.config.ts: Rename to .mjs for better compatibility
+RUN rm -f pnpm-workspace.yaml && \
+    (mv next.config.ts next.config.mjs 2>/dev/null || true)
+
 # Skip build - the start_cmd in e2b.toml will start the dev server
 # which creates .next cache on demand during template snapshot
 

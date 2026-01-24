@@ -37,6 +37,9 @@ const SANDBOX_TTL_MS = 30 * 60 * 1000
 // Cleanup interval (check every 5 minutes)
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000
 
+// Sync files before expiration (5 minutes warning)
+const SYNC_BEFORE_EXPIRY_MS = 5 * 60 * 1000
+
 // Track last activity for each sandbox
 const sandboxLastActivity = new Map<string, number>()
 
@@ -51,6 +54,22 @@ const stateMachine = getSandboxStateMachine()
  */
 function updateSandboxActivity(projectId: string): void {
   sandboxLastActivity.set(projectId, Date.now())
+}
+
+/**
+ * Clean up artifacts from create-next-app that break fresh package installations.
+ * Called after sandbox creation when using a template to ensure clean state.
+ */
+async function cleanupTemplateArtifacts(sandbox: Sandbox): Promise<void> {
+  try {
+    // Remove pnpm-workspace.yaml which conflicts with non-monorepo setups
+    await sandbox.commands.run('rm -f /home/user/project/pnpm-workspace.yaml', { timeoutMs: 5000 })
+    // Rename next.config.ts to next.config.mjs for better compatibility
+    await sandbox.commands.run('mv /home/user/project/next.config.ts /home/user/project/next.config.mjs 2>/dev/null || true', { timeoutMs: 5000 })
+    console.log('[Sandbox] Cleaned up template artifacts')
+  } catch (error) {
+    console.warn('[Sandbox] Failed to cleanup template artifacts:', error)
+  }
 }
 
 /**
@@ -75,10 +94,22 @@ async function cleanupExpiredSandboxes(): Promise<void> {
     }
   }
 
-  // Clean up expired sandboxes
+  // Clean up expired sandboxes - sync files first
   for (const projectId of expiredProjects) {
     console.log(`[Sandbox TTL] Cleaning up expired sandbox for project ${projectId}`)
     try {
+      // Sync files to database before closing (best effort)
+      const sandbox = activeSandboxes.get(projectId)
+      if (sandbox) {
+        try {
+          const { quickSyncToDatabase } = await import("./sync-manager")
+          console.log(`[Sandbox TTL] Syncing files before expiration for ${projectId}`)
+          await quickSyncToDatabase(sandbox, projectId)
+        } catch (syncError) {
+          console.warn(`[Sandbox TTL] Failed to sync before expiration for ${projectId}:`, syncError)
+        }
+      }
+
       // Mark as expired in state machine
       stateMachine.markExpired(projectId)
       await closeSandbox(projectId)
@@ -461,6 +492,11 @@ export async function createSandbox(
 
     // Log template usage for debugging
     console.log(`[Sandbox] Created NEW sandbox ${sandbox.sandboxId} for project ${projectId}${template ? ` using template: ${template}` : ''}`)
+
+    // Clean up template artifacts that might interfere with package installation
+    if (template) {
+      await cleanupTemplateArtifacts(sandbox)
+    }
 
     // 4. Restore files from snapshot if this is a replacement for an expired sandbox
     if (needsRestore) {
