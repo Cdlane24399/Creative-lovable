@@ -1,8 +1,7 @@
-import { createAnthropic } from "@ai-sdk/anthropic"
 import { generateText } from "ai"
 import { withAuth } from "@/lib/auth"
 import { asyncErrorHandler } from "@/lib/errors"
-import { ValidationError, ExternalServiceError } from "@/lib/errors"
+import { getModel, getGatewayProviderOptions } from "@/lib/ai/providers"
 import { improvePromptSchema, createValidationErrorResponse, ValidationError as ZodValidationError } from "@/lib/validations"
 import { logger } from "@/lib/logger"
 
@@ -53,17 +52,9 @@ export const POST = withAuth(asyncErrorHandler(async (req: Request) => {
   const { prompt } = validation.data
   log.info('Improving prompt', { promptLength: prompt.length })
 
-  // Check if API key is available
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new ExternalServiceError("Anthropic API key not configured", "anthropic")
-  }
-
-  const anthropic = createAnthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-  })
-
   const result = await generateText({
-    model: anthropic("claude-sonnet-4-20250514"),
+    model: getModel('anthropic'),
+    providerOptions: getGatewayProviderOptions('anthropic'),
     system: PROMPT_IMPROVER_SYSTEM,
     prompt: prompt,
     maxOutputTokens: 300,
