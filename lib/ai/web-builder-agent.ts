@@ -44,6 +44,8 @@ import {
   executeCommand,
   directoryExists,
   saveFilesSnapshot,
+  killBackgroundProcess,
+  startBackgroundProcess,
   type CodeLanguage,
 } from "@/lib/e2b/sandbox"
 import { quickSyncToDatabase } from "@/lib/e2b/sync-manager"
@@ -848,16 +850,35 @@ export function createContextAwareTools(projectId: string) {
         const context = ctx()
         const hasTemplate = !!process.env.E2B_TEMPLATE_ID
         const projectDir = hasTemplate ? "/home/user/project" : `/home/user/${context.projectName || "project"}`
-        const flag = dev ? "--save-dev" : "--save"
+        const pnpmFlag = dev ? "-D" : ""
 
         try {
           const sandbox = await createSandbox(projectId)
+
+          // Stop dev server to release lock on pnpm-lock.yaml
+          // Turbopack holds the lockfile while running, causing pnpm add to fail
+          const wasRunning = await killBackgroundProcess(projectId)
+          if (wasRunning) {
+            console.log("[installPackage] Stopped dev server for package install")
+          }
+
           const packageList = packages.join(" ")
-          // Use pnpm add (template uses pnpm, not npm)
-          const pnpmFlag = dev ? "-D" : ""
-          const result = await executeCommand(sandbox, `cd "${projectDir}" && pnpm add ${pnpmFlag} ${packageList}`.trim())
+          const result = await executeCommand(
+            sandbox,
+            `cd "${projectDir}" && pnpm add ${pnpmFlag} ${packageList}`.trim(),
+            { timeoutMs: 120_000 } // 2 minutes for package install
+          )
 
           const success = result.exitCode === 0
+
+          // Restart dev server if it was running
+          if (wasRunning) {
+            await startBackgroundProcess(sandbox, "pnpm run dev > /tmp/server.log 2>&1", {
+              workingDir: projectDir,
+              projectId,
+            })
+            console.log("[installPackage] Restarted dev server after package install")
+          }
 
           if (success) {
             packages.forEach((pkg) => addDependency(projectId, pkg, "latest"))

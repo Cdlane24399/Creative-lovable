@@ -259,13 +259,13 @@ async function restoreFilesFromSnapshot(
 
     if (hasDependencies && hasPackageJson) {
       console.log("[Sandbox] Installing dependencies...")
-      const installResult = await executeCommand(sandbox, "npm install", {
+      const installResult = await executeCommand(sandbox, "pnpm install", {
         cwd: projectDir,
-        timeoutMs: 600_000, // 10 minutes for npm install
+        timeoutMs: 600_000, // 10 minutes for pnpm install
       })
       result.dependenciesInstalled = installResult.exitCode === 0
       if (!result.dependenciesInstalled) {
-        console.warn("[Sandbox] npm install failed:", installResult.stderr)
+        console.warn("[Sandbox] pnpm install failed:", installResult.stderr)
       }
     }
 
@@ -929,6 +929,11 @@ export async function executeCommand(
     }
   } catch (error) {
     const durationMs = Date.now() - startTime
+
+    // E2B SDK may attach stdout/stderr directly to the error object
+    const e2bError = error as { stderr?: string; stdout?: string; exitCode?: number }
+    const actualStderr = e2bError.stderr || ""
+    const actualStdout = e2bError.stdout || ""
     const errorMessage = error instanceof Error ? error.message : "Command execution failed"
 
     // E2B SDK throws on non-zero exit codes - this is often expected behavior
@@ -940,22 +945,23 @@ export async function executeCommand(
     if (isExpectedFailure) {
       console.debug(`[E2B] Expected non-zero exit: "${command.slice(0, 60)}..."`, { durationMs })
     } else {
-      // For package manager commands, log more details
+      // For package manager commands, log more details including actual stderr
       const isPkgManager = command.includes("pnpm") || command.includes("npm")
       console.error(`[E2B] Command failed: "${command.slice(0, 100)}..."`, {
         error: errorMessage,
+        stderr: actualStderr.slice(0, 500) || undefined,
         commandLength: command.length,
         durationMs,
-        ...(isPkgManager && { hint: "Check if lock files are conflicting (pnpm-lock.yaml vs package-lock.json)" }),
+        ...(isPkgManager && !actualStderr && { hint: "Check if lock files are conflicting (pnpm-lock.yaml vs package-lock.json)" }),
       })
     }
 
-    onProgress?.("error", "Command failed", errorMessage)
+    onProgress?.("error", "Command failed", actualStderr || errorMessage)
 
     return {
-      stdout: "",
-      stderr: errorMessage,
-      exitCode: 1,
+      stdout: actualStdout,
+      stderr: actualStderr || errorMessage,
+      exitCode: e2bError.exitCode ?? 1,
       durationMs,
     }
   }
