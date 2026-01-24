@@ -1,30 +1,37 @@
-# E2B Custom Template for Next.js 16 + shadcn/ui + Tailwind CSS v4
-# This pre-built template dramatically reduces cold-start time from ~3-5 minutes to ~2-5 seconds
+# E2B Custom Template for Next.js 16 + shadcn/ui + Tailwind CSS v4 (+ Three.js stack)
+# Updated: uses vercel@latest + extra 3D “good next adds”
 
 FROM node:22-slim
 
-# Set working directory
+# ---- Base OS deps ----
 WORKDIR /home/user
 
-# Install essential system dependencies
 RUN apt-get update && apt-get install -y \
     git \
     curl \
+    ca-certificates \
+    python3 \
+    make \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Install pnpm globally for faster package management
+# pnpm
 RUN npm install -g pnpm
 
-# Create project directory
+# ---- App workspace ----
 WORKDIR /home/user/project
 
-# Initialize Next.js 16 with TypeScript, Tailwind CSS, and App Router
-RUN npx create-next-app@latest . --ts --tailwind --eslint --app --no-src-dir --import-alias "@/*" --use-pnpm --yes
+# Initialize Next.js (latest)
+RUN npx create-next-app@latest . \
+    --ts --tailwind --eslint --app --no-src-dir --import-alias "@/*" --use-pnpm --yes
 
-# Initialize shadcn/ui with default configuration (uses Tailwind v4)
+# Vercel CLI (latest)
+RUN pnpm add -D vercel@latest
+
+# Initialize shadcn/ui (Tailwind v4 aware)
 RUN npx shadcn@latest init -y --defaults
 
-# Pre-install all shadcn/ui components (comprehensive set)
+# Pre-install a comprehensive set of shadcn/ui components
 RUN npx shadcn@latest add \
     button card input label select textarea switch checkbox radio-group slider \
     tabs dialog sheet tooltip dropdown-menu popover avatar badge progress \
@@ -34,7 +41,7 @@ RUN npx shadcn@latest add \
     chart input-otp pagination sidebar toggle-group \
     -y --overwrite
 
-# Install additional UI and utility libraries
+# ---- Core UI + utilities ----
 RUN pnpm add \
     lucide-react \
     @radix-ui/react-icons \
@@ -42,6 +49,8 @@ RUN pnpm add \
     class-variance-authority \
     clsx \
     tailwind-merge \
+    tailwindcss-animate \
+    next-themes \
     react-markdown \
     remark-gfm \
     rehype-highlight \
@@ -49,26 +58,43 @@ RUN pnpm add \
     date-fns \
     zod \
     react-hook-form \
-    @hookform/resolvers
+    @hookform/resolvers \
+    zustand \
+    @tanstack/react-query \
+    ky \
+    nanoid
 
-# Install development dependencies
-RUN pnpm add -D @types/node @types/react @types/react-dom typescript
+# ---- Three.js / 3D stack ----
+RUN pnpm add \
+    three \
+    @react-three/fiber \
+    @react-three/drei \
+    @react-three/postprocessing \
+    leva \
+    @react-three/rapier \
+    three-stdlib \
+    gsap
 
-# Clean up create-next-app artifacts that break fresh installations
-# - pnpm-workspace.yaml: Conflicts with pnpm install in non-monorepo setup
-# - next.config.ts: Rename to .mjs for better compatibility
+# Types for Three (dev dependency)
+RUN pnpm add -D @types/three
+
+# ---- Dev tooling ----
+RUN pnpm add -D \
+    @types/node \
+    @types/react \
+    @types/react-dom \
+    typescript \
+    prettier \
+    prettier-plugin-tailwindcss \
+    eslint-config-prettier
+
+# Clean up create-next-app artifacts that can break fresh installs in snapshots
 RUN rm -f pnpm-workspace.yaml && \
     (mv next.config.ts next.config.mjs 2>/dev/null || true)
 
-# Skip build - the start_cmd in e2b.toml will start the dev server
-# which creates .next cache on demand during template snapshot
-
-# Set environment for development
+# Dev defaults
 ENV NODE_ENV=development
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Expose Next.js dev server port
 EXPOSE 3000
-
-# Start the dev server by default
 CMD ["pnpm", "run", "dev"]
