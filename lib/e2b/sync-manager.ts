@@ -416,9 +416,30 @@ export class SyncManager {
     const entries = new Map<string, FileEntry>()
 
     try {
-      // Get list of files
+      // Get list of files, excluding large directories and binary files at the find level
+      // This prevents scanning 41k+ files when only ~100 source files are needed
       const result = await this.sandbox.commands.run(
-        `find ${this.config.projectDir} -type f -size -${this.config.maxFileSize}c 2>/dev/null || true`,
+        `find ${this.config.projectDir} -type f -size -${this.config.maxFileSize}c ` +
+        `-not -path '*/node_modules/*' ` +
+        `-not -path '*/.next/*' ` +
+        `-not -path '*/.git/*' ` +
+        `-not -path '*/dist/*' ` +
+        `-not -path '*/build/*' ` +
+        `-not -name '*.ico' ` +
+        `-not -name '*.png' ` +
+        `-not -name '*.jpg' ` +
+        `-not -name '*.jpeg' ` +
+        `-not -name '*.gif' ` +
+        `-not -name '*.webp' ` +
+        `-not -name '*.woff' ` +
+        `-not -name '*.woff2' ` +
+        `-not -name '*.ttf' ` +
+        `-not -name '*.eot' ` +
+        `-not -name '*.svg' ` +
+        `-not -name 'package-lock.json' ` +
+        `-not -name 'pnpm-lock.yaml' ` +
+        `-not -name 'yarn.lock' ` +
+        `2>/dev/null || true`,
         { timeoutMs: 30000 }
       )
 
@@ -427,16 +448,19 @@ export class SyncManager {
       }
 
       const paths = result.stdout.trim().split("\n").filter(Boolean)
-      console.log(`[SyncManager] Found ${paths.length} files in sandbox. First few:`, paths.slice(0, 5))
 
+      // Only log in development and reduce verbosity
+      if (process.env.NODE_ENV === 'development' && paths.length > 0) {
+        console.log(`[SyncManager] Found ${paths.length} source files to sync`)
+      }
 
       // Read files in batches
       const batches = chunkArray(paths, this.config.concurrency)
 
       for (const batch of batches) {
         const promises = batch.map(async (fullPath) => {
-          // Check if should ignore
           const relativePath = getRelativePath(fullPath, this.config.projectDir)
+          // Double-check ignore patterns (for any patterns not covered by find exclusions)
           if (this.shouldIgnore(relativePath)) {
             return
           }
@@ -444,6 +468,10 @@ export class SyncManager {
           try {
             const content = await this.sandbox.files.read(fullPath)
             if (typeof content === "string") {
+              // Skip files with null bytes (binary files that slipped through)
+              if (content.includes('\u0000')) {
+                return
+              }
               entries.set(relativePath, createFileEntry(relativePath, content))
             }
           } catch {

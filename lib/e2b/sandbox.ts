@@ -106,9 +106,8 @@ function startCleanupInterval(): void {
     return
   }
 
-  // Start new interval
+  // Start new interval (silently - logging on every HMR reload is too noisy)
   globalAny[CLEANUP_INTERVAL_KEY] = setInterval(cleanupExpiredSandboxes, CLEANUP_INTERVAL_MS)
-  console.log(`[Sandbox TTL] Started cleanup interval (${CLEANUP_INTERVAL_MS / 1000}s)`)
 }
 
 // Start cleanup on module load
@@ -191,7 +190,7 @@ export async function getProjectSnapshot(projectId: string): Promise<ProjectSnap
 /**
  * Save files snapshot to database for persistence across sandbox expirations.
  * This allows restoring project files when a new sandbox is created.
- * 
+ *
  * @param projectId - Project ID to save snapshot for
  * @param files - Map of file paths to file contents
  * @param dependencies - Optional map of npm dependencies (package name -> version)
@@ -214,7 +213,7 @@ export async function saveFilesSnapshot(
 /**
  * Restore files from a project snapshot to a sandbox.
  * Used when creating a new sandbox after the previous one expired.
- * 
+ *
  * @param sandbox - The new sandbox to restore files to
  * @param snapshot - Project snapshot containing files and dependencies
  * @param projectDir - Project directory path (default: /home/user/project)
@@ -361,7 +360,7 @@ export interface SandboxState {
 /**
  * Creates or retrieves an existing sandbox for a project.
  * Sandboxes are isolated cloud environments for code execution.
- * 
+ *
  * Priority order:
  * 1. Check in-memory cache
  * 2. Try to reconnect using sandbox ID from database
@@ -941,10 +940,13 @@ export async function executeCommand(
     if (isExpectedFailure) {
       console.debug(`[E2B] Expected non-zero exit: "${command.slice(0, 60)}..."`, { durationMs })
     } else {
+      // For package manager commands, log more details
+      const isPkgManager = command.includes("pnpm") || command.includes("npm")
       console.error(`[E2B] Command failed: "${command.slice(0, 100)}..."`, {
         error: errorMessage,
         commandLength: command.length,
         durationMs,
+        ...(isPkgManager && { hint: "Check if lock files are conflicting (pnpm-lock.yaml vs package-lock.json)" }),
       })
     }
 

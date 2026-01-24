@@ -54,9 +54,8 @@ RUN pnpm add \
 # Install development dependencies
 RUN pnpm add -D @types/node @types/react @types/react-dom typescript
 
-# Build the initial project to cache dependencies, then remove .next to prevent stale content
-# The build populates npm/pnpm cache but we don't want the compiled output served as default
-RUN pnpm run build || true && rm -rf .next
+# Skip build - the start_cmd in e2b.toml will start the dev server
+# which creates .next cache on demand during template snapshot
 
 # Set environment for development
 ENV NODE_ENV=development

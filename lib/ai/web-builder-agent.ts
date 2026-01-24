@@ -753,12 +753,12 @@ export function createContextAwareTools(projectId: string) {
 
     /**
      * Runs a shell command in the sandbox.
-     * Automatically tracks npm installs for dependency awareness.
+     * Automatically tracks pnpm installs for dependency awareness.
      */
     runCommand: tool({
       description:
-        "Run a shell command in the sandbox (e.g., npm install, npm run build). " +
-        "Use for any command-line operations. npm installs are automatically tracked.",
+        "Run a shell command in the sandbox (e.g., pnpm add, pnpm run build). " +
+        "Use for any command-line operations. Uses pnpm (not npm) for package management.",
       inputSchema: z.object({
         command: z
           .string()
@@ -787,9 +787,9 @@ export function createContextAwareTools(projectId: string) {
           const sandbox = await createSandbox(projectId)
           const result = await executeCommand(sandbox, fullCommand, { timeoutMs: timeout })
 
-          // Track npm install for dependency awareness
-          if (command.includes("npm install") && result.exitCode === 0) {
-            const packageMatch = command.match(/npm install\s+(?:--save-dev\s+)?(.+)$/)
+          // Track pnpm add for dependency awareness
+          if ((command.includes("pnpm add") || command.includes("pnpm install")) && result.exitCode === 0) {
+            const packageMatch = command.match(/pnpm (?:add|install)\s+(?:-D\s+)?(.+)$/)
             if (packageMatch) {
               const packages = packageMatch[1].split(/\s+/).filter((pkg) => pkg && !pkg.startsWith("-"))
               packages.forEach((pkg) => addDependency(projectId, pkg, "latest"))
@@ -853,7 +853,9 @@ export function createContextAwareTools(projectId: string) {
         try {
           const sandbox = await createSandbox(projectId)
           const packageList = packages.join(" ")
-          const result = await executeCommand(sandbox, `cd "${projectDir}" && npm install ${flag} ${packageList}`)
+          // Use pnpm add (template uses pnpm, not npm)
+          const pnpmFlag = dev ? "-D" : ""
+          const result = await executeCommand(sandbox, `cd "${projectDir}" && pnpm add ${pnpmFlag} ${packageList}`.trim())
 
           const success = result.exitCode === 0
 
@@ -1117,12 +1119,12 @@ export function createContextAwareTools(projectId: string) {
               progress: 50,
             }
 
-            const installResult = await executeCommand(sandbox, `cd "${projectDir}" && npm install`, {
-              timeoutMs: 300000, // 5 minutes for npm install
+            const installResult = await executeCommand(sandbox, `cd "${projectDir}" && pnpm install`, {
+              timeoutMs: 300000, // 5 minutes for pnpm install
             })
 
             if (installResult.exitCode !== 0) {
-              throw new SandboxError(`npm install failed: ${installResult.stderr}`)
+              throw new SandboxError(`pnpm install failed: ${installResult.stderr}`)
             }
 
             yield {

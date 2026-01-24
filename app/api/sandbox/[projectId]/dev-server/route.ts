@@ -1,6 +1,6 @@
 /**
  * Dev Server Management API
- * 
+ *
  * Handles starting, stopping, and monitoring the development server
  * in E2B sandboxes. Optimized for fast responses with minimal polling.
  */
@@ -252,8 +252,8 @@ export const POST = withAuth(async (
 
       // Check if project directory exists
       const checkDir = await executeCommand(
-        sandbox, 
-        `test -d ${projectDir} && echo "exists" || echo "not_exists"`, 
+        sandbox,
+        `test -d ${projectDir} && echo "exists" || echo "not_exists"`,
         { timeoutMs: 5000 }
       )
       console.log("[dev-server POST] Directory check:", { projectDir, result: checkDir.stdout.trim() })
@@ -287,10 +287,12 @@ export const POST = withAuth(async (
           )
         }
         // Remove Next.js lock file to prevent "Unable to acquire lock" errors
+        // Also clear .next cache completely to prevent Turbopack panics from stale cache
+        // (Error: "Turbopack Error: Failed to write app endpoint /page")
         await executeCommand(
           sandbox,
-          `rm -rf ${projectDir}/.next/dev/lock 2>/dev/null || true`,
-          { timeoutMs: 2000 }
+          `rm -rf ${projectDir}/.next 2>/dev/null || true`,
+          { timeoutMs: 5000 }
         )
         await new Promise(resolve => setTimeout(resolve, 500))
       }
@@ -320,7 +322,7 @@ export const POST = withAuth(async (
 
       // Start the dev server in background
       console.log("[dev-server POST] Starting background process...")
-      await startBackgroundProcess(sandbox, "npm run dev > /tmp/server.log 2>&1", {
+      await startBackgroundProcess(sandbox, "pnpm run dev > /tmp/server.log 2>&1", {
         workingDir: projectDir,
         projectId,
       })
@@ -392,15 +394,15 @@ export const POST = withAuth(async (
       if (!serverReady) {
         // Get comprehensive logs for debugging
         const logsResult = await executeCommand(
-          sandbox, 
-          `tail -n 50 /tmp/server.log 2>/dev/null || echo "No logs available"`, 
+          sandbox,
+          `tail -n 50 /tmp/server.log 2>/dev/null || echo "No logs available"`,
           { timeoutMs: 3000 }
         )
-        
+
         console.error("[dev-server POST] Server failed to start, logs:", logsResult.stdout)
-        
+
         return NextResponse.json(
-          { 
+          {
             error: "Dev server failed to start within 120 seconds. The server may still be starting up in the background.",
             logs: logsResult.stdout,
             hint: "Try refreshing the page in a few seconds, or check the server logs for errors."
@@ -454,24 +456,24 @@ export const DELETE = withAuth(async (
 
   try {
     const sandbox = await getSandbox(projectId)
-    
+
     // Clear cache
     statusCache.delete(projectId)
-    
+
     if (!sandbox) {
       return NextResponse.json({ success: true, message: "No sandbox to stop" })
     }
 
     // Kill the background process
     await killBackgroundProcess(projectId)
-    
+
     // Also kill any lingering processes on all potential ports
     await executeCommand(
-      sandbox, 
-      `pkill -f "next dev" 2>/dev/null || true`, 
+      sandbox,
+      `pkill -f "next dev" 2>/dev/null || true`,
       { timeoutMs: 5000 }
     )
-    
+
     for (const port of [3000, 3001, 3002, 3003, 3004, 3005]) {
       await executeCommand(
         sandbox,
