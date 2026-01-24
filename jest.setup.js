@@ -7,13 +7,18 @@ process.env.NEON_DATABASE_URL = 'postgresql://test:test@localhost:5432/test'
 process.env.E2B_TEMPLATE_ID = 'test-template'
 
 // Mock external dependencies
-jest.mock('@vercel/kv', () => ({
-  kv: {
-    get: jest.fn(),
-    set: jest.fn(),
-    del: jest.fn(),
-    keys: jest.fn(),
-  },
+const mockRedisInstance = {
+  get: jest.fn(),
+  set: jest.fn(),
+  del: jest.fn(),
+  keys: jest.fn(),
+}
+
+const MockRedis = jest.fn(() => mockRedisInstance)
+MockRedis.fromEnv = jest.fn(() => mockRedisInstance)
+
+jest.mock('@upstash/redis', () => ({
+  Redis: MockRedis,
 }))
 
 jest.mock('@neondatabase/serverless', () => ({

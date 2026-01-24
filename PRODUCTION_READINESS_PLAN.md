@@ -232,7 +232,7 @@ pnpm test -- lib/services/__tests__/project.service.test.ts
   - 📦 Added `LRUCache` class to `lib/cache/cache-manager.ts`:
     - 500 entry limit with automatic eviction
     - TTL support per entry
-    - Fallback when Vercel KV unavailable
+    - Fallback when Redis unavailable
     - Integrated into get/set/delete operations
 - **Phase 6 - Testing (Completed - 151 tests):**
   - ✅ Service tests: `lib/services/__tests__/project.service.test.ts` (21 tests)

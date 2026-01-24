@@ -102,9 +102,12 @@ NEON_DATABASE_URL=your_neon_database_url
 # or
 DATABASE_URL=your_database_url
 
-# Optional: Vercel KV for caching
-KV_REST_API_URL=your_kv_url
-KV_REST_API_TOKEN=your_kv_token
+# Optional: Redis for caching (Upstash/Vercel)
+UPSTASH_REDIS_REST_URL=your_redis_rest_url
+UPSTASH_REDIS_REST_TOKEN=your_redis_rest_token
+# Alternative env var names supported:
+# REDIS_URL=your_redis_rest_url
+# REDIS_TOKEN=your_redis_rest_token
 
 # Optional: API authentication
 API_KEY=your_api_key

@@ -5,7 +5,7 @@
  * - Consistent TTLs across cache types
  * - Unified invalidation logic
  * - Event emission for cache operations
- * - In-memory LRU fallback when KV not configured
+ * - In-memory LRU fallback when Redis not configured
  * 
  * Usage:
  * ```typescript
@@ -19,7 +19,7 @@
  * ```
  */
 
-import { kv } from "@vercel/kv"
+import { Redis } from "@upstash/redis"
 
 // =============================================================================
 // Configuration
@@ -44,6 +44,29 @@ const CACHE_KEYS = {
 /** Max entries for in-memory LRU cache */
 const LRU_MAX_ENTRIES = 500
 
+type RedisConnectionConfig = {
+  url: string
+  token: string
+}
+
+const getRedisConfig = (): RedisConnectionConfig | null => {
+  const upstashUrl = process.env.UPSTASH_REDIS_REST_URL
+  const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN
+
+  if (upstashUrl && upstashToken) {
+    return { url: upstashUrl, token: upstashToken }
+  }
+
+  const redisUrl = process.env.REDIS_URL
+  const redisToken = process.env.REDIS_TOKEN
+
+  if (redisUrl && redisToken) {
+    return { url: redisUrl, token: redisToken }
+  }
+
+  return null
+}
+
 // =============================================================================
 // In-Memory LRU Cache (Fallback)
 // =============================================================================
@@ -54,7 +77,7 @@ interface LRUEntry<T> {
 }
 
 /**
- * Simple LRU cache implementation for fallback when KV is unavailable
+ * Simple LRU cache implementation for fallback when Redis is unavailable
  */
 class LRUCache {
   private cache = new Map<string, LRUEntry<unknown>>()
@@ -149,27 +172,27 @@ type CacheEventHandler = (event: CacheEvent) => void
 
 export class CacheManager {
   private readonly isConfigured: boolean
+  private readonly redisConfig: RedisConnectionConfig | null
+  private redisClient: Redis | null = null
   private readonly lruCache: LRUCache
   private eventHandlers: CacheEventHandler[] = []
 
   constructor() {
-    this.isConfigured = !!(
-      process.env.KV_REST_API_URL && 
-      process.env.KV_REST_API_TOKEN
-    )
+    this.redisConfig = getRedisConfig()
+    this.isConfigured = !!this.redisConfig
     // Always create LRU cache as fallback
     this.lruCache = new LRUCache(LRU_MAX_ENTRIES)
   }
 
   /**
-   * Check if KV cache is configured (LRU fallback always available)
+   * Check if Redis cache is configured (LRU fallback always available)
    */
   get enabled(): boolean {
     return this.isConfigured
   }
 
   /**
-   * Check if cache is functional (KV or LRU fallback)
+   * Check if cache is functional (Redis or LRU fallback)
    */
   get available(): boolean {
     return true // LRU fallback always available
@@ -199,24 +222,37 @@ export class CacheManager {
     })
   }
 
+  private getRedisClient(): Redis {
+    if (!this.redisConfig) {
+      throw new Error("Redis not configured")
+    }
+
+    if (!this.redisClient) {
+      this.redisClient = new Redis(this.redisConfig)
+    }
+
+    return this.redisClient
+  }
+
   // ===========================================================================
   // Generic Cache Operations
   // ===========================================================================
 
   /**
-   * Get a value from cache (KV or LRU fallback)
+   * Get a value from cache (Redis or LRU fallback)
    */
   private async get<T>(key: string): Promise<T | null> {
-    // Try KV first if configured
+    // Try Redis first if configured
     if (this.isConfigured) {
       try {
-        const data = await kv.get(key)
+        const redis = this.getRedisClient()
+        const data = await redis.get(key)
         this.emit({ type: "get", key, success: true })
         if (data !== null) {
           return data as T
         }
       } catch (error) {
-        console.warn(`[CacheManager] KV get failed for ${key}, using LRU fallback:`, error)
+        console.warn(`[CacheManager] Redis get failed for ${key}, using LRU fallback:`, error)
       }
     }
 
@@ -227,19 +263,20 @@ export class CacheManager {
   }
 
   /**
-   * Set a value in cache (KV and LRU)
+   * Set a value in cache (Redis and LRU)
    */
   private async set(key: string, value: unknown, ttl: number): Promise<void> {
     // Always set in LRU
     this.lruCache.set(key, value, ttl)
 
-    // Also try KV if configured
+    // Also try Redis if configured
     if (this.isConfigured) {
       try {
-        await kv.set(key, value, { ex: ttl })
+        const redis = this.getRedisClient()
+        await redis.set(key, value, { ex: ttl })
         this.emit({ type: "set", key, success: true })
       } catch (error) {
-        console.warn(`[CacheManager] KV set failed for ${key}:`, error)
+        console.warn(`[CacheManager] Redis set failed for ${key}:`, error)
         this.emit({ type: "set", key, success: false })
       }
     } else {
@@ -248,19 +285,20 @@ export class CacheManager {
   }
 
   /**
-   * Delete a value from cache (KV and LRU)
+   * Delete a value from cache (Redis and LRU)
    */
   private async delete(key: string): Promise<void> {
     // Always delete from LRU
     this.lruCache.delete(key)
 
-    // Also try KV if configured
+    // Also try Redis if configured
     if (this.isConfigured) {
       try {
-        await kv.del(key)
+        const redis = this.getRedisClient()
+        await redis.del(key)
         this.emit({ type: "delete", key, success: true })
       } catch (error) {
-        console.warn(`[CacheManager] KV delete failed for ${key}:`, error)
+        console.warn(`[CacheManager] Redis delete failed for ${key}:`, error)
         this.emit({ type: "delete", key, success: false })
       }
     } else {
@@ -269,22 +307,23 @@ export class CacheManager {
   }
 
   /**
-   * Delete all keys matching a pattern (KV and LRU)
+   * Delete all keys matching a pattern (Redis and LRU)
    */
   private async deletePattern(pattern: string): Promise<number> {
     // Always delete from LRU
     const lruCount = this.lruCache.deletePattern(pattern)
 
-    // Also try KV if configured
+    // Also try Redis if configured
     if (this.isConfigured) {
       try {
-        const keys = await kv.keys(pattern)
+        const redis = this.getRedisClient()
+        const keys = await redis.keys(pattern)
         if (keys.length > 0) {
-          await kv.del(...keys)
+          await redis.del(...keys)
         }
         return Math.max(keys.length, lruCount)
       } catch (error) {
-        console.warn(`[CacheManager] KV delete pattern failed for ${pattern}:`, error)
+        console.warn(`[CacheManager] Redis delete pattern failed for ${pattern}:`, error)
         return lruCount
       }
     }
@@ -454,13 +493,14 @@ export class CacheManager {
       return {
         connected: false,
         status: "disabled",
-        message: "Vercel KV not configured (optional)",
+        message: "Redis not configured (optional)",
       }
     }
 
     try {
       // Test connection with a simple ping
-      await kv.set("__cache_health__", "ok", { ex: 1 })
+      const redis = this.getRedisClient()
+      await redis.set("__cache_health__", "ok", { ex: 1 })
       return {
         connected: true,
         status: "healthy",
