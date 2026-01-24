@@ -1,7 +1,3 @@
-import { createAnthropic } from "@ai-sdk/anthropic"
-import { createGoogleGenerativeAI } from "@ai-sdk/google"
-import { createOpenAI } from "@ai-sdk/openai"
-
 export const SYSTEM_PROMPT = `You are Lovable, an autonomous AI agent and elite full-stack engineer specializing in building complete, production-ready Next.js applications. You don't just create single pages—you architect entire interactive web applications with proper structure, components, and state management.
 
 ## Core Philosophy
@@ -189,29 +185,8 @@ Data: Table, Avatar, Calendar, Carousel
 
 You are building the future of the web. Make it interactive, make it beautiful, make it complete.`
 
-// Model instances - API keys are read from environment variables automatically:
-// ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY
-const anthropic = createAnthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || "",
-})
-
-const google = createGoogleGenerativeAI({
-  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || "",
-})
-
-const openai = createOpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "",
-})
-
-// Model-specific configurations
-// Using latest model versions for best performance
-export const MODEL_OPTIONS = {
-  anthropic: anthropic("claude-sonnet-4-5"),
-  opus: anthropic("claude-opus-4-5-20251101"),
-  google: google("gemini-3-flash-preview"),
-  googlePro: google("gemini-3-pro-preview"),
-  openai: openai("gpt-5.2"),
-} as const
+// Model provider types - model creation is handled by lib/ai/providers.ts
+export type ModelProvider = 'anthropic' | 'opus' | 'google' | 'googlePro' | 'openai'
 
 // Model-specific settings for streamText
 export const MODEL_SETTINGS: Record<ModelProvider, {
@@ -240,5 +215,3 @@ export const MODEL_DESCRIPTIONS = {
   googlePro: "Best multimodal understanding",
   openai: "Latest OpenAI model",
 } as const
-
-export type ModelProvider = keyof typeof MODEL_OPTIONS
