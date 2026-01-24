@@ -89,8 +89,10 @@ RUN pnpm add -D \
     eslint-config-prettier
 
 # Clean up create-next-app artifacts that can break fresh installs in snapshots
-RUN rm -f pnpm-workspace.yaml && \
-    (mv next.config.ts next.config.mjs 2>/dev/null || true)
+# IMPORTANT: Write a valid JavaScript config instead of renaming TypeScript file
+# (TypeScript syntax like "import type { }" is not valid in .mjs files)
+RUN rm -f pnpm-workspace.yaml next.config.ts && \
+    echo '/** @type {import("next").NextConfig} */\nconst nextConfig = {};\nexport default nextConfig;' > next.config.mjs
 
 # Dev defaults
 ENV NODE_ENV=development

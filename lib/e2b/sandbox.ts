@@ -64,8 +64,18 @@ async function cleanupTemplateArtifacts(sandbox: Sandbox): Promise<void> {
   try {
     // Remove pnpm-workspace.yaml which conflicts with non-monorepo setups
     await sandbox.commands.run('rm -f /home/user/project/pnpm-workspace.yaml', { timeoutMs: 5000 })
-    // Rename next.config.ts to next.config.mjs for better compatibility
-    await sandbox.commands.run('mv /home/user/project/next.config.ts /home/user/project/next.config.mjs 2>/dev/null || true', { timeoutMs: 5000 })
+
+    // IMPORTANT: Write a valid JavaScript config instead of renaming TypeScript file
+    // create-next-app generates next.config.ts with TypeScript syntax (import type { NextConfig })
+    // which is NOT valid in .mjs files and causes "Unexpected token '{'" errors
+    await sandbox.commands.run('rm -f /home/user/project/next.config.ts', { timeoutMs: 5000 })
+    await sandbox.files.write(
+      '/home/user/project/next.config.mjs',
+      `/** @type {import('next').NextConfig} */
+const nextConfig = {};
+export default nextConfig;
+`
+    )
     console.log('[Sandbox] Cleaned up template artifacts')
   } catch (error) {
     console.warn('[Sandbox] Failed to cleanup template artifacts:', error)
