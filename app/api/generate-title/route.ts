@@ -1,21 +1,9 @@
 import { generateText } from "ai"
-import { createAnthropic } from "@ai-sdk/anthropic"
 import { withAuth } from "@/lib/auth"
 import { asyncErrorHandler } from "@/lib/errors"
-import { ValidationError, ExternalServiceError } from "@/lib/errors"
+import { ValidationError } from "@/lib/errors"
 import { getProjectService } from "@/lib/services"
-
-// Validate API key at startup
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.warn("[generate-title] ANTHROPIC_API_KEY not configured")
-}
-
-// Use Claude Haiku for fast, cheap title generation
-const anthropic = createAnthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || "",
-})
-
-const model = anthropic("claude-3-5-haiku-20241022")
+import { getModel, getGatewayProviderOptions } from "@/lib/ai/providers"
 
 const TITLE_PROMPT = `Generate a short, descriptive project title (2-4 words) based on the user's request. 
 The title should be:
@@ -40,13 +28,10 @@ export const POST = withAuth(asyncErrorHandler(async (req: Request) => {
     throw new ValidationError("Prompt is required", { prompt: ["string required"] })
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new ExternalServiceError("Anthropic API key not configured", "anthropic")
-  }
-
   // Generate a title using Claude Haiku (fast and cheap)
   const result = await generateText({
-    model,
+    model: getModel('haiku'),
+    providerOptions: getGatewayProviderOptions('haiku'),
     prompt: TITLE_PROMPT + prompt,
     maxOutputTokens: 20,
     temperature: 0.3,
