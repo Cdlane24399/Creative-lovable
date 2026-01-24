@@ -1,0 +1,17 @@
+{
+  "name": "nextjs-shadcn-3d",
+  "version": "1.0.0",
+  "description": "E2B template for Next.js + shadcn/ui + Tailwind v4 + Three.js",
+  "scripts": {
+    "build:dev": "tsx build.dev.ts",
+    "build:prod": "tsx build.prod.ts",
+    "build": "tsx build.prod.ts"
+  },
+  "dependencies": {
+    "e2b": "^1.0.0",
+    "dotenv": "^16.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0"
+  }
+}

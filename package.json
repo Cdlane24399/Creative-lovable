@@ -14,7 +14,10 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:e2b": "npx tsx lib/e2b/__tests__/sandbox.test.ts"
+    "test:e2b": "npx tsx lib/e2b/__tests__/sandbox.test.ts",
+    "template:build:dev": "npx tsx lib/e2b/templates/build.dev.ts",
+    "template:build:prod": "npx tsx lib/e2b/templates/build.prod.ts",
+    "template:build": "npx tsx lib/e2b/templates/build.prod.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.23",

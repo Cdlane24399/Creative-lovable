@@ -13,7 +13,7 @@ function generateRequestId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 9)}`
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // Generate or use existing request ID for distributed tracing
   const requestId = request.headers.get('x-request-id') ?? generateRequestId()
   
