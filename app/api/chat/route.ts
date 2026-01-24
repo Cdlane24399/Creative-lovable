@@ -7,7 +7,8 @@ import {
   type UIMessage,
   type StopCondition,
 } from "ai"
-import { SYSTEM_PROMPT, MODEL_OPTIONS, MODEL_SETTINGS, type ModelProvider } from "@/lib/ai/agent"
+import { SYSTEM_PROMPT, MODEL_SETTINGS, type ModelProvider } from "@/lib/ai/agent"
+import { getModel, getGatewayProviderOptions, type ModelKey } from "@/lib/ai/providers"
 import {
   createContextAwareTools,
   generateAgenticSystemPrompt,
@@ -64,9 +65,11 @@ export const POST = withAuth(async (req: Request) => {
     const projectService = getProjectService()
     const messageService = getMessageService()
 
-    // Get selected model and its settings
-    const selectedModel = MODEL_OPTIONS[model] || MODEL_OPTIONS.anthropic
-    const modelSettings = MODEL_SETTINGS[model] || MODEL_SETTINGS.anthropic
+    // Get model settings (model instances handled by providers.ts)
+    // Validate model exists in our settings, fallback to anthropic
+    const validModel = (model in MODEL_SETTINGS ? model : 'anthropic') as ModelProvider
+    const modelKey = validModel as ModelKey // All ModelProvider values are valid ModelKey values
+    const modelSettings = MODEL_SETTINGS[validModel]
 
     // Convert messages for the model
     const modelMessages = await convertToModelMessages(messages)
@@ -93,10 +96,8 @@ export const POST = withAuth(async (req: Request) => {
     // AI SDK v6 best practice: Track steps for debugging and monitoring
     let currentStepNumber = 0
 
-    // Stream the response with context-aware tools
-    // AI SDK v6 best practices: Use stopWhen, onStepFinish, prepareStep, and experimental_repairToolCall
-    const result = streamText({
-      model: selectedModel,
+    // Shared streamText configuration
+    const streamConfig = {
       system: systemPrompt,
       messages: modelMessages,
       tools,
@@ -107,7 +108,7 @@ export const POST = withAuth(async (req: Request) => {
       ...(modelSettings.maxTokens && { maxOutputTokens: modelSettings.maxTokens }),
 
       // AI SDK v6: onStepFinish callback for step tracking
-      onStepFinish: async ({ text, toolCalls, toolResults, finishReason, usage }) => {
+      onStepFinish: async ({ text, toolCalls, toolResults, finishReason, usage }: any) => {
         currentStepNumber++
 
         // Log step completion for debugging
@@ -121,7 +122,7 @@ export const POST = withAuth(async (req: Request) => {
       },
 
       // AI SDK v6: prepareStep for dynamic step configuration and activeTools
-      prepareStep: async ({ stepNumber, messages: stepMessages }) => {
+      prepareStep: async ({ stepNumber, messages: stepMessages }: any) => {
         const context = getAgentContext(projectId)
         const config: {
           messages?: typeof stepMessages
@@ -156,7 +157,7 @@ export const POST = withAuth(async (req: Request) => {
       },
 
       // AI SDK v6: Tool call repair for better error recovery
-      experimental_repairToolCall: async ({ toolCall, error, messages: repairMessages }) => {
+      experimental_repairToolCall: async ({ toolCall, error, messages: repairMessages }: any) => {
         // Don't try to repair unknown tools
         if (NoSuchToolError.isInstance(error)) {
           console.warn(`[Tool Repair] Unknown tool: ${toolCall.toolName}`)
@@ -196,48 +197,59 @@ export const POST = withAuth(async (req: Request) => {
         // Return null if we can't repair
         return null
       },
-    })
+    }
 
-    // AI SDK v6: Enhanced response with better error handling
-    return result.toUIMessageStreamResponse({
-      originalMessages: messages,
-      // AI SDK v6: Custom error messages for better UX
-      onError: (error) => {
-        if (NoSuchToolError.isInstance(error)) {
-          return "I tried to use an unknown tool. Let me try a different approach."
-        }
-        if (InvalidToolInputError.isInstance(error)) {
-          return "I provided invalid input to a tool. Let me fix that and try again."
-        }
-        // Generic error message
-        return `An error occurred: ${error instanceof Error ? error.message : "Unknown error"}`
-      },
-      onFinish: async ({ messages: finishedMessages }) => {
-        // Save messages to database if projectId provided
-        if (projectId && projectId !== DEFAULT_PROJECT_ID) {
-          try {
-            // Convert UIMessage array to our format and save
-            // AI SDK v6: UIMessage only has parts, no content property
-            const messagesToSave = finishedMessages.map((msg: UIMessage) => ({
-              id: msg.id,
-              role: msg.role as "user" | "assistant" | "system",
-              content: msg.parts?.filter((p: any) => p.type === "text").map((p: any) => p.text).join("") || "",
-              parts: msg.parts as any[],
-            }))
-
-            await messageService.saveConversation(projectId, messagesToSave)
-            
-            console.log(`[Chat] Saved ${messagesToSave.length} messages for project ${projectId}`)
-          } catch (dbError) {
-            console.error("Failed to save messages:", dbError)
+    // Response handler
+    const createResponse = (result: any) => {
+      return result.toUIMessageStreamResponse({
+        originalMessages: messages,
+        // AI SDK v6: Custom error messages for better UX
+        onError: (error: unknown) => {
+          if (NoSuchToolError.isInstance(error)) {
+            return "I tried to use an unknown tool. Let me try a different approach."
           }
-        }
+          if (InvalidToolInputError.isInstance(error)) {
+            return "I provided invalid input to a tool. Let me fix that and try again."
+          }
+          // Generic error message
+          return `An error occurred: ${error instanceof Error ? error.message : "Unknown error"}`
+        },
+        onFinish: async ({ messages: finishedMessages }: any) => {
+          // Save messages to database if projectId provided
+          if (projectId && projectId !== DEFAULT_PROJECT_ID) {
+            try {
+              // Convert UIMessage array to our format and save
+              // AI SDK v6: UIMessage only has parts, no content property
+              const messagesToSave = finishedMessages.map((msg: UIMessage) => ({
+                id: msg.id,
+                role: msg.role as "user" | "assistant" | "system",
+                content: msg.parts?.filter((p: any) => p.type === "text").map((p: any) => p.text).join("") || "",
+                parts: msg.parts as any[],
+              }))
 
-        // Log completion summary with context
-        const context = getAgentContext(projectId)
-        console.log(`[Chat Complete] Project: ${projectId}, Steps: ${currentStepNumber}, Server: ${context.serverState?.isRunning ? "Running" : "Stopped"}`)
-      },
+              await messageService.saveConversation(projectId, messagesToSave)
+
+              console.log(`[Chat] Saved ${messagesToSave.length} messages for project ${projectId}`)
+            } catch (dbError) {
+              console.error("Failed to save messages:", dbError)
+            }
+          }
+
+          // Log completion summary with context
+          const context = getAgentContext(projectId)
+          console.log(`[Chat Complete] Project: ${projectId}, Steps: ${currentStepNumber}, Server: ${context.serverState?.isRunning ? "Running" : "Stopped"}`)
+        },
+      })
+    }
+
+    // Stream the response with Gateway (provider failover handled by Gateway's order option)
+    const result = streamText({
+      model: getModel(modelKey),
+      providerOptions: getGatewayProviderOptions(modelKey),
+      ...streamConfig,
     })
+
+    return createResponse(result)
   } catch (error) {
     console.error("Chat API error:", error)
 
