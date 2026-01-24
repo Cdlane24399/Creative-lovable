@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ChevronDown, Home, Github, Save, Check, Layers, BarChart3, Plus, ExternalLink, Copy, RefreshCw, Loader2 } from "lucide-react"
+import { ChevronDown, Home, Github, Save, Check, Layers, BarChart3, Plus, ExternalLink, Copy, RefreshCw, Loader2, Share2, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
@@ -257,6 +257,34 @@ export function EditorHeader({
         >
           <Github className="h-4 w-4" />
         </Button>
+
+        {/* Share button */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 rounded-full text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-300"
+        >
+          <Share2 className="h-4 w-4" />
+        </Button>
+
+        {/* Upgrade button */}
+        <Button
+          variant="ghost"
+          className="h-9 gap-1.5 rounded-full px-3 hover:bg-zinc-800/70"
+        >
+          <Zap className="h-4 w-4 text-amber-400" />
+          <span className="text-sm font-medium bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">
+            Upgrade
+          </span>
+        </Button>
+
+        {/* Publish button */}
+        <Button
+          className="h-9 gap-1.5 rounded-full px-4 bg-emerald-500 hover:bg-emerald-400 text-black font-medium"
+        >
+          Publish
+        </Button>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

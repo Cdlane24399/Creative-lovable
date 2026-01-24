@@ -9,7 +9,8 @@ import {
     Loader2,
     Wand2,
     Paperclip,
-    Image as ImageIcon
+    Image as ImageIcon,
+    MousePointer2
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
@@ -80,6 +81,8 @@ export function PromptInput({
     inputRef,
 }: PromptInputProps) {
     const textareaRef = useRef<HTMLTextAreaElement>(null)
+    const [isVisualEditsEnabled, setIsVisualEditsEnabled] = useState(false)
+    const [isPlanMode, setIsPlanMode] = useState(false)
 
     // Merge refs
     React.useImperativeHandle(inputRef, () => textareaRef.current!)
@@ -185,6 +188,23 @@ export function PromptInput({
                             </DropdownMenuContent>
                         </DropdownMenu>
 
+                        {/* Visual Edits Toggle */}
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setIsVisualEditsEnabled(!isVisualEditsEnabled)}
+                            className={cn(
+                                "h-7 gap-1.5 rounded-md px-2 text-xs font-medium transition-all",
+                                isVisualEditsEnabled
+                                    ? "text-emerald-400 bg-emerald-500/10"
+                                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800"
+                            )}
+                        >
+                            <MousePointer2 className="h-3 w-3" />
+                            <span>Visual edits</span>
+                        </Button>
+
                         {/* Improve Prompt */}
                         <Button
                             type="button"
@@ -229,6 +249,19 @@ export function PromptInput({
                     </div>
 
                     <div className="flex items-center gap-2">
+                        {/* Plan Mode Toggle */}
+                        <button
+                            type="button"
+                            onClick={() => setIsPlanMode(!isPlanMode)}
+                            className={cn(
+                                "px-3 py-1 text-xs rounded-full transition-all duration-200",
+                                isPlanMode
+                                    ? "bg-violet-500/20 text-violet-400 border border-violet-500/50"
+                                    : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:text-zinc-300"
+                            )}
+                        >
+                            Plan
+                        </button>
                         <span className="text-[10px] text-zinc-600 font-medium mr-1 hidden sm:inline-block">
                             {inputValue.length > 0 ? `${inputValue.length} chars` : '⌘ + Enter to send'}
                         </span>

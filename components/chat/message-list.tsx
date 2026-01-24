@@ -6,6 +6,7 @@ import type { UIMessage } from "ai"
 import type { ToolProgress } from "@/hooks/use-chat-with-tools"
 import { ChatEmptyState } from "./chat-error"
 import { ChatError } from "./chat-error"
+import { SuggestionChips, defaultSuggestions } from "./suggestion-chips"
 
 interface MessageListProps {
     messages: UIMessage[]
@@ -14,6 +15,8 @@ interface MessageListProps {
     error: Error | null
     onRetry: () => void
     getToolProgress: (toolCallId: string) => ToolProgress | undefined
+    getThinkingTime?: (messageId: string) => number | undefined
+    onSelectSuggestion?: (suggestion: string) => void
 }
 
 export function MessageList({
@@ -22,7 +25,9 @@ export function MessageList({
     isCallingTools,
     error,
     onRetry,
-    getToolProgress
+    getToolProgress,
+    getThinkingTime,
+    onSelectSuggestion
 }: MessageListProps) {
     const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -38,6 +43,14 @@ export function MessageList({
     // Deduplicate messages by ID
     const uniqueMessages = [...new Map(messages.map((m) => [m.id, m])).values()]
 
+    // Check if the last message is from the assistant (for showing suggestion chips)
+    const lastMessage = uniqueMessages[uniqueMessages.length - 1]
+    const showSuggestionChips =
+        !isWorking &&
+        !error &&
+        lastMessage?.role === "assistant" &&
+        onSelectSuggestion
+
     return (
         <div className="flex flex-col gap-6 pb-4">
             {uniqueMessages.map((message) => (
@@ -46,8 +59,17 @@ export function MessageList({
                     role={message.role}
                     parts={message.parts as any[]}
                     toolProgress={getToolProgress}
+                    thinkingTime={getThinkingTime?.(message.id)}
                 />
             ))}
+
+            {/* Suggestion Chips - shown after last assistant message when not working */}
+            {showSuggestionChips && (
+                <SuggestionChips
+                    suggestions={defaultSuggestions}
+                    onSelect={onSelectSuggestion}
+                />
+            )}
 
             {/* Typing Indicator */}
             {isWorking && !isCallingTools && (

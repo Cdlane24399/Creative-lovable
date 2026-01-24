@@ -39,7 +39,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const hasAutoSentRef = useRef(false)
 
-  const { messages, sendMessage, isWorking, status, isCallingTools, getToolProgress, hasRestoredHistory } = useChatWithTools({
+  const { messages, sendMessage, isWorking, status, isCallingTools, getToolProgress, getThinkingTime, hasRestoredHistory } = useChatWithTools({
     projectId,
     model: selectedModel,
     initialMessages: savedMessages,
@@ -199,6 +199,12 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     }
   }
 
+  const handleSelectSuggestion = (suggestion: string) => {
+    if (isWorking) return
+    // Send the suggestion immediately
+    sendMessage({ text: suggestion })
+  }
+
   return (
     <div className="flex h-full flex-col bg-[#111111]">
       {/* Messages Area */}
@@ -211,6 +217,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
             error={lastError}
             onRetry={handleRetry}
             getToolProgress={getToolProgress}
+            getThinkingTime={getThinkingTime}
+            onSelectSuggestion={handleSelectSuggestion}
           />
         </div>
       </div>

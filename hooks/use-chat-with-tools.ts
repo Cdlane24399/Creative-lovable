@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useCallback, useEffect, useRef } from "react"
+import { useMemo, useCallback, useEffect, useRef, useState } from "react"
 import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
 import type { ChatMessage } from "@/app/api/chat/route"
@@ -16,6 +16,12 @@ export interface ToolProgress {
   progress?: number
   timestamp: number
   filesWritten: string[]
+}
+
+// Thinking time for a message (in seconds)
+export interface ThinkingTime {
+  messageId: string
+  durationSeconds: number
 }
 
 interface UseChatWithToolsOptions {
@@ -61,6 +67,10 @@ export function useChatWithTools({ projectId, model = "anthropic", onError, init
   const lastSavedCountRef = useRef(initialMessages?.length || 0)
   // Track if we're currently saving
   const isSavingRef = useRef(false)
+
+  // Track thinking time for each message
+  const [thinkingTimes, setThinkingTimes] = useState<Map<string, number>>(new Map())
+  const thinkingStartRef = useRef<number | null>(null)
 
   // Convert initial messages to AI SDK format
   const convertedInitialMessages = useMemo(() => {
@@ -190,7 +200,7 @@ export function useChatWithTools({ projectId, model = "anthropic", onError, init
   useEffect(() => {
     const wasWorking = prevStatusRef.current === "submitted" || prevStatusRef.current === "streaming"
     const isNowReady = chat.status === "ready"
-    
+
     // Save when transitioning from working to ready
     if (wasWorking && isNowReady && chat.messages.length > 0) {
       // Small delay to ensure all state updates are complete
@@ -199,9 +209,41 @@ export function useChatWithTools({ projectId, model = "anthropic", onError, init
       }, 500)
       return () => clearTimeout(timer)
     }
-    
+
     prevStatusRef.current = chat.status
   }, [chat.status, chat.messages.length, saveMessages])
+
+  // Track thinking time (submitted -> streaming transition)
+  useEffect(() => {
+    // Start timer when entering "submitted" state
+    if (chat.status === "submitted" && thinkingStartRef.current === null) {
+      thinkingStartRef.current = Date.now()
+    }
+
+    // Record duration when transitioning to "streaming" or "ready"
+    if ((chat.status === "streaming" || chat.status === "ready") && thinkingStartRef.current !== null) {
+      const duration = Math.round((Date.now() - thinkingStartRef.current) / 1000)
+      thinkingStartRef.current = null
+
+      // Find the current assistant message and record thinking time
+      const lastAssistantMsg = [...chat.messages].reverse().find(m => m.role === "assistant")
+      if (lastAssistantMsg && duration > 0) {
+        setThinkingTimes(prev => {
+          const next = new Map(prev)
+          // Only set if not already recorded for this message
+          if (!next.has(lastAssistantMsg.id)) {
+            next.set(lastAssistantMsg.id, duration)
+          }
+          return next
+        })
+      }
+    }
+  }, [chat.status, chat.messages])
+
+  // Helper to get thinking time for a message
+  const getThinkingTime = useCallback((messageId: string): number | undefined => {
+    return thinkingTimes.get(messageId)
+  }, [thinkingTimes])
 
   return {
     ...chat,
@@ -220,5 +262,7 @@ export function useChatWithTools({ projectId, model = "anthropic", onError, init
     hasRestoredHistory: convertedInitialMessages !== undefined && convertedInitialMessages.length > 0,
     // Manual save function (auto-save happens automatically)
     saveMessages,
+    // Get thinking time for a message (in seconds)
+    getThinkingTime,
   }
 }

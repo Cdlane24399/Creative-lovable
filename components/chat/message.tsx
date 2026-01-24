@@ -2,6 +2,7 @@
 
 import type { UIMessage } from "ai"
 import { cn } from "@/lib/utils"
+import { Clock } from "lucide-react"
 // import type { Message } from "@/lib/db/types" // Using the type from props usually, or defining local interface if needed
 import { ChatMarkdown } from "./chat-markdown"
 import { ToolCallsGroup } from "./tool-call-display"
@@ -32,9 +33,11 @@ interface MessageProps {
     content?: string
     parts?: MessagePart[]
     toolProgress?: (toolCallId: string) => ToolProgress | undefined
+    /** Thinking time in seconds before the response started */
+    thinkingTime?: number
 }
 
-export function Message({ role, content, parts, toolProgress }: MessageProps) {
+export function Message({ role, content, parts, toolProgress, thinkingTime }: MessageProps) {
     if (role === "user") {
         return (
             <div className="flex w-full justify-end">
@@ -54,6 +57,15 @@ export function Message({ role, content, parts, toolProgress }: MessageProps) {
     // Assistant Message
     return (
         <div className="flex w-full flex-col gap-2">
+            {/* Thinking time indicator */}
+            {thinkingTime !== undefined && thinkingTime > 0 && (
+                <div className="flex items-center gap-1 px-1">
+                    <Clock className="h-3 w-3 text-zinc-500" />
+                    <span className="text-xs text-zinc-500">
+                        Thought for {thinkingTime}s
+                    </span>
+                </div>
+            )}
             <div className="flex flex-col gap-2 rounded-2xl p-1">
                 {parts ? (
                     // Complex message with parts (text + tools)
