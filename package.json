@@ -100,6 +100,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.3",
+    "@neondatabase/serverless": "^1.0.2",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/jest": "^30.0.0",
     "@types/node": "^25.0.10",

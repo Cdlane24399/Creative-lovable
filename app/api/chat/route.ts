@@ -15,6 +15,7 @@ import {
 } from "@/lib/ai/web-builder-agent"
 import { setProjectInfo, getAgentContext } from "@/lib/ai/agent-context"
 import { withAuth } from "@/lib/auth"
+import { checkChatRateLimit } from "@/lib/rate-limit"
 import { getProjectService, getMessageService } from "@/lib/services"
 import { logger } from "@/lib/logger"
 
@@ -38,6 +39,28 @@ export type ChatMessage = UIMessage
 export const POST = withAuth(async (req: Request) => {
   const requestId = req.headers.get('x-request-id') ?? 'unknown'
   const log = logger.child({ requestId, operation: 'chat' })
+  
+  // Check rate limit for chat endpoint
+  const rateLimit = checkChatRateLimit(req)
+  if (!rateLimit.allowed) {
+    const retryAfter = Math.ceil((rateLimit.resetTime - Date.now()) / 1000)
+    log.warn('Rate limit exceeded', { retryAfter })
+    return new Response(
+      JSON.stringify({
+        error: 'Rate limit exceeded. Please wait before sending more messages.',
+        retryAfter,
+      }),
+      {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'Retry-After': retryAfter.toString(),
+          'X-RateLimit-Remaining': rateLimit.remaining.toString(),
+          'X-RateLimit-Reset': rateLimit.resetTime.toString(),
+        },
+      }
+    )
+  }
   
   try {
     const body = await req.json()

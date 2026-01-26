@@ -44,11 +44,13 @@ export async function GET() {
     }
 
     // Notify PostgREST to reload schema cache
-    await supabase.rpc('exec_sql', {
-      sql: `NOTIFY pgrst, 'reload schema';`
-    }).catch(() => {
+    try {
+      await supabase.rpc('exec_sql', {
+        sql: `NOTIFY pgrst, 'reload schema';`
+      })
+    } catch {
       // Ignore if NOTIFY fails
-    })
+    }
 
     return NextResponse.json({
       success: true,

@@ -4,6 +4,10 @@ import { NextRequest, NextResponse } from "next/server"
 const RATE_LIMIT_WINDOW_MS = 60 * 1000 // 1 minute
 const RATE_LIMIT_MAX_REQUESTS = 100 // 100 requests per minute
 
+// Chat-specific rate limiting (more restrictive for AI endpoints)
+const CHAT_RATE_LIMIT_WINDOW_MS = 60 * 1000 // 1 minute
+const CHAT_RATE_LIMIT_MAX_REQUESTS = 20 // 20 chat requests per minute
+
 // In-memory store for rate limiting (in production, use Redis)
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>()
 
@@ -20,13 +24,14 @@ function cleanupExpiredEntries(): void {
 }
 
 /**
- * Get client identifier (IP address)
+ * Get client identifier from request headers
+ * Works with both NextRequest and standard Request
  */
-function getClientIdentifier(request: NextRequest): string {
+function getClientIdentifierFromHeaders(headers: Headers): string {
   // Try to get real IP from headers (for proxies/load balancers)
-  const forwardedFor = request.headers.get("x-forwarded-for")
-  const realIp = request.headers.get("x-real-ip")
-  const clientIp = request.headers.get("x-client-ip")
+  const forwardedFor = headers.get("x-forwarded-for")
+  const realIp = headers.get("x-real-ip")
+  const clientIp = headers.get("x-client-ip")
 
   // Use the first available IP
   const ip = forwardedFor?.split(",")[0]?.trim() ||
@@ -35,6 +40,13 @@ function getClientIdentifier(request: NextRequest): string {
              "unknown"
 
   return ip
+}
+
+/**
+ * Get client identifier (IP address) from NextRequest
+ */
+function getClientIdentifier(request: NextRequest): string {
+  return getClientIdentifierFromHeaders(request.headers)
 }
 
 /**
@@ -80,6 +92,56 @@ export function checkRateLimit(request: NextRequest): { allowed: boolean; remain
   return {
     allowed: true,
     remaining: RATE_LIMIT_MAX_REQUESTS - clientData.count,
+    resetTime: clientData.resetTime
+  }
+}
+
+/**
+ * Check rate limit for chat endpoints (more restrictive)
+ * Works with standard Request type for streaming endpoints
+ */
+export function checkChatRateLimit(request: Request): { 
+  allowed: boolean
+  remaining: number
+  resetTime: number 
+} {
+  const clientId = `chat:${getClientIdentifierFromHeaders(request.headers)}`
+  const now = Date.now()
+
+  // Clean up expired entries periodically
+  if (Math.random() < 0.01) {
+    cleanupExpiredEntries()
+  }
+
+  let clientData = rateLimitStore.get(clientId)
+
+  if (!clientData || now > clientData.resetTime) {
+    clientData = {
+      count: 1,
+      resetTime: now + CHAT_RATE_LIMIT_WINDOW_MS
+    }
+    rateLimitStore.set(clientId, clientData)
+    return {
+      allowed: true,
+      remaining: CHAT_RATE_LIMIT_MAX_REQUESTS - 1,
+      resetTime: clientData.resetTime
+    }
+  }
+
+  if (clientData.count >= CHAT_RATE_LIMIT_MAX_REQUESTS) {
+    return {
+      allowed: false,
+      remaining: 0,
+      resetTime: clientData.resetTime
+    }
+  }
+
+  clientData.count++
+  rateLimitStore.set(clientId, clientData)
+
+  return {
+    allowed: true,
+    remaining: CHAT_RATE_LIMIT_MAX_REQUESTS - clientData.count,
     resetTime: clientData.resetTime
   }
 }
@@ -133,7 +195,7 @@ export function getRateLimitStats() {
   let activeClients = 0
   let totalRequests = 0
 
-  for (const [clientId, data] of rateLimitStore.entries()) {
+  for (const [, data] of rateLimitStore.entries()) {
     if (now <= data.resetTime) {
       activeClients++
       totalRequests += data.count
@@ -145,6 +207,8 @@ export function getRateLimitStats() {
     totalRequests,
     storeSize: rateLimitStore.size,
     windowMs: RATE_LIMIT_WINDOW_MS,
-    maxRequests: RATE_LIMIT_MAX_REQUESTS
+    maxRequests: RATE_LIMIT_MAX_REQUESTS,
+    chatWindowMs: CHAT_RATE_LIMIT_WINDOW_MS,
+    chatMaxRequests: CHAT_RATE_LIMIT_MAX_REQUESTS
   }
 }

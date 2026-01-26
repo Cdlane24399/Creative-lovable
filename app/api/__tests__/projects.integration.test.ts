@@ -1,9 +1,12 @@
 import { NextRequest } from 'next/server'
 import { GET as getProjects, POST as createProject } from '../projects/route'
 
-// Mock database
-jest.mock('@/lib/db/neon', () => ({
-  getDb: () => jest.fn(),
+// Mock database repositories
+jest.mock('@/lib/db/repositories', () => ({
+  getProjectRepository: () => ({
+    findAll: jest.fn().mockResolvedValue([]),
+    create: jest.fn().mockResolvedValue({ id: 'test-id', name: 'Test Project' }),
+  }),
 }))
 
 describe('Projects API Integration', () => {
