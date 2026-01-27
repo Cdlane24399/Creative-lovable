@@ -246,6 +246,7 @@ export const PreviewPanel = forwardRef<PreviewPanelHandle, PreviewPanelProps>(
                   onClick={onCaptureScreenshot}
                   className="absolute top-3 right-3 z-20 p-2 bg-zinc-800/90 hover:bg-zinc-700 rounded-lg transition-colors group"
                   title="Capture screenshot"
+                  aria-label="Capture screenshot"
                 >
                   <Camera className="h-4 w-4 text-zinc-400 group-hover:text-white" />
                 </button>

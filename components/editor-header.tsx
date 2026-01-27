@@ -133,6 +133,7 @@ export function EditorHeader({
                 : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
             )}
             title="Code"
+            aria-label="View code"
           >
             <Layers className="h-4 w-4" />
           </button>
@@ -146,6 +147,7 @@ export function EditorHeader({
                 : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
             )}
             title="Settings"
+            aria-label="View settings"
           >
             <BarChart3 className="h-4 w-4" />
           </button>
@@ -155,6 +157,7 @@ export function EditorHeader({
             type="button"
             className="flex items-center justify-center h-7 w-7 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
             title="Add"
+            aria-label="Add"
           >
             <Plus className="h-4 w-4" />
           </button>
@@ -181,6 +184,7 @@ export function EditorHeader({
                   disabled={!!isRefreshing}
                   className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all disabled:opacity-50"
                   title="Refresh"
+                  aria-label="Refresh preview"
                 >
                   {isRefreshing ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -202,6 +206,7 @@ export function EditorHeader({
                   }}
                   className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
                   title="Copy URL"
+                  aria-label="Copy URL"
                 >
                   {copied ? (
                     <Check className="h-3.5 w-3.5 text-emerald-500" />
@@ -218,6 +223,7 @@ export function EditorHeader({
                   }}
                   className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
                   title="Open in new tab"
+                  aria-label="Open preview in new tab"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                 </button>
@@ -254,6 +260,7 @@ export function EditorHeader({
           variant="ghost"
           size="icon"
           className="h-9 w-9 rounded-full text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-300"
+          aria-label="View on GitHub"
         >
           <Github className="h-4 w-4" />
         </Button>
@@ -263,6 +270,7 @@ export function EditorHeader({
           variant="ghost"
           size="icon"
           className="h-9 w-9 rounded-full text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-300"
+          aria-label="Share project"
         >
           <Share2 className="h-4 w-4" />
         </Button>
@@ -291,6 +299,7 @@ export function EditorHeader({
               variant="ghost"
               size="icon"
               className="h-9 w-9 overflow-hidden rounded-full p-0 hover:ring-2 hover:ring-zinc-700"
+              aria-label="User menu"
             >
               <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-500 to-pink-500">
                 <span className="text-xs font-medium text-white">U</span>
