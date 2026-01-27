@@ -1,15 +1,24 @@
 /**
- * AI Tools Index
- * 
- * Re-exports agent tools from their canonical locations.
- * 
- * @see {@link ../web-builder-agent.ts} for tool implementations
- * @see {@link ../planning} for planning tools
+ * AI Tools Barrel Export
+ *
+ * This module serves as the central export point for all AI tool factory functions.
+ * Each tool factory creates a set of related tools that can be used by the AI agent
+ * to perform specific tasks within the web builder environment.
+ *
+ * Tool Categories:
+ * - Planning: Tools for task planning and workflow organization
+ * - State: Tools for managing sandbox and application state
+ * - File: Tools for file operations (read, write, delete)
+ * - Project: Tools for project structure and configuration
+ * - Build: Tools for building and bundling applications
+ * - Website: Tools for website scaffolding and deployment
+ * - Code: Tools for code analysis and transformation
  */
 
-export { 
-  createContextAwareTools,
-  generateAgenticSystemPrompt,
-} from "../web-builder-agent"
-
-export * from "../planning"
+export { createPlanningTools } from "./planning.tools";
+export { createStateTools } from "./state.tools";
+export { createFileTools } from "./file.tools";
+export { createProjectTools } from "./project.tools";
+export { createBuildTools } from "./build.tools";
+export { createWebsiteTools } from "./website.tools";
+export { createCodeTools } from "./code.tools";
