@@ -3,7 +3,6 @@
 import { useEffect, useRef } from "react"
 import { Message } from "./message"
 import type { UIMessage } from "ai"
-import type { ToolProgress } from "@/hooks/use-chat-with-tools"
 import { ChatEmptyState } from "./chat-error"
 import { ChatError } from "./chat-error"
 import { SuggestionChips, defaultSuggestions } from "./suggestion-chips"
@@ -14,7 +13,6 @@ interface MessageListProps {
     isCallingTools: boolean
     error: Error | null
     onRetry: () => void
-    getToolProgress: (toolCallId: string) => ToolProgress | undefined
     getThinkingTime?: (messageId: string) => number | undefined
     onSelectSuggestion?: (suggestion: string) => void
 }
@@ -25,7 +23,6 @@ export function MessageList({
     isCallingTools,
     error,
     onRetry,
-    getToolProgress,
     getThinkingTime,
     onSelectSuggestion
 }: MessageListProps) {
@@ -58,7 +55,6 @@ export function MessageList({
                     key={message.id}
                     role={message.role}
                     parts={message.parts as any[]}
-                    toolProgress={getToolProgress}
                     thinkingTime={getThinkingTime?.(message.id)}
                 />
             ))}

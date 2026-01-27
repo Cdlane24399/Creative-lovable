@@ -21,7 +21,7 @@ export function StreamingStatus({
 }: StreamingStatusProps) {
   if (status === "ready" || status === "error") return null
 
-  // Don't show this component when tools are being called - ToolCallDisplay handles that
+  // Don't show this component when tools are being called - ToolResultItem handles that
   if (isCallingTools && currentTool) return null
 
   // Determine what to show

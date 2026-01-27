@@ -39,7 +39,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const hasAutoSentRef = useRef(false)
 
-  const { messages, sendMessage, isWorking, status, isCallingTools, getToolProgress, getThinkingTime, hasRestoredHistory } = useChatWithTools({
+  const { messages, sendMessage, isWorking, isCallingTools, getThinkingTime } = useChatWithTools({
     projectId,
     model: selectedModel,
     initialMessages: savedMessages,
@@ -216,7 +216,6 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
             isCallingTools={isCallingTools}
             error={lastError}
             onRetry={handleRetry}
-            getToolProgress={getToolProgress}
             getThinkingTime={getThinkingTime}
             onSelectSuggestion={handleSelectSuggestion}
           />

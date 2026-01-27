@@ -1,5 +1,6 @@
 export { ChatMarkdown } from "./chat-markdown"
-export { ToolCallDisplay, ToolCallsGroup } from "./tool-call-display"
+export { ToolResultItem } from "./tool-result-item"
+export { ThinkingSection } from "./thinking-section"
 export { ChatError, ChatEmptyState } from "./chat-error"
 export { Message } from "./message"
 export { MessageList } from "./message-list"
