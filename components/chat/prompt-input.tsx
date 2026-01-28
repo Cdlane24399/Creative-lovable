@@ -193,6 +193,7 @@ export function PromptInput({
                             type="button"
                             variant="ghost"
                             size="sm"
+                            aria-pressed={isVisualEditsEnabled}
                             onClick={() => setIsVisualEditsEnabled(!isVisualEditsEnabled)}
                             className={cn(
                                 "h-7 gap-1.5 rounded-md px-2 text-xs font-medium transition-all",
@@ -250,18 +251,28 @@ export function PromptInput({
 
                     <div className="flex items-center gap-2">
                         {/* Plan Mode Toggle */}
-                        <button
-                            type="button"
-                            onClick={() => setIsPlanMode(!isPlanMode)}
-                            className={cn(
-                                "px-3 py-1 text-xs rounded-full transition-all duration-200",
-                                isPlanMode
-                                    ? "bg-violet-500/20 text-violet-400 border border-violet-500/50"
-                                    : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:text-zinc-300"
-                            )}
-                        >
-                            Plan
-                        </button>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <button
+                                        type="button"
+                                        aria-pressed={isPlanMode}
+                                        onClick={() => setIsPlanMode(!isPlanMode)}
+                                        className={cn(
+                                            "px-3 py-1 text-xs rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50",
+                                            isPlanMode
+                                                ? "bg-violet-500/20 text-violet-400 border border-violet-500/50"
+                                                : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:text-zinc-300"
+                                        )}
+                                    >
+                                        Plan
+                                    </button>
+                                </TooltipTrigger>
+                                <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-300">
+                                    <p>Switch to planning mode</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
                         <span className="text-[10px] text-zinc-600 font-medium mr-1 hidden sm:inline-block">
                             {inputValue.length > 0 ? `${inputValue.length} chars` : '⌘ + Enter to send'}
                         </span>
