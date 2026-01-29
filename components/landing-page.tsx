@@ -34,8 +34,8 @@ export function LandingPage({ onNavigateToEditor }: LandingPageProps) {
           <HeroSection onSubmit={(prompt, model) => onNavigateToEditor(undefined, prompt, model)} />
 
           <div className="relative">
-            {/* Divider */}
-            <div className="h-px bg-gradient-to-r from-transparent via-zinc-800 to-transparent max-w-7xl mx-auto" />
+            {/* Gradient Divider */}
+            <div className="h-px bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent max-w-5xl mx-auto" />
 
             <div id="features">
               <FeaturesSection />
