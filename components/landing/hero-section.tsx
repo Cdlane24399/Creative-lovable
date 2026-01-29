@@ -118,17 +118,26 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
   ]
 
   return (
-    <div className="min-h-[calc(100vh-80px)] flex flex-col items-center justify-center px-4 sm:px-6 lg:px-8 pt-20 pb-32">
-      <div className="w-full max-w-4xl mx-auto text-center">
+    <div className="min-h-[calc(100vh-80px)] flex flex-col items-center justify-center px-4 sm:px-6 lg:px-8 pt-20 pb-32 relative">
+      {/* Subtle radial gradient glow behind hero */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[600px] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute top-1/3 left-1/3 w-[400px] h-[400px] bg-violet-500/5 rounded-full blur-[100px] pointer-events-none" />
+      
+      <div className="w-full max-w-4xl mx-auto text-center relative z-10">
         {/* Badge */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#18181B] border border-zinc-800 mb-8 shadow-sm"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-emerald-500/10 to-violet-500/10 border border-emerald-500/20 mb-8 shadow-lg shadow-emerald-500/5 backdrop-blur-sm"
         >
-          <Sparkles className="w-4 h-4 text-emerald-500" />
-          <span className="text-sm font-medium text-zinc-300">AI-Powered Web Development</span>
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+          >
+            <Sparkles className="w-4 h-4 text-emerald-400" />
+          </motion.div>
+          <span className="text-sm font-medium bg-gradient-to-r from-emerald-400 to-violet-400 bg-clip-text text-transparent">AI-Powered Web Development</span>
         </motion.div>
 
         {/* Main Headline */}
@@ -138,9 +147,9 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
           transition={{ duration: 0.5, delay: 0.1 }}
           className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6 text-white"
         >
-          <span>Build web apps</span>
+          <span className="inline-block hover:scale-[1.02] transition-transform duration-300">Build web apps</span>
           <br />
-          <span className="text-emerald-500">
+          <span className="bg-gradient-to-r from-emerald-400 via-emerald-500 to-teal-400 bg-clip-text text-transparent inline-block animate-pulse-subtle">
             in seconds
           </span>
         </motion.h1>
@@ -163,11 +172,14 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
           transition={{ duration: 0.5, delay: 0.3 }}
           className="relative max-w-3xl mx-auto"
         >
+          {/* Glow effect behind input */}
+          <div className="absolute -inset-1 bg-gradient-to-r from-emerald-500/20 via-transparent to-violet-500/20 rounded-2xl blur-xl opacity-50" />
+          
           <div className={cn(
-            "bg-zinc-900/50 backdrop-blur-2xl rounded-2xl p-4 border shadow-2xl shadow-black/50 transition-all",
+            "relative bg-zinc-900/80 backdrop-blur-2xl rounded-2xl p-4 border shadow-2xl shadow-black/50 transition-all duration-300",
             showImproveEffect 
               ? "border-violet-500/50 ring-2 ring-violet-500/20" 
-              : "border-white/10 hover:border-white/20 focus-within:border-white/20"
+              : "border-zinc-700/50 hover:border-emerald-500/30 focus-within:border-emerald-500/40 focus-within:shadow-emerald-500/10"
           )}>
             {uploadedImages.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-3">
@@ -290,7 +302,7 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
                 <button
                   onClick={handleSubmit}
                   disabled={!inputValue.trim() || isImproving}
-                  className="bg-emerald-600 text-white disabled:bg-zinc-800 disabled:text-zinc-600 h-9 px-4 flex items-center justify-center gap-2 rounded-xl transition-all hover:bg-emerald-500 active:scale-[0.98] font-medium text-sm shadow-sm"
+                  className="bg-gradient-to-r from-emerald-600 to-emerald-500 text-white disabled:bg-zinc-800 disabled:from-zinc-800 disabled:to-zinc-800 disabled:text-zinc-600 h-9 px-4 flex items-center justify-center gap-2 rounded-xl transition-all hover:from-emerald-500 hover:to-emerald-400 hover:shadow-lg hover:shadow-emerald-500/25 active:scale-[0.98] font-medium text-sm"
                 >
                   <span className="hidden sm:inline">Generate</span>
                   <ArrowUp className="w-4 h-4" />
@@ -300,16 +312,19 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
           </div>
 
           {/* Suggestion Pills */}
-          <div className="flex flex-wrap justify-center gap-2 mt-6">
-            {suggestions.map((suggestion) => (
-              <button
+          <div className="flex flex-wrap justify-center gap-3 mt-6">
+            {suggestions.map((suggestion, index) => (
+              <motion.button
                 key={suggestion.text}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.4 + index * 0.1 }}
                 onClick={() => setInputValue(suggestion.text)}
-                className="group flex items-center gap-2 px-4 py-2 text-sm text-zinc-400 bg-[#18181B] hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-full transition-all hover:text-white"
+                className="group flex items-center gap-2 px-4 py-2.5 text-sm text-zinc-400 bg-zinc-900/50 hover:bg-zinc-800/80 border border-zinc-800 hover:border-emerald-500/30 rounded-full transition-all hover:text-white hover:shadow-lg hover:shadow-emerald-500/5 backdrop-blur-sm"
               >
                 <suggestion.icon className="w-4 h-4 text-zinc-500 group-hover:text-emerald-400 transition-colors" />
                 {suggestion.text}
-              </button>
+              </motion.button>
             ))}
           </div>
         </motion.div>
@@ -319,19 +334,19 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.5 }}
-          className="flex flex-wrap items-center justify-center gap-6 mt-12 text-zinc-500 text-sm font-medium"
+          className="flex flex-wrap items-center justify-center gap-8 mt-14 text-zinc-400 text-sm font-medium"
         >
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>Live preview in seconds</span>
+          <div className="flex items-center gap-2.5 group">
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50 animate-pulse" />
+            <span className="group-hover:text-zinc-300 transition-colors">Live preview in seconds</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-amber-500" />
-            <span>Full app architecture</span>
+          <div className="flex items-center gap-2.5 group">
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-lg shadow-amber-500/50 animate-pulse" style={{ animationDelay: '0.5s' }} />
+            <span className="group-hover:text-zinc-300 transition-colors">Full app architecture</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-cyan-500" />
-            <span>Interactive components</span>
+          <div className="flex items-center gap-2.5 group">
+            <div className="w-2.5 h-2.5 rounded-full bg-cyan-500 shadow-lg shadow-cyan-500/50 animate-pulse" style={{ animationDelay: '1s' }} />
+            <span className="group-hover:text-zinc-300 transition-colors">Interactive components</span>
           </div>
         </motion.div>
       </div>

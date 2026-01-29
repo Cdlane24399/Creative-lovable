@@ -41,18 +41,21 @@ export function Header() {
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50">
-      {/* Solid background instead of blur */}
-      <div className="absolute inset-0 bg-[#09090B] border-b border-zinc-800" />
+      {/* Gradient background with glassmorphism */}
+      <div className="absolute inset-0 bg-[#09090B]/90 backdrop-blur-xl border-b border-zinc-800/50" />
+      
+      {/* Subtle gradient accent on top */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent" />
 
       <nav className="relative">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             {/* Logo */}
             <a href="#" className="flex items-center gap-2.5 group">
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 shadow-sm group-hover:bg-emerald-500 transition-colors">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/25 group-hover:shadow-emerald-500/40 transition-all duration-300 group-hover:scale-105">
                 <LovableLogo className="w-4 h-4 text-white" />
               </span>
-              <span className="text-lg font-semibold tracking-tight text-white">Lovable</span>
+              <span className="text-lg font-semibold tracking-tight text-white group-hover:text-emerald-400 transition-colors">Lovable</span>
             </a>
 
             {/* Desktop Nav */}

@@ -95,8 +95,20 @@ const steps = [
 
 export function HowItWorksSection() {
   return (
-    <section className="relative py-24 sm:py-32 bg-[#09090B]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <section className="relative py-24 sm:py-32 bg-[#09090B] overflow-hidden">
+      {/* Gradient accent */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-zinc-800 to-transparent" />
+      <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-zinc-800 to-transparent" />
+      
+      {/* Subtle background pattern */}
+      <div className="absolute inset-0 opacity-[0.015] pointer-events-none" 
+        style={{ 
+          backgroundImage: 'radial-gradient(circle at 1px 1px, #fff 1px, transparent 0)', 
+          backgroundSize: '40px 40px' 
+        }} 
+      />
+      
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="text-center mb-16">
           <motion.div
@@ -105,12 +117,13 @@ export function HowItWorksSection() {
             transition={{ duration: 0.5 }}
             viewport={{ once: true }}
           >
-            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#18181B] border border-zinc-800 text-xs font-medium text-zinc-400 mb-4">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-violet-500/10 to-purple-500/10 border border-violet-500/20 text-xs font-medium text-violet-400 mb-6 shadow-lg shadow-violet-500/5">
+              <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" />
               HOW IT WORKS
             </span>
             <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
-              From idea to deployment
+              From idea to{" "}
+              <span className="bg-gradient-to-r from-violet-400 to-purple-400 bg-clip-text text-transparent">deployment</span>
             </h2>
             <p className="text-lg text-zinc-400 max-w-2xl mx-auto font-light">
               Four simple steps to transform your concepts into working web applications.
@@ -133,25 +146,25 @@ export function HowItWorksSection() {
                 {/* Number & Icon */}
                 <div className="flex-shrink-0">
                   <div className="relative">
-                    <div className="w-14 h-14 rounded-lg bg-[#18181B] border border-zinc-800 flex items-center justify-center group-hover:border-zinc-700 transition-colors shadow-sm">
-                      <step.icon className="w-6 h-6 text-zinc-400 group-hover:text-emerald-500 transition-colors" />
+                    <div className="w-14 h-14 rounded-xl bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 flex items-center justify-center group-hover:border-emerald-500/30 transition-all duration-300 shadow-lg shadow-black/20 group-hover:shadow-emerald-500/10">
+                      <step.icon className="w-6 h-6 text-zinc-400 group-hover:text-emerald-400 transition-colors duration-300" />
                     </div>
-                    <div className="absolute -top-2 -right-2 w-6 h-6 rounded-md bg-zinc-800 border border-zinc-700 flex items-center justify-center">
-                      <span className="text-[10px] font-bold text-zinc-400">{step.number}</span>
+                    <div className="absolute -top-2 -right-2 w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/25">
+                      <span className="text-[10px] font-bold text-white">{step.number}</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-xl font-semibold text-white mb-2 group-hover:text-emerald-400 transition-colors">
+                  <h3 className="text-xl font-semibold text-white mb-2 group-hover:text-emerald-400 transition-colors duration-300">
                     {step.title}
                   </h3>
-                  <p className="text-zinc-400 text-sm leading-relaxed mb-4">
+                  <p className="text-zinc-400 text-sm leading-relaxed mb-4 group-hover:text-zinc-300 transition-colors">
                     {step.description}
                   </p>
                   {/* Visual */}
-                  <div className="transform group-hover:translate-y-[-2px] transition-transform duration-300">
+                  <div className="transform group-hover:translate-y-[-4px] group-hover:scale-[1.02] transition-all duration-300">
                     {step.visual}
                   </div>
                 </div>
