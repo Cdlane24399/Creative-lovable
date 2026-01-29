@@ -57,8 +57,11 @@ const testimonials = [
 export function TestimonialsSection() {
   return (
     <section className="relative py-24 sm:py-32 overflow-hidden bg-[#09090B]">
-      {/* Subtle background pattern instead of blobs */}
-      <div className="absolute inset-0 opacity-[0.02] pointer-events-none" 
+      {/* Subtle background gradient */}
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-amber-500/[0.02] to-transparent pointer-events-none" />
+      
+      {/* Subtle background pattern */}
+      <div className="absolute inset-0 opacity-[0.015] pointer-events-none" 
         style={{ 
           backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', 
           backgroundSize: '60px 60px' 
@@ -74,12 +77,13 @@ export function TestimonialsSection() {
             transition={{ duration: 0.5 }}
             viewport={{ once: true }}
           >
-            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#18181B] border border-zinc-800 text-xs font-medium text-zinc-400 mb-4">
-              <Star className="w-3 h-3 text-amber-500" />
+            <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 text-xs font-medium text-amber-400 mb-6 shadow-lg shadow-amber-500/5">
+              <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
               TESTIMONIALS
             </span>
             <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
-              Loved by developers
+              Loved by{" "}
+              <span className="bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">developers</span>
             </h2>
             <p className="text-lg text-zinc-400 max-w-2xl mx-auto font-light">
               Join thousands of developers who are building faster with AI-powered web development.
@@ -98,7 +102,10 @@ export function TestimonialsSection() {
               viewport={{ once: true }}
               className="group"
             >
-              <div className="h-full bg-[#18181B] rounded-xl p-6 border border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative hover:shadow-lg hover:shadow-black/20">
+              {/* Card glow on hover */}
+              <div className={`absolute -inset-0.5 bg-gradient-to-r ${testimonial.gradient} rounded-xl blur opacity-0 group-hover:opacity-20 transition-opacity duration-500`} />
+              
+              <div className="relative h-full bg-zinc-900/50 backdrop-blur-sm rounded-xl p-6 border border-zinc-800/50 hover:border-zinc-700/50 transition-all duration-300 hover:shadow-xl hover:shadow-black/20 hover:-translate-y-1">
                 {/* Quote icon */}
                 <div className="absolute top-4 right-4 opacity-10 group-hover:opacity-20 transition-opacity">
                   <Quote className="w-8 h-8 text-zinc-400" />
@@ -107,18 +114,18 @@ export function TestimonialsSection() {
                 {/* Rating */}
                 <div className="flex gap-1 mb-4">
                   {[...Array(testimonial.rating)].map((_, i) => (
-                    <Star key={i} className="w-4 h-4 text-amber-500 fill-amber-500" />
+                    <Star key={i} className="w-4 h-4 text-amber-400 fill-amber-400 drop-shadow-sm" />
                   ))}
                 </div>
 
                 {/* Quote */}
-                <p className="text-zinc-300 text-sm leading-relaxed mb-6 relative z-10 font-normal">
+                <p className="text-zinc-300 text-sm leading-relaxed mb-6 relative z-10 font-normal group-hover:text-zinc-200 transition-colors">
                   "{testimonial.quote}"
                 </p>
 
                 {/* Author */}
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${testimonial.gradient} flex items-center justify-center shadow-inner`}>
+                  <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${testimonial.gradient} flex items-center justify-center shadow-lg`}>
                     <span className="text-xs font-bold text-white">{testimonial.avatar}</span>
                   </div>
                   <div>
@@ -137,18 +144,26 @@ export function TestimonialsSection() {
           whileInView={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
           viewport={{ once: true }}
-          className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-8"
+          className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-6"
         >
           {[
-            { value: "10K+", label: "Developers" },
-            { value: "50K+", label: "Projects Built" },
-            { value: "<30s", label: "Average Build Time" },
-            { value: "4.9/5", label: "User Rating" },
+            { value: "10K+", label: "Developers", color: "emerald" },
+            { value: "50K+", label: "Projects Built", color: "violet" },
+            { value: "<30s", label: "Average Build Time", color: "amber" },
+            { value: "4.9/5", label: "User Rating", color: "cyan" },
           ].map((stat, index) => (
-            <div key={stat.label} className="text-center p-4 rounded-xl bg-[#18181B] border border-zinc-800">
-              <div className="text-3xl sm:text-4xl font-bold text-white mb-1">{stat.value}</div>
+            <motion.div 
+              key={stat.label} 
+              initial={{ opacity: 0, scale: 0.95 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.3, delay: index * 0.1 }}
+              viewport={{ once: true }}
+              whileHover={{ scale: 1.05, y: -4 }}
+              className="text-center p-6 rounded-xl bg-zinc-900/50 backdrop-blur-sm border border-zinc-800/50 hover:border-zinc-700/50 transition-all shadow-lg shadow-black/10"
+            >
+              <div className={`text-3xl sm:text-4xl font-bold bg-gradient-to-r from-${stat.color}-400 to-${stat.color}-300 bg-clip-text text-transparent mb-1`}>{stat.value}</div>
               <div className="text-sm text-zinc-500">{stat.label}</div>
-            </div>
+            </motion.div>
           ))}
         </motion.div>
       </div>

@@ -79,6 +79,9 @@ const techStack = [
 export function FeaturesSection() {
   return (
     <section className="relative py-24 sm:py-32 bg-[#09090B]">
+      {/* Subtle gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/[0.02] to-transparent pointer-events-none" />
+      
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="text-center mb-16">
@@ -88,12 +91,13 @@ export function FeaturesSection() {
             transition={{ duration: 0.5 }}
             viewport={{ once: true }}
           >
-            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-[#18181B] border border-zinc-800 text-xs font-medium text-zinc-400 mb-4">
-              <Sparkles className="w-3 h-3 text-emerald-500" />
+            <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 text-xs font-medium text-emerald-400 mb-6 shadow-lg shadow-emerald-500/5">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
               FEATURES
             </span>
             <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
-              Everything you need to build
+              Everything you need to{" "}
+              <span className="bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">build</span>
             </h2>
             <p className="text-lg text-zinc-400 max-w-2xl mx-auto font-light">
               Powered by cutting-edge AI and cloud sandbox technology to transform your ideas into reality.
@@ -112,14 +116,17 @@ export function FeaturesSection() {
               viewport={{ once: true }}
               className="group relative"
             >
-              <div className="h-full bg-[#18181B] rounded-xl p-6 border border-zinc-800 hover:border-zinc-700 transition-all duration-300 hover:shadow-lg hover:shadow-black/20">
+              {/* Card glow effect on hover */}
+              <div className={`absolute -inset-0.5 bg-gradient-to-r ${feature.bgColor} rounded-xl blur opacity-0 group-hover:opacity-30 transition-opacity duration-500`} />
+              
+              <div className="relative h-full bg-zinc-900/50 backdrop-blur-sm rounded-xl p-6 border border-zinc-800/50 hover:border-zinc-700/50 transition-all duration-300 hover:shadow-xl hover:shadow-black/20 hover:-translate-y-1">
                 {/* Icon */}
-                <div className={`inline-flex items-center justify-center w-12 h-12 rounded-lg ${feature.bgColor} ${feature.borderColor} border mb-4 group-hover:scale-105 transition-transform duration-300`}>
+                <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl ${feature.bgColor} ${feature.borderColor} border mb-4 group-hover:scale-110 transition-transform duration-300 shadow-lg`}>
                   <feature.icon className={`w-6 h-6 ${feature.color}`} />
                 </div>
 
                 {/* Content */}
-                <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-zinc-200 transition-colors">
+                <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-zinc-100 transition-colors">
                   {feature.title}
                 </h3>
                 <p className="text-sm text-zinc-400 leading-relaxed group-hover:text-zinc-300 transition-colors">
@@ -149,9 +156,10 @@ export function FeaturesSection() {
                 whileInView={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.3, delay: index * 0.05 }}
                 viewport={{ once: true }}
-                className="flex items-center gap-2 px-4 py-2 bg-[#18181B] rounded-lg border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800/50 transition-all text-zinc-300 hover:text-white"
+                whileHover={{ scale: 1.05, y: -2 }}
+                className="flex items-center gap-2 px-4 py-2.5 bg-zinc-900/50 backdrop-blur-sm rounded-xl border border-zinc-800/50 hover:border-emerald-500/30 hover:bg-zinc-800/50 transition-all text-zinc-300 hover:text-white shadow-lg shadow-black/10"
               >
-                <tech.icon className="w-4 h-4 text-zinc-500 group-hover:text-zinc-400" />
+                <tech.icon className="w-4 h-4 text-zinc-400 group-hover:text-emerald-400" />
                 <span className="text-sm font-medium">{tech.label}</span>
               </motion.div>
             ))}
