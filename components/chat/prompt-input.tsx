@@ -193,6 +193,7 @@ export function PromptInput({
                             type="button"
                             variant="ghost"
                             size="sm"
+                            aria-pressed={isVisualEditsEnabled}
                             onClick={() => setIsVisualEditsEnabled(!isVisualEditsEnabled)}
                             className={cn(
                                 "h-7 gap-1.5 rounded-md px-2 text-xs font-medium transition-all",
@@ -252,6 +253,7 @@ export function PromptInput({
                         {/* Plan Mode Toggle */}
                         <button
                             type="button"
+                            aria-pressed={isPlanMode}
                             onClick={() => setIsPlanMode(!isPlanMode)}
                             className={cn(
                                 "px-3 py-1 text-xs rounded-full transition-all duration-200",
