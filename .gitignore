@@ -53,3 +53,4 @@ build/
 
 # Cursor debug logs
 .cursor/debug.log
+.env.local
