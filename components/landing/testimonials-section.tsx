@@ -147,10 +147,10 @@ export function TestimonialsSection() {
           className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-6"
         >
           {[
-            { value: "10K+", label: "Developers", color: "emerald" },
-            { value: "50K+", label: "Projects Built", color: "violet" },
-            { value: "<30s", label: "Average Build Time", color: "amber" },
-            { value: "4.9/5", label: "User Rating", color: "cyan" },
+            { value: "10K+", label: "Developers", gradientClass: "from-emerald-400 to-emerald-300" },
+            { value: "50K+", label: "Projects Built", gradientClass: "from-violet-400 to-violet-300" },
+            { value: "<30s", label: "Average Build Time", gradientClass: "from-amber-400 to-amber-300" },
+            { value: "4.9/5", label: "User Rating", gradientClass: "from-cyan-400 to-cyan-300" },
           ].map((stat, index) => (
             <motion.div 
               key={stat.label} 
@@ -161,7 +161,7 @@ export function TestimonialsSection() {
               whileHover={{ scale: 1.05, y: -4 }}
               className="text-center p-6 rounded-xl bg-zinc-900/50 backdrop-blur-sm border border-zinc-800/50 hover:border-zinc-700/50 transition-all shadow-lg shadow-black/10"
             >
-              <div className={`text-3xl sm:text-4xl font-bold bg-gradient-to-r from-${stat.color}-400 to-${stat.color}-300 bg-clip-text text-transparent mb-1`}>{stat.value}</div>
+              <div className={`text-3xl sm:text-4xl font-bold bg-gradient-to-r ${stat.gradientClass} bg-clip-text text-transparent mb-1`}>{stat.value}</div>
               <div className="text-sm text-zinc-500">{stat.label}</div>
             </motion.div>
           ))}

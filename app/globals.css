@@ -157,10 +157,6 @@
   }
 }
 
-.animate-pulse-subtle {
-  animation: pulse-subtle 3s ease-in-out infinite;
-}
-
 /* Floating animation for cards */
 @keyframes float {
   0%, 100% {
@@ -169,10 +165,6 @@
   50% {
     transform: translateY(-8px);
   }
-}
-
-.animate-float {
-  animation: float 6s ease-in-out infinite;
 }
 
 /* Glow animation */
@@ -185,10 +177,6 @@
   }
 }
 
-.animate-glow {
-  animation: glow 3s ease-in-out infinite;
-}
-
 /* Gradient shimmer effect */
 @keyframes shimmer {
   0% {
@@ -199,13 +187,38 @@
   }
 }
 
-.animate-shimmer {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.1) 50%,
-    transparent 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 3s linear infinite;
+/* Only enable animations for users who haven't requested reduced motion */
+@media (prefers-reduced-motion: no-preference) {
+  .animate-pulse-subtle {
+    animation: pulse-subtle 3s ease-in-out infinite;
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-glow {
+    animation: glow 3s ease-in-out infinite;
+  }
+
+  .animate-shimmer {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.1) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 3s linear infinite;
+  }
+}
+
+/* Fallback for reduced motion - no animation */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-subtle,
+  .animate-float,
+  .animate-glow,
+  .animate-shimmer {
+    animation: none;
+  }
 }
