@@ -134,14 +134,12 @@ export function useChatWithTools({ projectId, model = "anthropic", onError, init
       (part.state === "input-streaming" || part.state === "input-available")
   )
 
-  // Save messages to database
+  // Manual save function (kept for compatibility but not used for auto-save)
+  // Note: Auto-save is handled by API route's onFinish to avoid race conditions
   const saveMessages = useCallback(async () => {
     if (!projectId || chat.messages.length === 0) return
-    if (isSavingRef.current) return
     if (chat.messages.length === lastSavedCountRef.current) return
 
-    isSavingRef.current = true
-    
     try {
       // Convert messages to the format expected by the API
       const messagesToSave = chat.messages.map((msg) => {
@@ -167,35 +165,15 @@ export function useChatWithTools({ projectId, model = "anthropic", onError, init
 
       if (response.ok) {
         lastSavedCountRef.current = chat.messages.length
-        console.log(`[useChatWithTools] Saved ${messagesToSave.length} messages for project ${projectId}`)
+        console.log(`[useChatWithTools] Manually saved ${messagesToSave.length} messages for project ${projectId}`)
         onMessagesSaved?.()
       } else {
         console.error("[useChatWithTools] Failed to save messages:", await response.text())
       }
     } catch (error) {
       console.error("[useChatWithTools] Error saving messages:", error)
-    } finally {
-      isSavingRef.current = false
     }
   }, [projectId, chat.messages, onMessagesSaved])
-
-  // Auto-save messages when AI stops working (status becomes 'ready')
-  const prevStatusRef = useRef(chat.status)
-  useEffect(() => {
-    const wasWorking = prevStatusRef.current === "submitted" || prevStatusRef.current === "streaming"
-    const isNowReady = chat.status === "ready"
-
-    // Save when transitioning from working to ready
-    if (wasWorking && isNowReady && chat.messages.length > 0) {
-      // Small delay to ensure all state updates are complete
-      const timer = setTimeout(() => {
-        saveMessages()
-      }, 500)
-      return () => clearTimeout(timer)
-    }
-
-    prevStatusRef.current = chat.status
-  }, [chat.status, chat.messages.length, saveMessages])
 
   // Track thinking time (submitted -> streaming transition)
   useEffect(() => {
@@ -244,7 +222,7 @@ export function useChatWithTools({ projectId, model = "anthropic", onError, init
     getToolProgress,
     // Flag to check if chat was restored from history
     hasRestoredHistory: convertedInitialMessages !== undefined && convertedInitialMessages.length > 0,
-    // Manual save function (auto-save happens automatically)
+    // Manual save function (for explicit saves only - auto-save handled by API route)
     saveMessages,
     // Get thinking time for a message (in seconds)
     getThinkingTime,

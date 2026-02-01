@@ -149,6 +149,7 @@ function AssistantMessageParts({ parts }: { parts: MessagePart[] }) {
                     action={action}
                     filePath={filePath}
                     content={content}
+                    state={toolPart.state}
                 />
             )
         }

@@ -23,6 +23,7 @@ import {
   readFile as readFileFromSandbox,
   fileExists,
 } from "@/lib/e2b/sandbox"
+import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager"
 import { createErrorResult } from "../utils"
 
 /**
@@ -66,6 +67,16 @@ export function createFileTools(projectId: string) {
           // Track file state
           const isNew = !context.files.has(filePath)
           updateFileInContext(projectId, filePath, content, isNew ? "created" : "updated")
+
+          // Sync to database to persist the file
+          console.log(`[writeFile] Syncing file ${filePath} to database for project ${projectId}`)
+          try {
+            const syncResult = await quickSyncToDatabaseWithRetry(sandbox, projectId, projectDir)
+            console.log(`[writeFile] Sync completed: ${syncResult.filesWritten} files synced, success: ${syncResult.success}`)
+          } catch (syncError) {
+            console.warn("[writeFile] Failed to sync to database:", syncError)
+            // Don't fail the tool execution if sync fails - the file is still written to sandbox
+          }
 
           const result = {
             success: true as const,
@@ -214,6 +225,16 @@ export function createFileTools(projectId: string) {
 
           // Update context
           updateFileInContext(projectId, filePath, newContent, "updated")
+
+          // Sync to database to persist the edit
+          console.log(`[editFile] Syncing file ${filePath} to database for project ${projectId}`)
+          try {
+            const syncResult = await quickSyncToDatabaseWithRetry(sandbox, projectId, projectDir)
+            console.log(`[editFile] Sync completed: ${syncResult.filesWritten} files synced, success: ${syncResult.success}`)
+          } catch (syncError) {
+            console.warn("[editFile] Failed to sync to database:", syncError)
+            // Don't fail the tool execution if sync fails - the file is still written to sandbox
+          }
 
           const result = {
             success: true as const,
