@@ -194,6 +194,7 @@ export function PromptInput({
                             variant="ghost"
                             size="sm"
                             onClick={() => setIsVisualEditsEnabled(!isVisualEditsEnabled)}
+                            aria-pressed={isVisualEditsEnabled}
                             className={cn(
                                 "h-7 gap-1.5 rounded-md px-2 text-xs font-medium transition-all",
                                 isVisualEditsEnabled
@@ -253,8 +254,9 @@ export function PromptInput({
                         <button
                             type="button"
                             onClick={() => setIsPlanMode(!isPlanMode)}
+                            aria-pressed={isPlanMode}
                             className={cn(
-                                "px-3 py-1 text-xs rounded-full transition-all duration-200",
+                                "px-3 py-1 text-xs rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50",
                                 isPlanMode
                                     ? "bg-violet-500/20 text-violet-400 border border-violet-500/50"
                                     : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:text-zinc-300"

@@ -1,0 +1,181 @@
+
+> my-v0-project@0.1.0 dev /app
+> next dev
+
+▲ Next.js 16.1.4 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://192.168.0.2:3001
+
+✓ Starting...
+✓ Ready in 1414ms
+○ Compiling / ...
+ GET / 200 in 11.1s (compile: 9.5s, proxy.ts: 258ms, render: 1402ms)
+[auth] API_KEY not set - authentication disabled in development mode
+[projects] findAll failed: Error: supabaseKey is required.
+    at createAdminClient (lib/supabase/admin.ts:4:22)
+    at ProjectRepository.getClient (lib/db/repositories/base.repository.ts:66:29)
+    at ProjectRepository.findAll (lib/db/repositories/project.repository.ts:58:33)
+    at ProjectService.listProjects (lib/services/project.service.ts:88:45)
+    at async (app/api/projects/route.ts:30:18)
+    at async (lib/errors.ts:178:14)
+    at async (lib/auth.ts:121:22)
+  2 |
+  3 | export function createAdminClient() {
+> 4 |   return createClient(
+    |                      ^
+  5 |     process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  6 |     process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  7 |     {
+Operational error: {
+  name: 'DatabaseError',
+  message: 'findAll failed: supabaseKey is required.',
+  stack: 'DatabaseError: findAll failed: supabaseKey is required.\n' +
+    '    at ProjectRepository.handleError (/app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:583:15)\n' +
+    '    at ProjectRepository.findAll (/app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:680:18)\n' +
+    '    at async ProjectService.listProjects (/app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:2190:26)\n' +
+    '    at async /app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:2977:20\n' +
+    '    at async /app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:315:20\n' +
+    '    at async /app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:519:26\n' +
+    '    at async AppRouteRouteModule.do (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:37866)\n' +
+    '    at async AppRouteRouteModule.handle (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:45156)\n' +
+    '    at async responseGenerator (/app/.next/dev/server/chunks/881de_next_73864449._.js:16028:38)\n' +
+    '    at async AppRouteRouteModule.handleResponse (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:1:187713)\n' +
+    '    at async handleResponse (/app/.next/dev/server/chunks/881de_next_73864449._.js:16091:32)\n' +
+    '    at async Module.handler (/app/.next/dev/server/chunks/881de_next_73864449._.js:16144:13)\n' +
+    '    at async DevServer.renderToResponseWithComponentsImpl (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/base-server.js:1422:9)\n' +
+    '    at async DevServer.renderPageComponent (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/base-server.js:1474:24)\n' +
+    '    at async DevServer.renderToResponseImpl (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/base-server.js:1524:32)\n' +
+    '    at async DevServer.pipeImpl (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/base-server.js:1018:25)\n' +
+    '    at async NextNodeServer.handleCatchallRenderRequest (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/next-server.js:395:17)\n' +
+    '    at async DevServer.handleRequestImpl (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/base-server.js:909:17)\n' +
+    '    at async /app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/dev/next-dev-server.js:387:20\n' +
+    '    at async Span.traceAsyncFn (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/trace/trace.js:157:20)\n' +
+    '    at async DevServer.handleRequest (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/dev/next-dev-server.js:383:24)\n' +
+    '    at async invokeRender (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/lib/router-server.js:248:21)\n' +
+    '    at async handleRequest (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/lib/router-server.js:447:24)\n' +
+    '    at async requestHandlerImpl (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/lib/router-server.js:496:13)\n' +
+    '    at async Server.requestListener (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/lib/start-server.js:226:13)',
+  statusCode: 500,
+  code: 'DATABASE_ERROR',
+  isOperational: true,
+  route: 'http://localhost:3001/api/projects?limit=50',
+  method: 'GET',
+  timestamp: '2026-01-26T10:49:51.906Z'
+}
+ GET /api/projects?limit=50 500 in 3.6s (compile: 3.0s, proxy.ts: 30ms, render: 617ms)
+ GET / 200 in 159ms (compile: 7ms, proxy.ts: 10ms, render: 142ms)
+[projects] findAll failed: Error: supabaseKey is required.
+    at createAdminClient (lib/supabase/admin.ts:4:22)
+    at ProjectRepository.getClient (lib/db/repositories/base.repository.ts:66:29)
+    at ProjectRepository.findAll (lib/db/repositories/project.repository.ts:58:33)
+    at ProjectService.listProjects (lib/services/project.service.ts:88:45)
+    at async (app/api/projects/route.ts:30:18)
+    at async (lib/errors.ts:178:14)
+    at async (lib/auth.ts:121:22)
+  2 |
+  3 | export function createAdminClient() {
+> 4 |   return createClient(
+    |                      ^
+  5 |     process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  6 |     process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  7 |     {
+Operational error: {
+  name: 'DatabaseError',
+  message: 'findAll failed: supabaseKey is required.',
+  stack: 'DatabaseError: findAll failed: supabaseKey is required.\n' +
+    '    at ProjectRepository.handleError (/app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:583:15)\n' +
+    '    at ProjectRepository.findAll (/app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:680:18)\n' +
+    '    at async ProjectService.listProjects (/app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:2190:26)\n' +
+    '    at async /app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:2977:20\n' +
+    '    at async /app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:315:20\n' +
+    '    at async /app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:519:26\n' +
+    '    at async AppRouteRouteModule.do (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:37866)\n' +
+    '    at async AppRouteRouteModule.handle (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:45156)\n' +
+    '    at async responseGenerator (/app/.next/dev/server/chunks/881de_next_73864449._.js:16028:38)\n' +
+    '    at async AppRouteRouteModule.handleResponse (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:1:187713)\n' +
+    '    at async handleResponse (/app/.next/dev/server/chunks/881de_next_73864449._.js:16091:32)\n' +
+    '    at async Module.handler (/app/.next/dev/server/chunks/881de_next_73864449._.js:16144:13)\n' +
+    '    at async DevServer.renderToResponseWithComponentsImpl (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/base-server.js:1422:9)\n' +
+    '    at async DevServer.renderPageComponent (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/base-server.js:1474:24)\n' +
+    '    at async DevServer.renderToResponseImpl (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/base-server.js:1524:32)\n' +
+    '    at async DevServer.pipeImpl (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/base-server.js:1018:25)\n' +
+    '    at async NextNodeServer.handleCatchallRenderRequest (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/next-server.js:395:17)\n' +
+    '    at async DevServer.handleRequestImpl (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/base-server.js:909:17)\n' +
+    '    at async /app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/dev/next-dev-server.js:387:20\n' +
+    '    at async Span.traceAsyncFn (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/trace/trace.js:157:20)\n' +
+    '    at async DevServer.handleRequest (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/dev/next-dev-server.js:383:24)\n' +
+    '    at async invokeRender (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/lib/router-server.js:248:21)\n' +
+    '    at async handleRequest (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/lib/router-server.js:447:24)\n' +
+    '    at async requestHandlerImpl (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/lib/router-server.js:496:13)\n' +
+    '    at async Server.requestListener (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/lib/start-server.js:226:13)',
+  statusCode: 500,
+  code: 'DATABASE_ERROR',
+  isOperational: true,
+  route: 'http://localhost:3001/api/projects?limit=50',
+  method: 'GET',
+  timestamp: '2026-01-26T10:51:06.153Z'
+}
+ GET /api/projects?limit=50 500 in 210ms (compile: 6ms, proxy.ts: 13ms, render: 191ms)
+ GET /api/projects/6a27b9e3-32b6-4318-9efb-08eb04381f1e?includeMessages=true 200 in 1292ms (proxy.ts: 9ms)
+[projects] findById failed: Error: supabaseKey is required.
+    at createAdminClient (lib/supabase/admin.ts:4:22)
+    at ProjectRepository.getClient (lib/db/repositories/base.repository.ts:66:29)
+    at ProjectRepository.findById (lib/db/repositories/project.repository.ts:98:33)
+    at ProjectService.getProjectWithMessages (lib/services/project.service.ts:126:44)
+    at <unknown> (app/api/projects/[id]/route.ts:25:41)
+    at async (lib/errors.ts:178:14)
+    at async (lib/auth.ts:121:22)
+  2 |
+  3 | export function createAdminClient() {
+> 4 |   return createClient(
+    |                      ^
+  5 |     process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  6 |     process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  7 |     {
+Operational error: {
+  name: 'DatabaseError',
+  message: 'findById failed: supabaseKey is required.',
+  stack: 'DatabaseError: findById failed: supabaseKey is required.\n' +
+    '    at ProjectRepository.handleError (/app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:583:15)\n' +
+    '    at ProjectRepository.findById (/app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:696:18)\n' +
+    '    at async ProjectService.getProjectWithMessages (/app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:2223:25)\n' +
+    '    at async /app/.next/dev/server/chunks/[root-of-the-server]__16ca1006._.js:2974:24\n' +
+    '    at async /app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:315:20\n' +
+    '    at async /app/.next/dev/server/chunks/[root-of-the-server]__98160cbb._.js:519:26\n' +
+    '    at async AppRouteRouteModule.do (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:37866)\n' +
+    '    at async AppRouteRouteModule.handle (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:45156)\n' +
+    '    at async responseGenerator (/app/.next/dev/server/chunks/881de_next_cbde122d._.js:16028:38)\n' +
+    '    at async AppRouteRouteModule.handleResponse (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:1:187713)\n' +
+    '    at async handleResponse (/app/.next/dev/server/chunks/881de_next_cbde122d._.js:16091:32)\n' +
+    '    at async Module.handler (/app/.next/dev/server/chunks/881de_next_cbde122d._.js:16144:13)\n' +
+    '    at async DevServer.renderToResponseWithComponentsImpl (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/base-server.js:1422:9)\n' +
+    '    at async DevServer.renderPageComponent (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/base-server.js:1474:24)\n' +
+    '    at async DevServer.renderToResponseImpl (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/base-server.js:1524:32)\n' +
+    '    at async DevServer.pipeImpl (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/base-server.js:1018:25)\n' +
+    '    at async NextNodeServer.handleCatchallRenderRequest (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/next-server.js:395:17)\n' +
+    '    at async DevServer.handleRequestImpl (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/base-server.js:909:17)\n' +
+    '    at async /app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/dev/next-dev-server.js:387:20\n' +
+    '    at async Span.traceAsyncFn (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/trace/trace.js:157:20)\n' +
+    '    at async DevServer.handleRequest (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/dev/next-dev-server.js:383:24)\n' +
+    '    at async invokeRender (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/lib/router-server.js:248:21)\n' +
+    '    at async handleRequest (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/lib/router-server.js:447:24)\n' +
+    '    at async requestHandlerImpl (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/lib/router-server.js:496:13)\n' +
+    '    at async Server.requestListener (/app/node_modules/.pnpm/next@16.1.4_@babel+core@7.28.6_@opentelemetry+api@1.9.0_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/dist/server/lib/start-server.js:226:13)',
+  statusCode: 500,
+  code: 'DATABASE_ERROR',
+  isOperational: true,
+  route: 'http://localhost:3001/api/projects/6a27b9e3-32b6-4318-9efb-08eb04381f1e?includeMessages=true',
+  method: 'GET',
+  timestamp: '2026-01-26T10:51:07.958Z'
+}
+Chat API error: SyntaxError: Unexpected end of JSON input
+    at JSON.parse (<anonymous>)
+    at <unknown> (app/api/chat/route.ts:43:28)
+    at <unknown> (lib/auth.ts:121:28)
+  41 |
+  42 |   try {
+> 43 |     const body = await req.json()
+     |                            ^
+  44 |     const {
+  45 |       messages,
+  46 |       projectId = DEFAULT_PROJECT_ID,
