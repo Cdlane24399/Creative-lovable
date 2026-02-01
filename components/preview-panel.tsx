@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useImperativeHandle, forwardRef, useRef, useCallback } from "react"
+import React, { useState, useEffect, useImperativeHandle, forwardRef, useRef, useCallback } from "react"
 import { Camera } from "lucide-react"
 import { CodeEditor } from "./code-editor"
 import { ProjectSettings } from "./project-settings"
@@ -15,6 +15,7 @@ interface PreviewPanelProps {
   project?: Project | null
   currentView?: EditorView
   onCaptureScreenshot?: () => void
+  isFilesLoading?: boolean
 }
 
 export interface PreviewPanelHandle {
@@ -22,11 +23,13 @@ export interface PreviewPanelHandle {
   isLoading: boolean
 }
 
-export const PreviewPanel = forwardRef<PreviewPanelHandle, PreviewPanelProps>(
-  function PreviewPanel(
-    { content: _content, sandboxUrl, isLoading: externalLoading, project, currentView = "preview", onCaptureScreenshot },
-    ref
-  ) {
+interface PreviewPanelInnerProps extends PreviewPanelProps {
+  forwardedRef: React.Ref<PreviewPanelHandle>
+}
+
+const PreviewPanelInner = React.memo(function PreviewPanelInner(
+  { content: _content, sandboxUrl, isLoading: externalLoading, project, currentView = "preview", onCaptureScreenshot, isFilesLoading, forwardedRef }: PreviewPanelInnerProps
+) {
     const [iframeLoading, setIframeLoading] = useState(true)
     const [iframeKey, setIframeKey] = useState(0)
     const [error, setError] = useState<string | null>(null)
@@ -58,19 +61,29 @@ export const PreviewPanel = forwardRef<PreviewPanelHandle, PreviewPanelProps>(
       }
     }, [])
 
-    // Reset loading state and force iframe refresh when sandbox URL changes
+    // Track previous loading state to detect when loading finishes
+    const prevLoadingRef = useRef(externalLoading)
+
+    // Reset loading state and force iframe refresh when sandbox URL changes or loading completes
     useEffect(() => {
       if (!sandboxUrl) {
         setError(null)
         setLoadTimeout(false)
         setIframeLoading(false)
+        lastUrlRef.current = null
         return
       }
 
-      // Skip if URL hasn't changed
-      if (sandboxUrl === lastUrlRef.current) return
+      // Check if we need to reload:
+      // 1. URL changed
+      // 2. Loading just finished (dev server ready) - even if URL is same
+      const urlChanged = sandboxUrl !== lastUrlRef.current
+      const loadingJustFinished = prevLoadingRef.current && !externalLoading
+      prevLoadingRef.current = externalLoading
 
-      console.log("[PreviewPanel] Sandbox URL changed:", sandboxUrl)
+      if (!urlChanged && !loadingJustFinished) return
+
+      console.log("[PreviewPanel] Triggering iframe reload:", { urlChanged, loadingJustFinished, sandboxUrl })
       lastUrlRef.current = sandboxUrl
 
       setError(null)
@@ -91,7 +104,7 @@ export const PreviewPanel = forwardRef<PreviewPanelHandle, PreviewPanelProps>(
           setIframeLoading(false)
         }
       }, 30000) // 30 second timeout
-    }, [sandboxUrl])
+    }, [sandboxUrl, externalLoading])
 
     const handleIframeLoad = useCallback(() => {
       if (!mountedRef.current) return
@@ -151,7 +164,7 @@ export const PreviewPanel = forwardRef<PreviewPanelHandle, PreviewPanelProps>(
 
     // Expose methods to parent via ref
     useImperativeHandle(
-      ref,
+      forwardedRef,
       () => ({
         refresh: handleRefresh,
         isLoading: iframeLoading,
@@ -318,7 +331,10 @@ export const PreviewPanel = forwardRef<PreviewPanelHandle, PreviewPanelProps>(
 
           {currentView === "code" && (
             <div className="h-full w-full">
-              <CodeEditor files={project?.files_snapshot || {}} isLoading={!project?.files_snapshot} />
+              <CodeEditor
+                files={project?.files_snapshot || {}}
+                isLoading={isFilesLoading}
+              />
             </div>
           )}
 
@@ -330,5 +346,16 @@ export const PreviewPanel = forwardRef<PreviewPanelHandle, PreviewPanelProps>(
         </div>
       </div>
     )
-  }
-)
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.sandboxUrl === nextProps.sandboxUrl &&
+    prevProps.isLoading === nextProps.isLoading &&
+    prevProps.currentView === nextProps.currentView &&
+    prevProps.project?.id === nextProps.project?.id &&
+    prevProps.isFilesLoading === nextProps.isFilesLoading
+  )
+})
+
+export const PreviewPanel = forwardRef<PreviewPanelHandle, PreviewPanelProps>((props, ref) => (
+  <PreviewPanelInner {...props} forwardedRef={ref} />
+))

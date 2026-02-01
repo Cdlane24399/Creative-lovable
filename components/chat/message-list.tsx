@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import React, { useEffect, useRef } from "react"
 import { Message } from "./message"
 import type { UIMessage } from "ai"
 import { ChatEmptyState } from "./chat-error"
@@ -44,7 +44,7 @@ interface MessageListProps {
     onSelectSuggestion?: (suggestion: string) => void
 }
 
-export function MessageList({
+export const MessageList = React.memo(function MessageList({
     messages,
     isWorking,
     isCallingTools,
@@ -113,4 +113,11 @@ export function MessageList({
             <div ref={messagesEndRef} className="h-px w-full" />
         </div>
     )
-}
+}, (prevProps, nextProps) => {
+    return (
+        prevProps.messages === nextProps.messages &&
+        prevProps.isWorking === nextProps.isWorking &&
+        prevProps.isCallingTools === nextProps.isCallingTools &&
+        prevProps.error === nextProps.error
+    )
+})

@@ -28,7 +28,8 @@
     "test:e2e:mobile": "playwright test --project='Mobile Chrome' --project='Mobile Safari'",
     "test:e2e:report": "playwright show-report",
     "test:e2e:update-snapshots": "playwright test --update-snapshots",
-    "playwright:install": "playwright install --with-deps"
+    "playwright:install": "playwright install --with-deps",
+    "sandbox": "tsx scripts/create-sandbox.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.34",
@@ -71,6 +72,7 @@
     "@supabase/supabase-js": "^2.93.3",
     "@upstash/redis": "^1.36.1",
     "@vercel/analytics": "^1.6.1",
+    "@vercel/sandbox": "^1.4.1",
     "ai": "^6.0.66",
     "autoprefixer": "^10.4.24",
     "class-variance-authority": "^0.7.1",

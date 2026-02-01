@@ -15,28 +15,41 @@ export const POST = withAuth(async (req: NextRequest) => {
       return NextResponse.json({ error: "URL is required" }, { status: 400 })
     }
 
-    // Try to capture screenshot using E2B Desktop SDK if projectId is provided
+    // Try to capture screenshot using E2B if projectId is provided
     if (projectId) {
       try {
-        console.log(`[Screenshot] Capturing via E2B Desktop SDK for project ${projectId}:`, url)
+        console.log(`[Screenshot] Capturing via E2B for project ${projectId}:`, url)
 
         const screenshot = await captureSandboxScreenshot(projectId, {
           sandboxUrl: url,
           width,
           height,
-          waitForLoad: 2000,
+          waitForLoad: 3000, // Increased wait time for better reliability
         })
 
         if (screenshot) {
-          return NextResponse.json({
-            screenshot_base64: screenshot,
-            source: "e2b-desktop",
-          })
-        }
+          // Validate the screenshot data
+          if (screenshot.startsWith('data:image/png;base64,')) {
+            const base64Data = screenshot.split(',')[1]
+            const sizeEstimate = (base64Data.length * 3) / 4 // Rough estimate of decoded size
 
-        console.warn("[Screenshot] E2B Desktop returned empty result, falling back to placeholder")
+            if (sizeEstimate < 100) {
+              console.warn("[Screenshot] Screenshot data too small, using placeholder")
+            } else {
+              console.log(`[Screenshot] Successfully captured screenshot (approx ${Math.round(sizeEstimate)} bytes)`)
+              return NextResponse.json({
+                screenshot_base64: screenshot,
+                source: "e2b",
+              })
+            }
+          } else {
+            console.warn("[Screenshot] Invalid screenshot format, expected PNG base64")
+          }
+        } else {
+          console.warn("[Screenshot] E2B returned null, falling back to placeholder")
+        }
       } catch (e2bError) {
-        console.warn("[Screenshot] E2B Desktop failed, falling back to placeholder:", e2bError)
+        console.warn("[Screenshot] E2B screenshot failed, falling back to placeholder:", e2bError)
       }
     } else {
       console.log("[Screenshot] No projectId provided, using placeholder")
@@ -66,7 +79,7 @@ export const POST = withAuth(async (req: NextRequest) => {
  */
 function generateWebsitePreviewSVG(
   projectName: string,
-  url: string,
+  _url: string,
   width: number,
   height: number
 ): string {

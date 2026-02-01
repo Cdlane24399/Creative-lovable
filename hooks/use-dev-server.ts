@@ -18,7 +18,7 @@ export interface UseDevServerOptions {
   sandboxId?: string | null
   /** Whether to actively poll for status (default: false until triggered) */
   enabled?: boolean
-  /** Polling interval in ms when server is starting (default: 2000) */
+  /** @deprecated Use runningPollInterval - starting interval now uses exponential backoff */
   startingPollInterval?: number
   /** Polling interval in ms when server is running (default: 10000) */
   runningPollInterval?: number
@@ -89,15 +89,18 @@ export function useDevServer({
   const abortControllerRef = useRef<AbortController | null>(null)
   const lastSuccessfulPollRef = useRef<number>(Date.now())
   const retryCountRef = useRef(0)
+  const backoffIntervalRef = useRef<number>(2000)
+  const lastStatusHashRef = useRef<string>("")
 
   // Clear polling
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
-      clearInterval(pollRef.current)
+      clearTimeout(pollRef.current)
       pollRef.current = null
     }
     pollActiveRef.current = false
-    
+    backoffIntervalRef.current = 2000
+
     // Abort any ongoing fetch
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
@@ -198,6 +201,11 @@ export function useDevServer({
     wasRunningRef.current = newStatus.isRunning
   }, [onError, onReady, onStatusChange])
 
+  // Hash status for change detection
+  const hashStatus = useCallback((status: DevServerStatus): string => {
+    return `${status.isRunning}-${status.url}-${status.errors.length}`
+  }, [])
+
   // Refresh status (public method)
   const refresh = useCallback(async () => {
     const newStatus = await fetchStatus()
@@ -206,20 +214,43 @@ export function useDevServer({
     }
   }, [fetchStatus, updateStatus])
 
-  // Start polling with adaptive interval
-  const startPolling = useCallback((interval: number) => {
+  // Start polling with exponential backoff
+  const startPolling = useCallback((baseInterval: number) => {
     stopPolling()
     pollActiveRef.current = true
-    
-    // Immediate fetch
-    refresh()
-    
-    // Set up interval
-    pollRef.current = setInterval(() => {
+    backoffIntervalRef.current = baseInterval
+
+    const poll = async () => {
       if (!pollActiveRef.current) return
-      refresh()
-    }, interval)
-  }, [stopPolling, refresh])
+
+      const newStatus = await fetchStatus()
+      if (newStatus) {
+        const newHash = hashStatus(newStatus)
+
+        // Reset backoff if status changed
+        if (newHash !== lastStatusHashRef.current) {
+          backoffIntervalRef.current = baseInterval
+          lastStatusHashRef.current = newHash
+        } else {
+          // Increase backoff when no changes (max 10 seconds)
+          backoffIntervalRef.current = Math.min(
+            backoffIntervalRef.current * 1.5,
+            10000
+          )
+        }
+
+        updateStatus(newStatus)
+      }
+
+      // Schedule next poll with current backoff
+      if (pollActiveRef.current) {
+        pollRef.current = setTimeout(poll, backoffIntervalRef.current)
+      }
+    }
+
+    // Start polling
+    poll()
+  }, [stopPolling, fetchStatus, updateStatus, hashStatus])
 
   // Start the dev server
   const start = useCallback(async (forceRestart = false) => {
@@ -259,14 +290,17 @@ export function useDevServer({
       }
       updateStatus(newStatus)
 
-      // Server is ready - stop polling immediately
-      stopPolling()
-
       if (data.url) {
+        // Server is ready with URL - stop polling
+        stopPolling()
         if (!onReadyCalledRef.current) {
           onReadyCalledRef.current = true
           onReady?.(data.url)
         }
+      } else {
+        // No URL yet - start polling to wait for server
+        console.log("[useDevServer] No URL in response, starting polling...")
+        startPolling(2000)
       }
     } catch (err) {
       console.error("[useDevServer] Error starting server:", err)

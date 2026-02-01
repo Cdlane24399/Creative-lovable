@@ -5,6 +5,7 @@ import { useRef } from "react"
 import {
     ArrowUp,
     Loader2,
+    Square,
     Wand2,
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
@@ -52,6 +53,7 @@ interface PromptInputProps {
     inputValue: string
     setInputValue: (value: string) => void
     onSubmit: (e: React.FormEvent) => void
+    onStop?: () => void
     isWorking: boolean
     isChatEnabled: boolean
     selectedModel: ModelProvider
@@ -66,6 +68,7 @@ export function PromptInput({
     inputValue,
     setInputValue,
     onSubmit,
+    onStop,
     isWorking,
     isChatEnabled,
     selectedModel,
@@ -98,6 +101,10 @@ export function PromptInput({
                             if (e.key === "Enter" && !e.shiftKey) {
                                 e.preventDefault()
                                 onSubmit(e)
+                            }
+                            if (e.key === "Escape" && isWorking && onStop) {
+                                e.preventDefault()
+                                onStop()
                             }
                         }}
                         placeholder="Build something wonderful..."
@@ -209,23 +216,35 @@ export function PromptInput({
                         <TooltipProvider>
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <Button
-                                        type="submit"
-                                        size="sm"
-                                        disabled={isWorking || !isChatEnabled || !inputValue.trim() || isImproving}
-                                        aria-label={isWorking ? "Sending message..." : "Send message"}
-                                        className={cn(
-                                            "h-8 w-8 rounded-lg p-0 transition-all duration-200 flex items-center justify-center",
-                                            inputValue.trim() && !isImproving
-                                                ? "bg-emerald-500 text-black hover:bg-emerald-400 hover:scale-105 shadow-[0_0_15px_-3px_rgba(16,185,129,0.4)]"
-                                                : "bg-zinc-800 text-zinc-500 cursor-not-allowed",
-                                        )}
-                                    >
-                                        {isWorking ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4 stroke-[2.5px]" />}
-                                    </Button>
+                                    {isWorking ? (
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={onStop}
+                                            aria-label="Stop generating"
+                                            className="h-8 w-8 rounded-lg p-0 transition-all duration-200 flex items-center justify-center bg-red-500 text-white hover:bg-red-400 hover:scale-105 shadow-[0_0_15px_-3px_rgba(239,68,68,0.4)]"
+                                        >
+                                            <Square className="h-3.5 w-3.5 fill-current" />
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            type="submit"
+                                            size="sm"
+                                            disabled={!isChatEnabled || !inputValue.trim() || isImproving}
+                                            aria-label="Send message"
+                                            className={cn(
+                                                "h-8 w-8 rounded-lg p-0 transition-all duration-200 flex items-center justify-center",
+                                                inputValue.trim() && !isImproving
+                                                    ? "bg-emerald-500 text-black hover:bg-emerald-400 hover:scale-105 shadow-[0_0_15px_-3px_rgba(16,185,129,0.4)]"
+                                                    : "bg-zinc-800 text-zinc-500 cursor-not-allowed",
+                                            )}
+                                        >
+                                            <ArrowUp className="h-4 w-4 stroke-[2.5px]" />
+                                        </Button>
+                                    )}
                                 </TooltipTrigger>
                                 <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-300">
-                                    <p>Send message (⌘ + Enter)</p>
+                                    <p>{isWorking ? "Stop generating (Esc)" : "Send message (⌘ + Enter)"}</p>
                                 </TooltipContent>
                             </Tooltip>
                         </TooltipProvider>

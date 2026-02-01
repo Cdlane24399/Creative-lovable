@@ -155,13 +155,14 @@ const FileTreeNode = ({
   )
 }
 
-export function CodeEditor({ files = {}, readOnly = true, isLoading = false }: CodeEditorProps) {
+export const CodeEditor = React.memo(function CodeEditor({ files = {}, readOnly = true, isLoading = false }: CodeEditorProps) {
   const [activeFile, setActiveFile] = React.useState<FileNode | null>(null)
   const fileTree = React.useMemo(() => buildFileTree(files), [files])
+  const hasFiles = Object.keys(files).length > 0
 
   // Select first file by default if no active file
   React.useEffect(() => {
-    if (!activeFile && Object.keys(files).length > 0) {
+    if (!activeFile && hasFiles) {
       // Try to find a good default file (e.g., page.tsx, App.tsx, index.js)
       const defaultFiles = ['app/page.tsx', 'src/App.tsx', 'index.js', 'package.json']
       for (const path of defaultFiles) {
@@ -175,7 +176,7 @@ export function CodeEditor({ files = {}, readOnly = true, isLoading = false }: C
           return
         }
       }
-      
+
       // Fallback to first file found
       const firstPath = Object.keys(files)[0]
       setActiveFile({
@@ -185,7 +186,14 @@ export function CodeEditor({ files = {}, readOnly = true, isLoading = false }: C
         content: files[firstPath]
       })
     }
-  }, [files, activeFile])
+  }, [files, activeFile, hasFiles])
+
+  // Reset active file when files become empty (e.g., loading new project)
+  React.useEffect(() => {
+    if (!hasFiles) {
+      setActiveFile(null)
+    }
+  }, [hasFiles])
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-[#1e1e1e] rounded-xl border border-zinc-800">
@@ -211,7 +219,10 @@ export function CodeEditor({ files = {}, readOnly = true, isLoading = false }: C
                   <span className="text-xs text-zinc-500">Syncing files...</span>
                 </div>
               ) : (
-                <span className="text-xs text-zinc-500">No files available</span>
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-xs text-zinc-500">No files available</span>
+                  <span className="text-xs text-zinc-600">Files will appear here after the project is created</span>
+                </div>
               )}
             </div>
           )}
@@ -260,4 +271,11 @@ export function CodeEditor({ files = {}, readOnly = true, isLoading = false }: C
       </div>
     </div>
   )
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison - only re-render if these actually changed
+  return (
+    prevProps.files === nextProps.files &&
+    prevProps.readOnly === nextProps.readOnly &&
+    prevProps.isLoading === nextProps.isLoading
+  )
+})

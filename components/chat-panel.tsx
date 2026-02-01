@@ -8,6 +8,7 @@ import { MessageList } from "@/components/chat/message-list"
 import { PromptInput } from "@/components/chat/prompt-input"
 import type { MessagePart } from "@/components/chat/message" // Import shared type
 import type { Message } from "@/lib/db/types"
+import { parseToolOutputs } from "@/lib/parsers/tool-outputs"
 
 // Exported handle type for programmatic control
 export interface ChatPanelHandle {
@@ -27,11 +28,11 @@ interface ChatPanelProps {
 }
 
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel(
-  { projectId, onPreviewUpdate, onSandboxUrlUpdate, onFilesReady, initialPrompt, initialModel, savedMessages },
+  { projectId, onPreviewUpdate: _onPreviewUpdate, onSandboxUrlUpdate, onFilesReady, initialPrompt, initialModel, savedMessages },
   ref
 ) {
   const [inputValue, setInputValue] = useState("")
-  const [isChatEnabled, setIsChatEnabled] = useState(true)
+  const [isChatEnabled, _setIsChatEnabled] = useState(true)
   const [selectedModel, setSelectedModel] = useState<ModelProvider>(initialModel || "anthropic")
   const [lastError, setLastError] = useState<Error | null>(null)
   const [isImproving, setIsImproving] = useState(false)
@@ -39,7 +40,24 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const hasAutoSentRef = useRef(false)
 
-  const { messages, sendMessage, isWorking, isCallingTools, getThinkingTime } = useChatWithTools({
+  // Load saved model preference from localStorage
+  useEffect(() => {
+    if (projectId) {
+      const savedModel = localStorage.getItem(`project-model-${projectId}`)
+      if (savedModel && ['anthropic', 'opus', 'google', 'googlePro', 'openai'].includes(savedModel)) {
+        setSelectedModel(savedModel as ModelProvider)
+      }
+    }
+  }, [projectId])
+
+  // Save model preference when it changes
+  useEffect(() => {
+    if (projectId && selectedModel) {
+      localStorage.setItem(`project-model-${projectId}`, selectedModel)
+    }
+  }, [projectId, selectedModel])
+
+  const { messages, sendMessage, isWorking, isCallingTools, getThinkingTime, stop } = useChatWithTools({
     projectId,
     model: selectedModel,
     initialMessages: savedMessages,
@@ -74,65 +92,21 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   // Track which tool outputs we've already processed
   const processedToolOutputsRef = useRef<Set<string>>(new Set())
 
-  // Extract previewUrl from createWebsite tool results
+  // Extract tool outputs using dedicated parser
   useEffect(() => {
-    for (const message of messages) {
-      if (message.role !== "assistant") continue
+    const { latestPreviewUrl, filesReadyInfo } = parseToolOutputs(
+      messages,
+      processedToolOutputsRef.current
+    )
 
-      for (const part of message.parts as MessagePart[]) {
-        const partType = part.type
+    if (latestPreviewUrl) {
+      console.log("[ChatPanel] Got previewUrl from tool:", latestPreviewUrl)
+      onSandboxUrlUpdate?.(latestPreviewUrl)
+    }
 
-        // Only process tool parts
-        if (!partType.startsWith("tool-")) continue
-
-        const anyPart = part as any
-        const toolCallId = anyPart.toolCallId || `${message.id}-${partType}`
-        const state = anyPart.state
-
-        // Skip if already processed
-        if (processedToolOutputsRef.current.has(toolCallId)) continue
-
-        // AI SDK v6: Only process tools that have completed with output-available state
-        if (state !== "output-available") continue
-
-        // Get output
-        const outputData = anyPart.output
-        if (!outputData) continue
-
-        // Parse output if it's a string
-        let output: Record<string, unknown> = {}
-        if (typeof outputData === "string") {
-          try {
-            output = JSON.parse(outputData) as Record<string, unknown>
-          } catch {
-            continue
-          }
-        } else if (typeof outputData === "object" && outputData !== null) {
-          output = outputData as Record<string, unknown>
-        }
-
-        // Only process successful outputs
-        if (output.success !== true) continue
-
-        // Mark as processed
-        processedToolOutputsRef.current.add(toolCallId)
-
-        // Extract and emit previewUrl
-        const previewUrl = output.previewUrl ?? output.url
-        if (typeof previewUrl === "string" && previewUrl.length > 0) {
-          console.log("[ChatPanel] Got previewUrl from tool:", previewUrl)
-          onSandboxUrlUpdate?.(previewUrl)
-        }
-
-        // Notify about files ready
-        const projName = output.projectName as string | undefined
-        const sandboxId = output.sandboxId as string | undefined
-        const filesReady = output.filesReady === true
-        if (projName && filesReady) {
-          console.log("[ChatPanel] Files ready, project:", projName, "sandboxId:", sandboxId)
-          onFilesReady?.(projName, sandboxId)
-        }
-      }
+    if (filesReadyInfo) {
+      console.log("[ChatPanel] Files ready, project:", filesReadyInfo.projectName, "sandboxId:", filesReadyInfo.sandboxId)
+      onFilesReady?.(filesReadyInfo.projectName, filesReadyInfo.sandboxId)
     }
   }, [messages, onSandboxUrlUpdate, onFilesReady])
 
@@ -228,6 +202,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
           inputValue={inputValue}
           setInputValue={setInputValue}
           onSubmit={handleSubmit}
+          onStop={stop}
           isWorking={isWorking}
           isChatEnabled={isChatEnabled}
           selectedModel={selectedModel}

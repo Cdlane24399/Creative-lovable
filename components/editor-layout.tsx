@@ -31,7 +31,7 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
   const chatRef = useRef<ChatPanelHandle>(null)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const lastSavedUrlRef = useRef<string | null>(null)
-  const urlUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const debouncedUrlUpdateRef = useRef<NodeJS.Timeout | null>(null)
   const titleGeneratedRef = useRef(false)
 
   // Debug: Log sandboxUrl state changes
@@ -39,8 +39,25 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
     console.log("[EditorLayout] sandboxUrl state changed:", sandboxUrl)
   }, [sandboxUrl])
 
+  // Consolidated debounced URL update handler
+  const updateSandboxUrlDebounced = useCallback((url: string | null, options?: { stopPolling?: boolean }) => {
+    if (debouncedUrlUpdateRef.current) {
+      clearTimeout(debouncedUrlUpdateRef.current)
+    }
+
+    debouncedUrlUpdateRef.current = setTimeout(() => {
+      console.log("[EditorLayout] Applying debounced URL update:", url)
+      setSandboxUrl(url)
+      setIsPreviewLoading(false)
+      if (options?.stopPolling) {
+        setIsPollingEnabled(false)
+        setPendingServerStart(null)
+      }
+    }, 100)
+  }, [])
+
   // Load existing project data
-  const { project, messages: savedMessages, isLoading: isProjectLoading, updateProject, saveScreenshot, refetchProject } = useProject(projectId || null)
+  const { project, messages: savedMessages, isLoading: _isProjectLoading, updateProject, saveScreenshot, refetchProject } = useProject(projectId || null)
 
   // Dev server management - only enable polling when actively starting a server
   const [isPollingEnabled, setIsPollingEnabled] = useState(false)
@@ -56,27 +73,11 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
     enabled: isPollingEnabled,
     onReady: (url) => {
       console.log("[EditorLayout] onReady callback triggered with url:", url)
-      console.log("[EditorLayout] Current sandboxUrl state:", sandboxUrl)
-      
-      // Debounce URL updates to prevent race conditions
-      if (urlUpdateTimeoutRef.current) {
-        clearTimeout(urlUpdateTimeoutRef.current)
-      }
-      
-      urlUpdateTimeoutRef.current = setTimeout(() => {
-        setSandboxUrl(url)
-        console.log("[EditorLayout] setSandboxUrl called with:", url)
-        setIsPreviewLoading(false)
-        setPendingServerStart(null)
-        // Stop polling once server is ready
-        setIsPollingEnabled(false)
-        console.log("[EditorLayout] onReady completed")
-      }, 100) // Small delay to batch state updates
+      updateSandboxUrlDebounced(url, { stopPolling: true })
     },
     onError: (errors) => {
       console.error("[EditorLayout] Dev server errors:", errors)
       setIsPreviewLoading(false)
-      // Stop polling on error
       setIsPollingEnabled(false)
     },
   })
@@ -90,20 +91,8 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
     if (devServerStatus.url === sandboxUrl) return
 
     console.log("[EditorLayout] Syncing sandbox URL from status:", devServerStatus.url)
-    
-    // Debounce to avoid rapid state changes
-    if (urlUpdateTimeoutRef.current) {
-      clearTimeout(urlUpdateTimeoutRef.current)
-    }
-    
-    urlUpdateTimeoutRef.current = setTimeout(() => {
-      setSandboxUrl(devServerStatus.url)
-      setIsPreviewLoading(false)
-      setPendingServerStart(null)
-      // Stop polling since we have a URL
-      setIsPollingEnabled(false)
-    }, 100)
-  }, [devServerStatus.url, sandboxUrl])
+    updateSandboxUrlDebounced(devServerStatus.url, { stopPolling: true })
+  }, [devServerStatus.url, sandboxUrl, updateSandboxUrlDebounced])
 
   // Start dev server when pending project name is set (only once per project)
   useEffect(() => {
@@ -138,24 +127,22 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
         console.log("[EditorLayout] Validating saved sandbox URL:", project.sandbox_url)
         validatingSandboxRef.current = true
 
-        // Check if sandbox is still valid by checking restore status
-        // If we can restore (files exist), sandbox may have expired
-        fetch(`/api/projects/${project.id}/restore`)
-          .then((res) => res.json())
-          .then((data) => {
+        // Check restore status and prepare response in parallel
+        Promise.all([
+          fetch(`/api/projects/${project.id}/restore`).then(res => res.json()),
+          Promise.resolve(project.sandbox_url)
+        ])
+          .then(([data, savedUrl]) => {
             if (data.canRestore && data.fileCount > 0) {
-              // Project has saved files - trigger restoration to ensure sandbox has them
               console.log("[EditorLayout] Project has saved files, triggering restoration...")
               // Don't set sandbox URL yet - let restoration handle it
             } else {
-              // No files to restore, use saved URL directly
               console.log("[EditorLayout] No files to restore, using saved sandbox URL")
-              setSandboxUrl(project.sandbox_url)
+              setSandboxUrl(savedUrl)
             }
             validatingSandboxRef.current = false
           })
           .catch(() => {
-            // On error, try to use saved URL
             console.log("[EditorLayout] Validation failed, using saved sandbox URL")
             setSandboxUrl(project.sandbox_url)
             validatingSandboxRef.current = false
@@ -185,15 +172,21 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
       if (response.ok) {
         const data = await response.json()
         console.log("[EditorLayout] Sandbox restored:", data)
-        
+
         if (data.sandboxId) {
           setPendingSandboxId(data.sandboxId)
         }
-        
+
+        // Reset dev server started ref to allow starting for this restore
+        devServerStartedRef.current = null
+
         // Trigger dev server start - use project name or projectId as fallback
         const serverName = project?.name || projectId
         console.log("[EditorLayout] Starting dev server for restored sandbox:", serverName)
         setPendingServerStart(serverName)
+
+        // Enable polling to detect when server is ready
+        setIsPollingEnabled(true)
       } else if (response.status === 422) {
         // No files to restore - this is a project without saved files
         console.log("[EditorLayout] No files to restore for this project")
@@ -227,7 +220,6 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
     if (titleGeneratedRef.current) return
     if (projectName !== "Untitled Project" && projectName !== projectId) return
 
-    titleGeneratedRef.current = true
     console.log("[EditorLayout] Generating project title...")
 
     try {
@@ -242,10 +234,15 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
         if (title) {
           console.log("[EditorLayout] Generated title:", title)
           setProjectName(title)
+          // Only mark as generated AFTER successful API call
+          titleGeneratedRef.current = true
         }
+      } else {
+        console.warn("[EditorLayout] Title generation failed, will retry on next trigger")
       }
     } catch (error) {
       console.error("Failed to generate title:", error)
+      // Don't set flag - allow retry
     }
   }, [initialPrompt, projectId, projectName])
 
@@ -287,8 +284,8 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current)
       }
-      if (urlUpdateTimeoutRef.current) {
-        clearTimeout(urlUpdateTimeoutRef.current)
+      if (debouncedUrlUpdateRef.current) {
+        clearTimeout(debouncedUrlUpdateRef.current)
       }
     }
   }, [])
@@ -313,13 +310,14 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
         })
 
         if (createResponse.ok) {
-          const { project: newProject } = await createResponse.json()
+          const { project: _newProject } = await createResponse.json()
           // Update the project ID reference if it was auto-generated
           lastSavedUrlRef.current = sandboxUrl
           setHasUnsavedChanges(false)
 
-          // Capture and save a screenshot
-          captureAndSaveScreenshot(newProject.name, sandboxUrl)
+          // Capture and save a screenshot (don't await to avoid blocking save)
+          // The auto-capture effect will handle this with proper timing
+          console.log("[EditorLayout] Project created, screenshot will be captured automatically")
         }
       } else if (response.ok) {
         // Update existing project
@@ -329,8 +327,8 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
         lastSavedUrlRef.current = sandboxUrl
         setHasUnsavedChanges(false)
 
-        // Capture and save a screenshot
-        captureAndSaveScreenshot(projectName, sandboxUrl)
+        // Screenshot will be captured by the auto-capture effect
+        console.log("[EditorLayout] Project updated, screenshot will be captured automatically")
       }
     } catch (error) {
       console.error("Failed to save project:", error)
@@ -338,16 +336,20 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
   }, [projectId, sandboxUrl, projectName, initialPrompt, updateProject])
 
   // Capture screenshot from sandbox URL using the screenshot API
-  // Uses E2B Desktop SDK for native screenshot capability when projectId is available
-  const captureAndSaveScreenshot = useCallback(async (name: string, url: string) => {
+  // Uses E2B for native screenshot capability when projectId is available
+  const captureAndSaveScreenshot = useCallback(async (name: string, url: string, retryCount = 0) => {
+    const maxRetries = 2
+
     try {
+      console.log(`[EditorLayout] Capturing screenshot for ${name} (attempt ${retryCount + 1}/${maxRetries + 1})`)
+
       const response = await fetch("/api/screenshot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          url, 
+        body: JSON.stringify({
+          url,
           projectName: name,
-          projectId: projectId || undefined, // Pass projectId to enable E2B Desktop screenshots
+          projectId: projectId || undefined, // Pass projectId to enable E2B screenshots
         }),
       })
 
@@ -356,13 +358,32 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
         if (screenshot_base64) {
           await saveScreenshot(screenshot_base64, url)
           console.log(`[EditorLayout] Screenshot saved for ${name} (source: ${source || 'unknown'})`)
+          return true
+        } else {
+          console.warn(`[EditorLayout] No screenshot data returned`)
+          return false
         }
+      } else {
+        const errorText = await response.text()
+        console.warn(`[EditorLayout] Screenshot API error: ${response.status} - ${errorText}`)
+        return false
       }
     } catch (error) {
-      // Fall back to placeholder on error
-      console.warn("Screenshot capture failed, using placeholder:", error)
+      console.warn(`[EditorLayout] Screenshot capture error (attempt ${retryCount + 1}):`, error)
+
+      // Retry with exponential backoff if we haven't exceeded max retries
+      if (retryCount < maxRetries) {
+        const delayMs = Math.min(1000 * Math.pow(2, retryCount), 5000)
+        console.log(`[EditorLayout] Retrying in ${delayMs}ms...`)
+        await new Promise(resolve => setTimeout(resolve, delayMs))
+        return captureAndSaveScreenshot(name, url, retryCount + 1)
+      }
+
+      // Fall back to placeholder after all retries exhausted
+      console.warn("[EditorLayout] All retries exhausted, using placeholder")
       const placeholder = generatePlaceholderImage(name)
       await saveScreenshot(placeholder, url)
+      return false
     }
   }, [saveScreenshot, projectId])
 
@@ -411,6 +432,29 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
     }
   }, [hasUnsavedChanges, sandboxUrl, projectId, saveProject])
 
+  // Auto-capture screenshot when sandbox URL becomes available
+  // This ensures screenshots are captured automatically after project creation
+  useEffect(() => {
+    if (!sandboxUrl || !projectName || !projectId) return
+
+    // Check if we already have a screenshot for this URL
+    if (project?.screenshot_url && lastSavedUrlRef.current === sandboxUrl) {
+      console.log("[EditorLayout] Screenshot already exists for this URL")
+      return
+    }
+
+    // Wait for the preview to fully load before capturing
+    const captureDelay = 5000 // 5 seconds to allow page to fully render
+
+    console.log(`[EditorLayout] Scheduling automatic screenshot capture in ${captureDelay}ms`)
+    const timeoutId = setTimeout(async () => {
+      console.log("[EditorLayout] Executing automatic screenshot capture")
+      await captureAndSaveScreenshot(projectName, sandboxUrl)
+    }, captureDelay)
+
+    return () => clearTimeout(timeoutId)
+  }, [sandboxUrl, projectName, projectId, project?.screenshot_url, captureAndSaveScreenshot])
+
   const handleRefresh = useCallback(() => {
     if (previewRef.current) {
       previewRef.current.refresh()
@@ -435,45 +479,54 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
       // Mark files as loading until we refetch
       setIsFilesLoading(true)
 
-      // Refetch project to get updated files_snapshot for Code Tab
-      // Small delay to ensure files are saved to DB
-      setTimeout(async () => {
-        console.log("[EditorLayout] Refetching project to get files_snapshot...")
-        await refetchProject()
+      // Refetch project to get updated files_snapshot for Code Tab with async retry loop
+      // Use more attempts and longer delays to handle slow syncs
+      const refetchWithRetry = async (maxAttempts = 6) => {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          console.log(`[EditorLayout] Refetching project to get files_snapshot (attempt ${attempt + 1}/${maxAttempts})...`)
+          await refetchProject()
+
+          const response = await fetch(`/api/projects/${projectId}`)
+          if (response.ok) {
+            const data = await response.json()
+            const filesSnapshot = data.project?.files_snapshot || {}
+
+            if (Object.keys(filesSnapshot).length > 0) {
+              setIsFilesLoading(false)
+              console.log("[EditorLayout] Files loaded, count:", Object.keys(filesSnapshot).length)
+              return
+            }
+            console.log("[EditorLayout] files_snapshot still empty, retrying...")
+          }
+
+          if (attempt < maxAttempts - 1) {
+            // Exponential backoff: 2s, 3s, 4s, 5s, 6s
+            const delay = 2000 + (attempt * 1000)
+            await new Promise(resolve => setTimeout(resolve, delay))
+          }
+        }
+        console.warn("[EditorLayout] files_snapshot still empty after all retries")
         setIsFilesLoading(false)
-      }, 2000)
+      }
+
+      // Wait 3 seconds for initial sync to complete before starting retries
+      setTimeout(() => refetchWithRetry(), 3000)
     }
-  }, [refetchProject])
+  }, [refetchProject, projectId])
 
   // Handle sandbox URL update (from createWebsite tool result)
   const handleSandboxUrlUpdate = useCallback((url: string | null) => {
     console.log("[EditorLayout] Sandbox URL update requested:", url)
-    
-    // Debounce to prevent race conditions with dev server status updates
-    if (urlUpdateTimeoutRef.current) {
-      clearTimeout(urlUpdateTimeoutRef.current)
-    }
-    
-    urlUpdateTimeoutRef.current = setTimeout(() => {
-      console.log("[EditorLayout] Applying sandbox URL:", url)
-      setSandboxUrl(url)
-      setIsPreviewLoading(false)
-      
-      // Stop polling since we have a URL directly from the tool
-      if (url) {
-        setIsPollingEnabled(false)
-        setPendingServerStart(null)
-      }
+    updateSandboxUrlDebounced(url, { stopPolling: !!url })
 
-      // Update project name from prompt if still untitled
-      if (url && projectName.includes("Untitled")) {
-        const extractedName = extractProjectName(initialPrompt)
-        if (extractedName !== "Untitled Project") {
-          setProjectName(extractedName)
-        }
+    // Update project name from prompt if still untitled
+    if (url && projectName.includes("Untitled")) {
+      const extractedName = extractProjectName(initialPrompt)
+      if (extractedName !== "Untitled Project") {
+        setProjectName(extractedName)
       }
-    }, 150) // Slightly longer delay for direct URL updates
-  }, [initialPrompt, projectName])
+    }
+  }, [initialPrompt, projectName, updateSandboxUrlDebounced])
 
   return (
     <div className="flex h-screen w-full flex-col bg-[#111111]">
@@ -515,6 +568,7 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
             project={project}
             currentView={currentView}
             onCaptureScreenshot={handleManualScreenshot}
+            isFilesLoading={isFilesLoading}
           />
         </div>
       </div>

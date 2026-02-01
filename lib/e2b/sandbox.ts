@@ -1,5 +1,5 @@
 import { Sandbox } from "e2b"
-import { getSandboxStateMachine, type SandboxState as MachineState } from "./sandbox-state-machine"
+import { getSandboxStateMachine } from "./sandbox-state-machine"
 
 // Type alias for CodeInterpreter sandbox
 type CodeInterpreterSandbox = import("@e2b/code-interpreter").Sandbox
@@ -36,9 +36,6 @@ const SANDBOX_TTL_MS = 30 * 60 * 1000
 
 // Cleanup interval (check every 5 minutes)
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000
-
-// Sync files before expiration (5 minutes warning)
-const SYNC_BEFORE_EXPIRY_MS = 5 * 60 * 1000
 
 // Track last activity for each sandbox
 const sandboxLastActivity = new Map<string, number>()
@@ -1545,111 +1542,145 @@ export async function captureSandboxScreenshot(
     return null
   }
 
+  let sandbox: any
   try {
     // Get the regular sandbox (not Desktop) - this is where the dev server runs
-    const sandbox = await getSandbox(projectId) || await createSandbox(projectId)
-    
+    sandbox = await getSandbox(projectId) || await createSandbox(projectId)
+
     console.log(`[Screenshot] Capturing ${sandboxUrl} in sandbox ${sandbox.sandboxId}`)
 
     const screenshotPath = "/tmp/screenshot.png"
 
-    // First, ensure playwright is installed in /tmp
-    // The template has @playwright/test globally but we need the playwright package
-    const installCheck = await executeCommand(sandbox, "test -d /tmp/node_modules/playwright && echo 'installed' || echo 'not installed'", { timeoutMs: 5000 })
+    // First, check if playwright is already installed globally in the template
+    const globalCheck = await executeCommand(sandbox, "which playwright || echo 'not found'", { timeoutMs: 5000 })
 
-    if (!installCheck.stdout?.includes('installed')) {
-      console.log("[Screenshot] Installing playwright in /tmp...")
-      const installResult = await executeCommand(sandbox, "cd /tmp && bun init -y && bun add playwright 2>&1", { timeoutMs: 120000 })
-      if (installResult.exitCode !== 0) {
-        console.warn("[Screenshot] Failed to install playwright:", installResult.stderr)
-        throw new Error("Failed to install playwright")
+    // If not found globally, install locally in /tmp
+    if (globalCheck.stdout?.includes('not found')) {
+      console.log("[Screenshot] Playwright not found globally, installing in /tmp...")
+
+      // Check if already installed in /tmp
+      const localCheck = await executeCommand(sandbox, "test -d /tmp/node_modules/playwright && echo 'installed' || echo 'not installed'", { timeoutMs: 5000 })
+
+      if (!localCheck.stdout?.includes('installed')) {
+        // Create package.json if it doesn't exist
+        await executeCommand(sandbox, "cd /tmp && [ ! -f package.json ] && echo '{}' > package.json || true", { timeoutMs: 5000 })
+
+        // Install playwright - try with npm as it's more reliable in E2B
+        const installResult = await executeCommand(sandbox, "cd /tmp && npm install playwright 2>&1 || bun add playwright 2>&1", { timeoutMs: 120000 })
+        if (installResult.exitCode !== 0) {
+          console.warn("[Screenshot] Failed to install playwright:", installResult.stderr)
+          throw new Error("Failed to install playwright")
+        }
+        console.log("[Screenshot] Playwright installed successfully")
       }
-      console.log("[Screenshot] Playwright installed successfully")
     }
 
-    // Create a Playwright screenshot script
+    // Create a Playwright screenshot script that's more robust
     const screenshotScript = `
 const { chromium } = require('playwright');
 
 (async () => {
+  let browser;
   try {
-    const browser = await chromium.launch({
+    console.log('Launching browser...');
+    browser = await chromium.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu'
+      ]
     });
+
+    console.log('Creating page...');
     const page = await browser.newPage({
       viewport: { width: ${width}, height: ${height} }
     });
+
+    console.log('Navigating to ${sandboxUrl}...');
     await page.goto('${sandboxUrl}', {
       waitUntil: 'networkidle',
       timeout: 30000
     });
+
+    console.log('Waiting for page to settle...');
     await page.waitForTimeout(${waitForLoad});
-    await page.screenshot({ path: '${screenshotPath}', fullPage: false });
+
+    console.log('Taking screenshot...');
+    await page.screenshot({
+      path: '${screenshotPath}',
+      fullPage: false,
+      type: 'png'
+    });
+
     await browser.close();
     console.log('Screenshot captured successfully');
+    process.exit(0);
   } catch (err) {
     console.error('Screenshot failed:', err.message);
+    if (browser) {
+      await browser.close().catch(() => {});
+    }
     process.exit(1);
   }
 })();
 `
     await writeFile(sandbox, "/tmp/screenshot.js", screenshotScript)
 
-    // Run the screenshot script using bun (template uses Bun, not Node.js)
-    const result = await executeCommand(sandbox, "cd /tmp && bun screenshot.js", { timeoutMs: 60000 })
-    
+    // Run the screenshot script - try with node first, then bun
+    console.log("[Screenshot] Running screenshot script...")
+    let result = await executeCommand(sandbox, "cd /tmp && node screenshot.js 2>&1", { timeoutMs: 60000 })
+
     if (result.exitCode !== 0) {
-      console.warn("[Screenshot] Playwright failed:", result.stderr)
-      throw new Error("Playwright screenshot failed, trying fallback")
+      console.log("[Screenshot] Node failed, trying with bun...")
+      result = await executeCommand(sandbox, "cd /tmp && bun screenshot.js 2>&1", { timeoutMs: 60000 })
+
+      if (result.exitCode !== 0) {
+        console.warn("[Screenshot] Playwright failed:", result.stderr || result.stdout)
+        throw new Error("Playwright screenshot failed, trying fallback")
+      }
     }
 
-    // Read the screenshot file
-    try {
-      const screenshotData = await sandbox.files.read(screenshotPath)
-      if (!screenshotData || screenshotData.length === 0) {
-        throw new Error("Screenshot file is empty")
-      }
-      
-      // Convert to base64
-      const base64 = Buffer.from(screenshotData).toString('base64')
-      console.log(`[Screenshot] Captured successfully, size: ${screenshotData.length} bytes`)
-      
-      return `data:image/png;base64,${base64}`
-    } catch (readError) {
-      console.error("[Screenshot] Failed to read screenshot file:", readError)
-      throw readError
+    // Read and validate the screenshot file
+    console.log("[Screenshot] Reading screenshot file...")
+    const screenshotData = await sandbox.files.read(screenshotPath)
+
+    if (!screenshotData || screenshotData.length === 0) {
+      throw new Error("Screenshot file is empty")
     }
+
+    if (screenshotData.length < 100) {
+      throw new Error("Screenshot file too small, likely corrupted")
+    }
+
+    // Convert to base64
+    const base64 = Buffer.from(screenshotData).toString('base64')
+    console.log(`[Screenshot] Captured successfully, size: ${screenshotData.length} bytes`)
+
+    return `data:image/png;base64,${base64}`
 
   } catch (error) {
-    console.warn("[Screenshot] Playwright failed, trying ImageMagick fallback:", error)
-    
-    // Fallback to ImageMagick
-    try {
-      const sandbox = await getSandbox(projectId)
-      if (!sandbox) return null
-      
-      const screenshotPath = "/tmp/screenshot-fallback.png"
-      
-      // Try to get the page title and create a simple image using ImageMagick
-      const fallbackResult = await executeCommand(sandbox, `
-        TITLE=$(curl -s '${sandboxUrl}' 2>/dev/null | grep -o '<title>[^<]*</title>' | sed 's/<title>//;s/<\\/title>//' | head -1 || echo "Preview")
-        convert -size ${width}x${height} xc:'#18181B' -pointsize 30 -fill '#FAFAFA' -gravity center -annotate +0+0 "$TITLE" ${screenshotPath} 2>&1
-      `, { timeoutMs: 15000 })
+    console.warn("[Screenshot] Primary method failed:", error instanceof Error ? error.message : error)
 
-      if (fallbackResult.exitCode !== 0) {
-        console.warn("[Screenshot] ImageMagick failed:", fallbackResult.stderr)
-        throw new Error("ImageMagick fallback failed")
+    // Fallback: Try simple curl check to verify URL is accessible
+    if (sandbox) {
+      try {
+        console.log("[Screenshot] Verifying URL is accessible...")
+        const curlCheck = await executeCommand(sandbox, `curl -s -o /dev/null -w "%{http_code}" "${sandboxUrl}" 2>&1 || echo "failed"`, { timeoutMs: 10000 })
+        console.log(`[Screenshot] URL check result: ${curlCheck.stdout}`)
+
+        if (!curlCheck.stdout?.includes('200')) {
+          console.warn("[Screenshot] URL not accessible, got status:", curlCheck.stdout)
+        }
+      } catch (checkError) {
+        console.warn("[Screenshot] URL check failed:", checkError)
       }
-      
-      const screenshotData = await sandbox.files.read(screenshotPath)
-      const base64 = Buffer.from(screenshotData).toString('base64')
-      console.log(`[Screenshot] Fallback captured, size: ${screenshotData.length} bytes`)
-      return `data:image/png;base64,${base64}`
-      
-    } catch (fallbackError) {
-      console.error("[Screenshot] Fallback also failed:", fallbackError)
-      return null
     }
+
+    // Return null to let the API route generate a placeholder
+    console.log("[Screenshot] Returning null to trigger placeholder generation")
+    return null
   }
 }
