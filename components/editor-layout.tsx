@@ -116,8 +116,9 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
   useEffect(() => {
     if (project) {
       setProjectName(project.name)
-      // Mark title as already generated if project has a non-default name
-      if (project.name && project.name !== "Untitled Project") {
+      // Only skip title generation for existing projects that already have a name
+      // New projects (with initialPrompt) should still get a generated title
+      if (project.name && project.name !== "Untitled Project" && !initialPrompt) {
         titleGeneratedRef.current = true
       }
       if (project.sandbox_url && !validatingSandboxRef.current) {
@@ -476,6 +477,11 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
       // Trigger dev server start with the project name
       setPendingServerStart(newProjectName)
 
+      // Trigger title generation for new projects after setting the project name
+      if (initialPrompt && !titleGeneratedRef.current) {
+        generateProjectTitle()
+      }
+
       // Mark files as loading until we refetch
       setIsFilesLoading(true)
 
@@ -512,7 +518,7 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
       // Wait 3 seconds for initial sync to complete before starting retries
       setTimeout(() => refetchWithRetry(), 3000)
     }
-  }, [refetchProject, projectId])
+  }, [refetchProject, projectId, initialPrompt, generateProjectTitle])
 
   // Handle sandbox URL update (from createWebsite tool result)
   const handleSandboxUrlUpdate = useCallback((url: string | null) => {

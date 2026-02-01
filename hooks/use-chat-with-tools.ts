@@ -57,14 +57,13 @@ function convertDbMessagesToAiMessages(dbMessages: Message[]): ChatMessage[] {
  * - Project context tracking via projectId
  * - Convenient status helpers for UI state management
  * - Initial message restoration from database
- * - Auto-save of messages after AI responses
+ * - Message persistence handled by API route's onFinish callback
  */
 export function useChatWithTools({ projectId, model = "anthropic", onError, initialMessages, onMessagesSaved }: UseChatWithToolsOptions = {}) {
-  // Track last saved message count to avoid duplicate saves
-  // Initialize to the count of initial messages to prevent re-saving them
+  // Track last saved message count for reference
+  // Initialize to the count of initial messages
+  // Note: Auto-save is handled by API route's onFinish callback to avoid race conditions
   const lastSavedCountRef = useRef(initialMessages?.length || 0)
-  // Track if we're currently saving
-  const isSavingRef = useRef(false)
 
   // Track thinking time for each message
   const [thinkingTimes, setThinkingTimes] = useState<Map<string, number>>(new Map())
@@ -76,13 +75,8 @@ export function useChatWithTools({ projectId, model = "anthropic", onError, init
     return convertDbMessagesToAiMessages(initialMessages)
   }, [initialMessages])
 
-  // Update lastSavedCount when initialMessages changes (project switch)
-  useEffect(() => {
-    lastSavedCountRef.current = initialMessages?.length || 0
-  }, [initialMessages])
-
-  // Track the last restored message set ID to prevent re-restoration
-  const lastRestoredSetIdRef = useRef<string | null>(null)
+  // Track the last projectId we restored for
+  const lastRestoredProjectIdRef = useRef<string | null>(null)
 
   // Recreate transport when model or projectId changes to ensure correct model is used
   const transport = useMemo(
@@ -103,44 +97,25 @@ export function useChatWithTools({ projectId, model = "anthropic", onError, init
     },
   })
 
-  // Restore messages when they become available after initial mount
-  // This handles the case where messages are loaded asynchronously from the database
+  // Restore messages when project changes
   useEffect(() => {
-    // Create a unique ID for this message set (projectId + first message ID)
-    const messageSetId = convertedInitialMessages && convertedInitialMessages.length > 0 && projectId
-      ? `${projectId}-${convertedInitialMessages[0].id}`
-      : null
+    if (!projectId) return
 
-    // Only restore if:
-    // 1. We have a valid message set ID
-    // 2. We haven't already restored this exact message set
-    // 3. Current chat messages don't match the initial messages (to handle async loading)
-    if (
-      messageSetId &&
-      lastRestoredSetIdRef.current !== messageSetId &&
-      convertedInitialMessages &&
-      convertedInitialMessages.length > 0 &&
-      chat.messages.length !== convertedInitialMessages.length
-    ) {
+    // Skip if we already restored for this project
+    if (lastRestoredProjectIdRef.current === projectId) return
+
+    if (convertedInitialMessages && convertedInitialMessages.length > 0) {
       console.log("[useChatWithTools] Restoring", convertedInitialMessages.length, "messages for project", projectId)
       chat.setMessages(convertedInitialMessages)
-      lastRestoredSetIdRef.current = messageSetId
+      lastRestoredProjectIdRef.current = projectId
+      lastSavedCountRef.current = convertedInitialMessages.length
+    } else {
+      // Clear messages when switching to a new project with no history
+      chat.setMessages([])
+      lastRestoredProjectIdRef.current = projectId
+      lastSavedCountRef.current = 0
     }
-  }, [convertedInitialMessages, projectId, chat.messages.length, chat.setMessages])
-
-  // Reset restoration tracking when project changes
-  useEffect(() => {
-    if (projectId) {
-      // Reset the restoration ref when switching projects to allow new restoration
-      const currentSetId = convertedInitialMessages && convertedInitialMessages.length > 0
-        ? `${projectId}-${convertedInitialMessages[0].id}`
-        : null
-
-      if (currentSetId && lastRestoredSetIdRef.current !== currentSetId) {
-        lastRestoredSetIdRef.current = null
-      }
-    }
-  }, [projectId, convertedInitialMessages])
+  }, [projectId, convertedInitialMessages, chat.setMessages])
 
   // Helper to get progress for a specific tool call (placeholder for future data streaming)
   const getToolProgress = useCallback((_toolCallId: string): ToolProgress | undefined => {

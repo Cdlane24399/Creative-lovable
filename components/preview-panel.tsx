@@ -352,6 +352,7 @@ const PreviewPanelInner = React.memo(function PreviewPanelInner(
     prevProps.isLoading === nextProps.isLoading &&
     prevProps.currentView === nextProps.currentView &&
     prevProps.project?.id === nextProps.project?.id &&
+    Object.keys(prevProps.project?.files_snapshot || {}).length === Object.keys(nextProps.project?.files_snapshot || {}).length &&
     prevProps.isFilesLoading === nextProps.isFilesLoading
   )
 })
