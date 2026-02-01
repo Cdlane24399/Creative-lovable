@@ -1514,3 +1514,142 @@ export function listAllSandboxes(): Array<{
 
   return result
 }
+
+// ============================================================
+// SCREENSHOT CAPTURE VIA HEADLESS BROWSER
+// ============================================================
+
+/**
+ * Capture a screenshot of a running web server using Playwright.
+ * Playwright and Chromium are pre-installed in the E2B template.
+ * 
+ * Falls back to ImageMagick or Python PIL if Playwright fails.
+ *
+ * @param projectId - Project ID
+ * @param options - Screenshot options
+ * @returns Base64 encoded screenshot or null if failed
+ */
+export async function captureSandboxScreenshot(
+  projectId: string,
+  options: {
+    sandboxUrl?: string
+    width?: number
+    height?: number
+    waitForLoad?: number
+  } = {}
+): Promise<string | null> {
+  const { sandboxUrl, width = 1280, height = 800, waitForLoad = 2000 } = options
+
+  if (!sandboxUrl) {
+    console.warn("[Screenshot] No sandbox URL provided")
+    return null
+  }
+
+  try {
+    // Get the regular sandbox (not Desktop) - this is where the dev server runs
+    const sandbox = await getSandbox(projectId) || await createSandbox(projectId)
+    
+    console.log(`[Screenshot] Capturing ${sandboxUrl} in sandbox ${sandbox.sandboxId}`)
+
+    const screenshotPath = "/tmp/screenshot.png"
+
+    // First, ensure playwright is installed in /tmp
+    // The template has @playwright/test globally but we need the playwright package
+    const installCheck = await executeCommand(sandbox, "test -d /tmp/node_modules/playwright && echo 'installed' || echo 'not installed'", { timeoutMs: 5000 })
+
+    if (!installCheck.stdout?.includes('installed')) {
+      console.log("[Screenshot] Installing playwright in /tmp...")
+      const installResult = await executeCommand(sandbox, "cd /tmp && bun init -y && bun add playwright 2>&1", { timeoutMs: 120000 })
+      if (installResult.exitCode !== 0) {
+        console.warn("[Screenshot] Failed to install playwright:", installResult.stderr)
+        throw new Error("Failed to install playwright")
+      }
+      console.log("[Screenshot] Playwright installed successfully")
+    }
+
+    // Create a Playwright screenshot script
+    const screenshotScript = `
+const { chromium } = require('playwright');
+
+(async () => {
+  try {
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    const page = await browser.newPage({
+      viewport: { width: ${width}, height: ${height} }
+    });
+    await page.goto('${sandboxUrl}', {
+      waitUntil: 'networkidle',
+      timeout: 30000
+    });
+    await page.waitForTimeout(${waitForLoad});
+    await page.screenshot({ path: '${screenshotPath}', fullPage: false });
+    await browser.close();
+    console.log('Screenshot captured successfully');
+  } catch (err) {
+    console.error('Screenshot failed:', err.message);
+    process.exit(1);
+  }
+})();
+`
+    await writeFile(sandbox, "/tmp/screenshot.js", screenshotScript)
+
+    // Run the screenshot script using bun (template uses Bun, not Node.js)
+    const result = await executeCommand(sandbox, "cd /tmp && bun screenshot.js", { timeoutMs: 60000 })
+    
+    if (result.exitCode !== 0) {
+      console.warn("[Screenshot] Playwright failed:", result.stderr)
+      throw new Error("Playwright screenshot failed, trying fallback")
+    }
+
+    // Read the screenshot file
+    try {
+      const screenshotData = await sandbox.files.read(screenshotPath)
+      if (!screenshotData || screenshotData.length === 0) {
+        throw new Error("Screenshot file is empty")
+      }
+      
+      // Convert to base64
+      const base64 = Buffer.from(screenshotData).toString('base64')
+      console.log(`[Screenshot] Captured successfully, size: ${screenshotData.length} bytes`)
+      
+      return `data:image/png;base64,${base64}`
+    } catch (readError) {
+      console.error("[Screenshot] Failed to read screenshot file:", readError)
+      throw readError
+    }
+
+  } catch (error) {
+    console.warn("[Screenshot] Playwright failed, trying ImageMagick fallback:", error)
+    
+    // Fallback to ImageMagick
+    try {
+      const sandbox = await getSandbox(projectId)
+      if (!sandbox) return null
+      
+      const screenshotPath = "/tmp/screenshot-fallback.png"
+      
+      // Try to get the page title and create a simple image using ImageMagick
+      const fallbackResult = await executeCommand(sandbox, `
+        TITLE=$(curl -s '${sandboxUrl}' 2>/dev/null | grep -o '<title>[^<]*</title>' | sed 's/<title>//;s/<\\/title>//' | head -1 || echo "Preview")
+        convert -size ${width}x${height} xc:'#18181B' -pointsize 30 -fill '#FAFAFA' -gravity center -annotate +0+0 "$TITLE" ${screenshotPath} 2>&1
+      `, { timeoutMs: 15000 })
+
+      if (fallbackResult.exitCode !== 0) {
+        console.warn("[Screenshot] ImageMagick failed:", fallbackResult.stderr)
+        throw new Error("ImageMagick fallback failed")
+      }
+      
+      const screenshotData = await sandbox.files.read(screenshotPath)
+      const base64 = Buffer.from(screenshotData).toString('base64')
+      console.log(`[Screenshot] Fallback captured, size: ${screenshotData.length} bytes`)
+      return `data:image/png;base64,${base64}`
+      
+    } catch (fallbackError) {
+      console.error("[Screenshot] Fallback also failed:", fallbackError)
+      return null
+    }
+  }
+}

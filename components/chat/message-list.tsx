@@ -7,6 +7,33 @@ import { ChatEmptyState } from "./chat-error"
 import { ChatError } from "./chat-error"
 import { SuggestionChips, defaultSuggestions } from "./suggestion-chips"
 
+/**
+ * Extracts AI-generated suggestions from the last assistant message.
+ * Looks for generateSuggestions tool result in message parts.
+ */
+function extractSuggestionsFromMessage(message: UIMessage): string[] | null {
+    if (message.role !== "assistant" || !message.parts) {
+        return null
+    }
+
+    for (const part of message.parts) {
+        // Tool parts have type like "tool-generateSuggestions" and state/output fields
+        const toolPart = part as { type: string; state?: string; output?: unknown }
+
+        if (
+            toolPart.type === "tool-generateSuggestions" &&
+            toolPart.state === "output-available"
+        ) {
+            const output = toolPart.output as { suggestions?: string[] } | undefined
+            if (output?.suggestions && Array.isArray(output.suggestions)) {
+                return output.suggestions
+            }
+        }
+    }
+
+    return null
+}
+
 interface MessageListProps {
     messages: UIMessage[]
     isWorking: boolean
@@ -62,7 +89,7 @@ export function MessageList({
             {/* Suggestion Chips - shown after last assistant message when not working */}
             {showSuggestionChips && (
                 <SuggestionChips
-                    suggestions={defaultSuggestions}
+                    suggestions={extractSuggestionsFromMessage(lastMessage) ?? defaultSuggestions}
                     onSelect={onSelectSuggestion}
                 />
             )}

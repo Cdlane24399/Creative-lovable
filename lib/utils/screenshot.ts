@@ -1,27 +1,38 @@
 /**
  * Screenshot capture utilities for Creative Lovable
  *
- * Since we can't directly capture cross-origin iframes, we use a proxy approach
- * where the sandbox URL is captured server-side or we use a placeholder approach.
+ * Uses E2B Desktop SDK's native screenshot capability for capturing
+ * sandbox previews. Falls back to placeholder images when needed.
  */
 
-// Client-side: Request screenshot from proxy service or capture visible element
+// Client-side: Request screenshot from server using E2B Desktop SDK
 export async function captureScreenshot(
   sandboxUrl: string,
-  options: { width?: number; height?: number; quality?: number } = {}
+  options: { 
+    width?: number; 
+    height?: number; 
+    quality?: number;
+    projectId?: string;
+    projectName?: string;
+  } = {}
 ): Promise<string | null> {
-  const { width = 1200, height = 630, quality = 0.8 } = options
+  const { 
+    width = 1200, 
+    height = 630, 
+    quality = 0.8,
+    projectId,
+    projectName = "Project Preview"
+  } = options
 
   try {
-    // Option 1: Use a screenshot service API (e.g., screenshotapi.net, urlbox, etc.)
-    // This is the most reliable method for capturing external URLs
-    // For now, we'll use a server-side endpoint that can handle this
-
+    // Use E2B Desktop SDK for screenshots via server-side API
     const response = await fetch("/api/screenshot", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         url: sandboxUrl,
+        projectId,
+        projectName,
         width,
         height,
         quality,

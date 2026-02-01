@@ -5,7 +5,6 @@ import {
   NoSuchToolError,
   InvalidToolInputError,
   type UIMessage,
-  type StopCondition,
 } from "ai"
 import { SYSTEM_PROMPT, MODEL_SETTINGS, type ModelProvider } from "@/lib/ai/agent"
 import { getModel, getGatewayProviderOptions, type ModelKey } from "@/lib/ai/providers"
@@ -28,8 +27,9 @@ const FILE_TOOLS = ["writeFile", "readFile", "editFile", "getProjectStructure"] 
 const BUILD_TOOLS = ["runCommand", "installPackage", "getBuildStatus", "startDevServer"] as const
 const CREATION_TOOLS = ["createWebsite"] as const
 const CODE_TOOLS = ["executeCode"] as const
+const SUGGESTION_TOOLS = ["generateSuggestions"] as const // Always available for contextual suggestions
 
-type ToolName = typeof PLANNING_TOOLS[number] | typeof FILE_TOOLS[number] | typeof BUILD_TOOLS[number] | typeof CREATION_TOOLS[number] | typeof CODE_TOOLS[number]
+type ToolName = typeof PLANNING_TOOLS[number] | typeof FILE_TOOLS[number] | typeof BUILD_TOOLS[number] | typeof CREATION_TOOLS[number] | typeof CODE_TOOLS[number] | typeof SUGGESTION_TOOLS[number]
 
 // Default project ID for sandbox operations
 const DEFAULT_PROJECT_ID = "default"
@@ -181,27 +181,69 @@ export const POST = withAuth(async (req: Request) => {
           activeTools?: ToolName[]
         } = {}
 
+        // Model-aware compression thresholds
+        // Gemini models have 1M+ token context windows, so we can be much more generous
+        const isGeminiModel = validModel === 'google' || validModel === 'googlePro'
+        const compressionThreshold = isGeminiModel ? 200 : 50 // 200 for Gemini, 50 for others
+        const keepCount = isGeminiModel ? 150 : 30 // Keep more messages for Gemini
+
         // For longer agentic loops, compress conversation history
-        if (stepMessages.length > 30) {
-          console.log(`[Step ${stepNumber}] Compressing conversation history`)
+        // CRITICAL: Must preserve tool_use/tool_result pairs to avoid API errors
+        if (stepMessages.length > compressionThreshold) {
+          console.log(`[Step ${stepNumber}] Compressing conversation history (threshold: ${compressionThreshold}, model: ${validModel})`)
+
+          // Find a safe cut point that doesn't split tool pairs
+          let startIndex = stepMessages.length - keepCount
+
+          // Check if the message at startIndex contains tool_results without their tool_use
+          // Tool results reference tool_use IDs from the previous assistant message
+          // We need to ensure we don't orphan tool_results from their tool_use
+          const firstKeptMessage = stepMessages[startIndex]
+
+          // If first kept message has tool results, we need to include the assistant message before it
+          if (firstKeptMessage?.role === 'tool' ||
+              (firstKeptMessage?.content && Array.isArray(firstKeptMessage.content) &&
+               firstKeptMessage.content.some((c: any) => c.type === 'tool-result' || c.type === 'tool_result'))) {
+            // Walk backwards to find the assistant message with the tool_use
+            for (let i = startIndex - 1; i > 0; i--) {
+              const msg = stepMessages[i]
+              if (msg?.role === 'assistant') {
+                startIndex = i
+                break
+              }
+            }
+          }
+
+          // Also check for orphaned tool_use at the end (assistant called tool but no result yet)
+          // This shouldn't happen in prepareStep, but be safe
+          const lastMessage = stepMessages[stepMessages.length - 1]
+          if (lastMessage?.role === 'assistant' && lastMessage?.content &&
+              Array.isArray(lastMessage.content) &&
+              lastMessage.content.some((c: any) => c.type === 'tool-use' || c.type === 'tool_use')) {
+            // Keep this as-is, the result will come in the next message
+          }
+
           config.messages = [
             stepMessages[0], // system message
-            ...stepMessages.slice(-20),
+            ...stepMessages.slice(startIndex),
           ]
+
+          console.log(`[Step ${stepNumber}] Compressed from ${stepMessages.length} to ${config.messages.length} messages (safe cut at index ${startIndex})`)
         }
 
         // AI SDK v6: Dynamic activeTools based on context
         // This optimizes token usage by only including relevant tools
+        // SUGGESTION_TOOLS always included for contextual follow-up suggestions
         if (stepNumber === 0) {
           // First step: Focus on planning and creation
-          config.activeTools = [...PLANNING_TOOLS, ...CREATION_TOOLS, "getProjectStructure"] as ToolName[]
+          config.activeTools = [...PLANNING_TOOLS, ...CREATION_TOOLS, "getProjectStructure", ...SUGGESTION_TOOLS] as ToolName[]
         } else if (context.buildStatus?.hasErrors) {
           // Build errors: Focus on debugging and file operations
-          config.activeTools = [...FILE_TOOLS, ...BUILD_TOOLS] as ToolName[]
+          config.activeTools = [...FILE_TOOLS, ...BUILD_TOOLS, ...SUGGESTION_TOOLS] as ToolName[]
           console.log(`[Step ${stepNumber}] Build errors detected, focusing on debugging tools`)
         } else if (context.serverState?.isRunning && context.taskGraph) {
           // Server running with active task graph: Focus on file operations
-          config.activeTools = [...FILE_TOOLS, ...BUILD_TOOLS, "markStepComplete"] as ToolName[]
+          config.activeTools = [...FILE_TOOLS, ...BUILD_TOOLS, "markStepComplete", ...SUGGESTION_TOOLS] as ToolName[]
         }
 
         // Return empty object if no modifications needed
@@ -209,7 +251,7 @@ export const POST = withAuth(async (req: Request) => {
       },
 
       // AI SDK v6: Tool call repair for better error recovery
-      experimental_repairToolCall: async ({ toolCall, error, messages: repairMessages }: any) => {
+      experimental_repairToolCall: async ({ toolCall, error }: any) => {
         // Don't try to repair unknown tools
         if (NoSuchToolError.isInstance(error)) {
           console.warn(`[Tool Repair] Unknown tool: ${toolCall.toolName}`)

@@ -1,117 +1,142 @@
-import { Template, waitForPort } from 'e2b'
-
 /**
  * Next.js + shadcn/ui + Tailwind CSS v4 + Three.js template
  *
- * This programmatic template provides:
- * - Next.js (latest) with App Router and TypeScript
- * - shadcn/ui with all components pre-installed
- * - Tailwind CSS v4
- * - Three.js / React Three Fiber stack for 3D
- * - Core UI utilities (Framer Motion, Lucide, etc.)
- * - Development tools (Prettier, ESLint, Vercel CLI)
+ * E2B Build System 2.0 - Programmatic Template Definition
+ * Uses Bun for faster package installation and execution
+ * @see https://e2b.mintlify.app/docs/template/quickstart
+ */
+import { Template, waitForURL } from "e2b";
+
+export const TEMPLATE_NAME = "nextjs-app-bun";
+
+/**
+ * Production template with all dependencies pre-installed
+ * Optimized for fast sandbox startup with zero wait time
  */
 export const template = Template()
-  // Base image with Node.js 22
-  .fromNodeImage('22-slim')
-
-  // Install system dependencies for native modules
-  .aptInstall(['git', 'curl', 'ca-certificates', 'python3', 'make', 'g++'])
-
-  // Install pnpm globally (needs root for /usr/local/lib)
-  .runCmd('npm install -g pnpm', { user: 'root' })
-
-  // Set up project directory
-  .setWorkdir('/home/user/project')
-
-  // Initialize Next.js with App Router, TypeScript, Tailwind, ESLint
+  .fromBunImage("1.3")
+  .aptInstall([
+    // Build essentials
+    "git",
+    "curl",
+    "ca-certificates",
+    "python3",
+    "make",
+    "g++",
+    // Playwright browser dependencies
+    "libnss3",
+    "libatk-bridge2.0-0",
+    "libdrm2",
+    "libxcomposite1",
+    "libxdamage1",
+    "libxrandr2",
+    "libgbm1",
+    "libxshmfence1",
+    "libasound2",
+    "libpangocairo-1.0-0",
+    "libgtk-3-0",
+    // Image processing tools
+    "imagemagick",
+    "libjpeg-dev",
+    "libpng-dev",
+    "ffmpeg",
+    "poppler-utils",
+    "tesseract-ocr",
+    "ghostscript",
+    "webp",
+  ])
+  // Set up project workspace
+  .setWorkdir("/home/user/nextjs-app")
+  // Create Next.js app with Bun
   .runCmd(
-    'npx create-next-app@latest . ' +
-    '--ts --tailwind --eslint --app --no-src-dir --import-alias "@/*" --use-pnpm --yes'
+    "bun create next-app --app --ts --tailwind --turbopack --yes --use-bun .",
   )
-
-  // Install Vercel CLI
-  .runCmd('pnpm add -D vercel@latest')
-
-  // Initialize shadcn/ui with defaults (Tailwind v4 aware)
-  .runCmd('npx shadcn@latest init -y --defaults')
-
-  // Pre-install comprehensive set of shadcn/ui components
+  // Initialize shadcn/ui
+  .runCmd("bunx --bun shadcn@latest init -d")
+  .runCmd("bunx --bun shadcn@latest add --all")
+  // Move to home directory
   .runCmd(
-    'npx shadcn@latest add ' +
-    'button card input label select textarea switch checkbox radio-group slider ' +
-    'tabs dialog sheet tooltip dropdown-menu popover avatar badge progress ' +
-    'separator skeleton table alert command calendar form accordion collapsible ' +
-    'context-menu hover-card menubar navigation-menu scroll-area toggle ' +
-    'aspect-ratio carousel resizable sonner drawer alert-dialog breadcrumb ' +
-    'chart input-otp pagination sidebar toggle-group ' +
-    '-y --overwrite'
+    "mv /home/user/nextjs-app/* /home/user/ && rm -rf /home/user/nextjs-app",
   )
-
-  // Core UI + utilities
+  .setWorkdir("/home/user")
+  // Core UI + App Libraries
+  .bunInstall([
+    "lucide-react",
+    "@radix-ui/react-icons",
+    "framer-motion",
+    "class-variance-authority",
+    "clsx",
+    "tailwind-merge",
+    "tailwindcss-animate",
+    "next-themes",
+    "react-markdown",
+    "remark-gfm",
+    "rehype-highlight",
+    "recharts",
+    "date-fns",
+    "zod",
+    "react-hook-form",
+    "@hookform/resolvers",
+    "zustand",
+    "@tanstack/react-query",
+    "ky",
+    "nanoid",
+  ])
+  // 3D / Creative Stack
+  .bunInstall([
+    "three",
+    "@react-three/fiber",
+    "@react-three/drei",
+    "@react-three/postprocessing",
+    "leva",
+    "@react-three/rapier",
+    "three-stdlib",
+    "gsap",
+  ])
+  .bunInstall(["@types/three"], { dev: true })
+  // Agent Image & Media Tooling
+  .bunInstall(["sharp", "gifencoder", "canvas"])
+  // Scraping & Content Extraction
+  .bunInstall(["cheerio", "jsdom", "turndown", "@mozilla/readability"])
+  // File Format Utilities
+  .bunInstall([
+    "papaparse",
+    "xlsx",
+    "pdf-lib",
+    "mammoth",
+    "csv-parse",
+    "csv-stringify",
+  ])
+  // Execution Helpers
+  .bunInstall(["execa", "zx", "tmp", "fs-extra"])
+  // Dev Tooling
+  .bunInstall(
+    [
+      "@types/node",
+      "@types/react",
+      "@types/react-dom",
+      "typescript",
+      "prettier",
+      "prettier-plugin-tailwindcss",
+      "eslint-config-prettier",
+      "playwright",
+    ],
+    { dev: true },
+  )
+  // Install Playwright browsers at build time
+  .runCmd("bunx playwright install chromium --with-deps")
+  // Fix Next config for clean snapshot restores
+  .runCmd("rm -f next.config.ts")
   .runCmd(
-    'pnpm add ' +
-    'lucide-react ' +
-    '@radix-ui/react-icons ' +
-    'framer-motion ' +
-    'class-variance-authority ' +
-    'clsx ' +
-    'tailwind-merge ' +
-    'tailwindcss-animate ' +
-    'next-themes ' +
-    'react-markdown ' +
-    'remark-gfm ' +
-    'rehype-highlight ' +
-    'recharts ' +
-    'date-fns ' +
-    'zod ' +
-    'react-hook-form ' +
-    '@hookform/resolvers ' +
-    'zustand ' +
-    '@tanstack/react-query ' +
-    'ky ' +
-    'nanoid'
+    `printf '%s\\n' '/** @type {import("next").NextConfig} */' 'const nextConfig = {};' 'export default nextConfig;' > next.config.mjs`,
   )
-
-  // Three.js / 3D stack
-  .runCmd(
-    'pnpm add ' +
-    'three ' +
-    '@react-three/fiber ' +
-    '@react-three/drei ' +
-    '@react-three/postprocessing ' +
-    'leva ' +
-    '@react-three/rapier ' +
-    'three-stdlib ' +
-    'gsap'
-  )
-
-  // TypeScript types for Three.js
-  .runCmd('pnpm add -D @types/three')
-
-  // Dev tooling
-  .runCmd(
-    'pnpm add -D ' +
-    '@types/node ' +
-    '@types/react ' +
-    '@types/react-dom ' +
-    'typescript ' +
-    'prettier ' +
-    'prettier-plugin-tailwindcss ' +
-    'eslint-config-prettier'
-  )
-
-  // Clean up create-next-app artifacts that can break fresh installs
-  // IMPORTANT: Write a valid JavaScript config instead of renaming TypeScript file
-  // (TypeScript syntax like "import type { }" is not valid in .mjs files)
-  .runCmd('rm -f pnpm-workspace.yaml next.config.ts')
-  .runCmd('echo \'/** @type {import("next").NextConfig} */\\nconst nextConfig = {};\\nexport default nextConfig;\' > next.config.mjs')
-
-  // Set environment variables
+  // Environment defaults
   .setEnvs({
-    NODE_ENV: 'development',
-    NEXT_TELEMETRY_DISABLED: '1',
+    NODE_ENV: "development",
+    NEXT_TELEMETRY_DISABLED: "1",
   })
-
-  // Start command - Next.js dev server with Turbopack
-  .setStartCmd('pnpm run dev --turbo', waitForPort(3000))
+  // Start dev server when sandbox is ready
+  .setStartCmd(
+    "bun --bun run dev --turbo",
+    waitForURL("http://localhost:3000"),
+  );

@@ -52,10 +52,8 @@ export function createBuildTools(projectId: string) {
       }),
       execute: async ({ command, cwd, timeout }) => {
         const startTime = new Date()
-        const context = ctx()
-        const hasTemplate = !!process.env.E2B_TEMPLATE_ID
-        const defaultDir = hasTemplate ? "/home/user/project" : (context.projectDir || "/home/user")
-        const workDir = cwd ? `/home/user/${cwd}` : defaultDir
+        const projectDir = "/home/user/project"
+        const workDir = cwd ? `/home/user/${cwd}` : projectDir
         const fullCommand = `cd "${workDir}" && ${command}`
 
         try {
@@ -120,9 +118,7 @@ export function createBuildTools(projectId: string) {
       }),
       execute: async ({ packages, dev }) => {
         const startTime = new Date()
-        const context = ctx()
-        const hasTemplate = !!process.env.E2B_TEMPLATE_ID
-        const projectDir = hasTemplate ? "/home/user/project" : `/home/user/${context.projectName || "project"}`
+        const projectDir = "/home/user/project"
         const pnpmFlag = dev ? "-D" : ""
 
         try {

@@ -21,6 +21,7 @@ import {
   executeCommand,
   writeFile as writeFileToSandbox,
   readFile as readFileFromSandbox,
+  fileExists,
 } from "@/lib/e2b/sandbox"
 import { createErrorResult } from "../utils"
 
@@ -50,8 +51,7 @@ export function createFileTools(projectId: string) {
       execute: async ({ path: filePath, content }) => {
         const startTime = new Date()
         const context = ctx()
-        const hasTemplate = !!process.env.E2B_TEMPLATE_ID
-        const projectDir = hasTemplate ? "/home/user/project" : `/home/user/${context.projectName || "project"}`
+        const projectDir = "/home/user/project"
         const fullPath = `${projectDir}/${filePath}`
 
         try {
@@ -100,12 +100,25 @@ export function createFileTools(projectId: string) {
       execute: async ({ path: filePath }) => {
         const startTime = new Date()
         const context = ctx()
-        const hasTemplate = !!process.env.E2B_TEMPLATE_ID
-        const projectDir = hasTemplate ? "/home/user/project" : `/home/user/${context.projectName || "project"}`
+        const projectDir = "/home/user/project"
         const fullPath = `${projectDir}/${filePath}`
 
         try {
           const sandbox = await createSandbox(projectId)
+
+          // Check if file exists first to provide a clearer error message
+          const exists = await fileExists(sandbox, fullPath)
+          if (!exists) {
+            const error = `File not found: ${filePath}. The file may not have been created yet, or the sandbox state was reset. Use getProjectStructure to see what files exist.`
+            recordToolExecution(projectId, "readFile", { path: filePath }, undefined, false, error, startTime)
+            return {
+              success: false as const,
+              error,
+              path: filePath,
+              hint: "Use getProjectStructure to see what files currently exist in the project.",
+            }
+          }
+
           const result = await readFileFromSandbox(sandbox, fullPath)
 
           // Cache in context
@@ -158,12 +171,24 @@ export function createFileTools(projectId: string) {
       execute: async ({ path: filePath, search, replace }) => {
         const startTime = new Date()
         const context = ctx()
-        const hasTemplate = !!process.env.E2B_TEMPLATE_ID
-        const projectDir = hasTemplate ? "/home/user/project" : `/home/user/${context.projectName || "project"}`
+        const projectDir = "/home/user/project"
         const fullPath = `${projectDir}/${filePath}`
 
         try {
           const sandbox = await createSandbox(projectId)
+
+          // Check if file exists first
+          const exists = await fileExists(sandbox, fullPath)
+          if (!exists) {
+            const error = `Cannot edit: file not found at ${filePath}. Use writeFile to create it first, or use getProjectStructure to verify existing files.`
+            recordToolExecution(projectId, "editFile", { path: filePath, search }, undefined, false, error, startTime)
+            return {
+              success: false as const,
+              error,
+              path: filePath,
+              hint: "The file doesn't exist. Use writeFile to create it, or check getProjectStructure for existing files.",
+            }
+          }
 
           // Read current content
           const { content } = await readFileFromSandbox(sandbox, fullPath)

@@ -52,11 +52,16 @@ export class ProjectRepository extends BaseRepository<Project> {
 
   /**
    * Find all projects with optional filters and pagination
+   * Optimized: excludes heavy JSONB fields (files_snapshot, dependencies) for list views
    */
   async findAll(options: ProjectQueryOptions = {}): Promise<Project[]> {
     try {
       const client = await this.getClient()
-      let query = client.from(this.tableName).select('*')
+      // Select all columns EXCEPT heavy JSONB fields (files_snapshot, dependencies)
+      // Those are only needed when loading a specific project for editing
+      let query = client.from(this.tableName).select(
+        'id, name, description, screenshot_url, screenshot_base64, starred, sandbox_id, sandbox_url, user_id, created_at, updated_at, last_opened_at'
+      )
 
       // Apply filters
       if (options.filters?.starred !== undefined) {
@@ -84,7 +89,12 @@ export class ProjectRepository extends BaseRepository<Project> {
       const { data, error } = await query
       if (error) throw error
 
-      return data.map(row => this.transformRow(row))
+      // Use light transform for list view (no JSONB fields fetched)
+      return data.map(row => ({
+        ...row,
+        files_snapshot: {},  // Not fetched in list view
+        dependencies: {},    // Not fetched in list view
+      }))
     } catch (error) {
       this.handleError(error, "findAll")
     }

@@ -46,7 +46,7 @@
 ### 1.1 Authentication & Authorization
 | Task | Status | File(s) | Notes |
 |------|--------|---------|-------|
-| Remove hardcoded Screenshot API key | ✅ Done | `app/api/screenshot/route.ts` | Returns placeholder if not configured |
+| Screenshot capture | ✅ Done | `app/api/screenshot/route.ts`, `lib/e2b/sandbox.ts` | Uses headless Playwright in sandbox |
 | Fix auth bypass - fail closed when API_KEY missing | ✅ Done | `lib/auth.ts` | Dev mode allows, production rejects |
 | Remove NEXT_PUBLIC_API_KEY fallback | ✅ Done | `lib/auth.ts` | Only uses server-side API_KEY |
 | Add withAuth to improve-prompt route | ✅ Done | `app/api/improve-prompt/route.ts` | Route now uses withAuth + asyncErrorHandler |
@@ -283,7 +283,7 @@ pnpm test -- lib/services/__tests__/project.service.test.ts
   - Simplified lib/ai/tools/index.ts re-exports
   - Removed unused `createClient` import from context.repository.ts
 - **Phase 1 - Security Fixes:**
-  - 🔒 Removed hardcoded Screenshot API key (returns placeholder if not configured)
+  - 🔒 Screenshot capture uses headless Playwright in sandbox (replaces external ScreenshotAPI)
   - 🔒 Fixed auth bypass: production now fails closed when API_KEY missing
   - 🔒 Removed NEXT_PUBLIC_API_KEY fallback (client-exposed keys no longer used for auth)
   - 🔒 Added security headers in next.config.mjs (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, X-XSS-Protection, Permissions-Policy)

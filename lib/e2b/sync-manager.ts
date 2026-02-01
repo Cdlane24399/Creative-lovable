@@ -490,12 +490,15 @@ export class SyncManager {
 
   /**
    * Save snapshot to database
+   * Uses upsert to handle case where project row doesn't exist yet
    */
   private async saveSnapshotToDb(snapshot: Record<string, string>): Promise<boolean> {
     try {
       const { createAdminClient } = await import("@/lib/supabase/admin")
       const client = createAdminClient()
 
+      // Use UPDATE only - project must already exist (created by chat route)
+      // Using upsert without name field would violate NOT NULL constraint on INSERT
       const { error } = await client
         .from('projects')
         .update({
@@ -505,6 +508,7 @@ export class SyncManager {
         .eq('id', this.config.projectId)
 
       if (error) throw error
+      console.log(`[SyncManager] Saved ${Object.keys(snapshot).length} files to database for project ${this.config.projectId}`)
       return true
     } catch (error) {
       console.error("[SyncManager] Error saving snapshot:", error)

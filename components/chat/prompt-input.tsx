@@ -1,16 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { useRef, useState } from "react"
+import { useRef } from "react"
 import {
     ArrowUp,
-    AudioLines,
-    ChevronDown,
     Loader2,
     Wand2,
-    Paperclip,
-    Image as ImageIcon,
-    MousePointer2
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
@@ -81,8 +76,6 @@ export function PromptInput({
     inputRef,
 }: PromptInputProps) {
     const textareaRef = useRef<HTMLTextAreaElement>(null)
-    const [isVisualEditsEnabled, setIsVisualEditsEnabled] = useState(false)
-    const [isPlanMode, setIsPlanMode] = useState(false)
 
     // Merge refs
     React.useImperativeHandle(inputRef, () => textareaRef.current!)
@@ -90,7 +83,7 @@ export function PromptInput({
     return (
         <form onSubmit={onSubmit} className="relative z-10 mx-auto w-full max-w-3xl">
             <div className={cn(
-                "relative flex flex-col gap-2 rounded-2xl bg-[#1A1A1A]/90 border border-white/5 p-3 shadow-2xl backdrop-blur-xl transition-all duration-300",
+                "relative flex flex-col gap-1.5 rounded-2xl bg-[#1A1A1A]/90 border border-white/5 px-3 py-2 shadow-2xl backdrop-blur-xl transition-all duration-300",
                 showImproveEffect
                     ? "border-violet-500/50 ring-1 ring-violet-500/20"
                     : "focus-within:border-zinc-700 hover:border-zinc-800"
@@ -110,7 +103,7 @@ export function PromptInput({
                         placeholder="Build something wonderful..."
                         aria-label="Chat prompt"
                         className={cn(
-                            "min-h-[48px] w-full resize-none bg-transparent px-1 text-[15px] leading-relaxed text-zinc-100 placeholder:text-zinc-500 focus:outline-none transition-colors",
+                            "min-h-[36px] w-full resize-none bg-transparent px-1 text-[15px] leading-normal text-zinc-100 placeholder:text-zinc-500 focus:outline-none transition-colors",
                             showImproveEffect && "text-violet-300"
                         )}
                         rows={1}
@@ -154,8 +147,8 @@ export function PromptInput({
                 </div>
 
                 {/* Toolbar */}
-                <div className="flex items-center justify-between pt-1">
-                    <div className="flex items-center gap-1.5">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                         {/* Model Selector */}
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -168,7 +161,6 @@ export function PromptInput({
                                 >
                                     <ModelIcon model={selectedModel} className="h-3.5 w-3.5" />
                                     <span>{MODEL_DISPLAY_NAMES[selectedModel]}</span>
-                                    <ChevronDown className="h-3 w-3 opacity-50" />
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="start" className="w-[200px] bg-[#1A1A1A] border-zinc-800 p-1">
@@ -188,83 +180,32 @@ export function PromptInput({
                             </DropdownMenuContent>
                         </DropdownMenu>
 
-                        {/* Visual Edits Toggle */}
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setIsVisualEditsEnabled(!isVisualEditsEnabled)}
-                            className={cn(
-                                "h-7 gap-1.5 rounded-md px-2 text-xs font-medium transition-all",
-                                isVisualEditsEnabled
-                                    ? "text-emerald-400 bg-emerald-500/10"
-                                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800"
-                            )}
-                        >
-                            <MousePointer2 className="h-3 w-3" />
-                            <span>Visual edits</span>
-                        </Button>
-
-                        {/* Improve Prompt */}
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={onImprovePrompt}
-                            disabled={!inputValue.trim() || isImproving || isWorking}
-                            className={cn(
-                                "h-7 gap-1.5 rounded-md px-2 text-xs font-medium transition-all group",
-                                inputValue.trim() && !isImproving && !isWorking
-                                    ? "text-violet-400 hover:bg-violet-500/10 hover:text-violet-300"
-                                    : "text-zinc-600 cursor-not-allowed"
-                            )}
-                        >
-                            {isImproving ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                                <Wand2 className="h-3 w-3 transition-transform group-hover:rotate-12" />
-                            )}
-                            <span>Improve</span>
-                        </Button>
-
-                        {/* Attachment (Visual Only) */}
-                        <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-7 w-7 rounded-md p-0 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                                        aria-label="Attach file"
-                                    >
-                                        <Paperclip className="h-3.5 w-3.5" />
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-300">
-                                    <p>Attachments coming soon</p>
-                                </TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
+                        {/* Improve Prompt - only visible when there's text */}
+                        {inputValue.trim() && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={onImprovePrompt}
+                                disabled={isImproving || isWorking}
+                                className={cn(
+                                    "h-7 gap-1.5 rounded-md px-2 text-xs font-medium transition-all group",
+                                    !isImproving && !isWorking
+                                        ? "text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
+                                        : "text-zinc-600 cursor-not-allowed"
+                                )}
+                            >
+                                {isImproving ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                    <Wand2 className="h-3 w-3 transition-transform group-hover:rotate-12" />
+                                )}
+                                <span>Improve</span>
+                            </Button>
+                        )}
                     </div>
 
-                    <div className="flex items-center gap-2">
-                        {/* Plan Mode Toggle */}
-                        <button
-                            type="button"
-                            onClick={() => setIsPlanMode(!isPlanMode)}
-                            className={cn(
-                                "px-3 py-1 text-xs rounded-full transition-all duration-200",
-                                isPlanMode
-                                    ? "bg-violet-500/20 text-violet-400 border border-violet-500/50"
-                                    : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:text-zinc-300"
-                            )}
-                        >
-                            Plan
-                        </button>
-                        <span className="text-[10px] text-zinc-600 font-medium mr-1 hidden sm:inline-block">
-                            {inputValue.length > 0 ? `${inputValue.length} chars` : '⌘ + Enter to send'}
-                        </span>
+                    <div className="flex items-center">
                         <TooltipProvider>
                             <Tooltip>
                                 <TooltipTrigger asChild>

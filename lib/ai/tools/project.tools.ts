@@ -51,9 +51,8 @@ export function createProjectTools(projectId: string) {
       execute: async ({ includeContents }) => {
         const startTime = new Date()
         const context = ctx()
-        const hasTemplate = !!process.env.E2B_TEMPLATE_ID
         const projectName = context.projectName || "project"
-        const projectDir = hasTemplate ? "/home/user/project" : `/home/user/${projectName}`
+        const projectDir = "/home/user/project"
 
         try {
           const sandbox = await createSandbox(projectId)

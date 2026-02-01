@@ -22,3 +22,4 @@ export { createProjectTools } from "./project.tools";
 export { createBuildTools } from "./build.tools";
 export { createWebsiteTools } from "./website.tools";
 export { createCodeTools } from "./code.tools";
+export { createSuggestionTools } from "./suggestion.tools";

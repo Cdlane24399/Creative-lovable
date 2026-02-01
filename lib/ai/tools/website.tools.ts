@@ -131,11 +131,10 @@ export function createWebsiteTools(projectId: string) {
       // AI SDK v6: Use async generator for preliminary results (streaming progress)
       async *execute({ name, description, pages, components }) {
         const startTime = new Date()
+        // Check if using E2B template (pre-built sandbox with dependencies)
         const hasTemplate = !!process.env.E2B_TEMPLATE_ID
-
-        // When using template, write directly to the template's project directory
-        // This enables hot-reload without needing to restart the server
-        const projectDir = hasTemplate ? "/home/user/project" : `/home/user/${name}`
+        // Always use consistent project directory for hot-reload and sync
+        const projectDir = "/home/user/project"
 
         console.log(
           `[createWebsite] Starting for project: ${name}, projectId: ${projectId}, projectDir: ${projectDir}`

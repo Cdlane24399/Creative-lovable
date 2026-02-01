@@ -336,25 +336,39 @@ export const POST = withAuth(async (
       let serverReady = false
       let actualPort = 3000
 
-      console.log("[dev-server POST] Polling for server readiness (max 30s)...")
+      console.log("[dev-server POST] Polling for server readiness (max 120s)...")
+      // Adaptive polling: start fast, slow down over time
+      const getInterval = (i: number) => i < 5 ? 1000 : i < 15 ? 2000 : 3000
+
       for (let i = 0; i < maxPolls; i++) {
-        await new Promise(resolve => setTimeout(resolve, pollInterval))
+        await new Promise(resolve => setTimeout(resolve, getInterval(i)))
+
+        // Early success: Check if Next.js reports "Ready" before doing HTTP check
+        const readyCheck = await executeCommand(
+          sandbox,
+          `grep -c "Ready in" /tmp/server.log 2>/dev/null || echo "0"`,
+          { timeoutMs: 3000 }
+        )
+        if (parseInt(readyCheck.stdout.trim()) > 0) {
+          console.log("[dev-server POST] Next.js reports ready, verifying with HTTP...")
+        }
 
         // Check for port in logs first (Next.js logs the port it binds to)
         const logCheck = await executeCommand(
           sandbox,
           `grep -oE "http://localhost:[0-9]+" /tmp/server.log 2>/dev/null | tail -1 | grep -oE "[0-9]+$" || echo ""`,
-          { timeoutMs: 2000 }
+          { timeoutMs: 5000 }  // Increased from 2000ms - sandbox under load during compilation
         )
         const logPort = parseInt(logCheck.stdout.trim(), 10)
 
         if (logPort > 0) {
           console.log(`[dev-server POST] Found port ${logPort} in logs, verifying with HTTP check...`)
           // Use curl to verify server is actually responding (not just port open)
+          // Added --max-time 10 and increased timeoutMs to handle slow compilation
           const httpCheck = await executeCommand(
             sandbox,
-            `curl -s -o /dev/null -w '%{http_code}' http://localhost:${logPort} 2>/dev/null || echo "000"`,
-            { timeoutMs: 5000 }
+            `curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://localhost:${logPort} 2>/dev/null || echo "000"`,
+            { timeoutMs: 15000 }  // Increased from 5000ms - Next.js first request can be slow
           )
           const httpCode = httpCheck.stdout.trim()
           if (httpCode.startsWith('2') || httpCode.startsWith('3')) {
@@ -383,7 +397,7 @@ export const POST = withAuth(async (
           const errorCheck = await executeCommand(
             sandbox,
             `tail -n 15 /tmp/server.log 2>/dev/null | grep -iE "error|failed|EADDRINUSE" || echo ""`,
-            { timeoutMs: 2000 }
+            { timeoutMs: 5000 }  // Increased from 2000ms
           )
           if (errorCheck.stdout.trim()) {
             console.warn(`[dev-server POST] Potential issues in logs:`, errorCheck.stdout.trim())

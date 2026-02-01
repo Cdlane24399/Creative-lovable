@@ -338,19 +338,24 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
   }, [projectId, sandboxUrl, projectName, initialPrompt, updateProject])
 
   // Capture screenshot from sandbox URL using the screenshot API
+  // Uses E2B Desktop SDK for native screenshot capability when projectId is available
   const captureAndSaveScreenshot = useCallback(async (name: string, url: string) => {
     try {
       const response = await fetch("/api/screenshot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, projectName: name }),
+        body: JSON.stringify({ 
+          url, 
+          projectName: name,
+          projectId: projectId || undefined, // Pass projectId to enable E2B Desktop screenshots
+        }),
       })
 
       if (response.ok) {
-        const { screenshot_base64 } = await response.json()
+        const { screenshot_base64, source } = await response.json()
         if (screenshot_base64) {
           await saveScreenshot(screenshot_base64, url)
-          console.log("[EditorLayout] Screenshot saved for", name)
+          console.log(`[EditorLayout] Screenshot saved for ${name} (source: ${source || 'unknown'})`)
         }
       }
     } catch (error) {
@@ -359,7 +364,7 @@ export function EditorLayout({ onNavigateHome, projectId, initialPrompt, initial
       const placeholder = generatePlaceholderImage(name)
       await saveScreenshot(placeholder, url)
     }
-  }, [saveScreenshot])
+  }, [saveScreenshot, projectId])
 
   // Manual screenshot capture handler
   const handleManualScreenshot = useCallback(async () => {

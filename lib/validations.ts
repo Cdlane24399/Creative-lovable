@@ -27,7 +27,7 @@ export const projectIdSchema = z.string().min(1).max(100).regex(
 /**
  * Model provider enum
  */
-export const modelProviderSchema = z.enum(['anthropic', 'openai', 'google']).default('anthropic')
+export const modelProviderSchema = z.enum(['anthropic', 'opus', 'google', 'googlePro', 'openai']).default('anthropic')
 
 // =============================================================================
 // Chat API Schemas (AI SDK v6 UIMessage Format)

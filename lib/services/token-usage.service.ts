@@ -49,6 +49,13 @@ const COST_RATES: Record<string, { input: number; output: number }> = {
   "gemini-ultra": { input: 1.5, output: 4.5 },
   "gemini-1.5-pro": { input: 3.5, output: 10.5 },
   "gemini-1.5-flash": { input: 0.35, output: 1.05 },
+  // Gemini 3 models (preview pricing estimates)
+  "gemini-3-flash": { input: 0.35, output: 1.05 },
+  "gemini-3-pro": { input: 1.25, output: 5.0 },
+
+  // Claude 4 models
+  "claude-4-sonnet": { input: 3.0, output: 15.0 },
+  "claude-4-opus": { input: 15.0, output: 75.0 },
 }
 
 /**
@@ -57,7 +64,7 @@ const COST_RATES: Record<string, { input: number; output: number }> = {
  */
 const MODEL_MAPPINGS: Record<string, string> = {
   // Anthropic
-  "anthropic": "claude",
+  "anthropic": "claude-4-sonnet",
   "claude": "claude",
   "claude-3-opus-20240229": "claude-3-opus",
   "claude-3-sonnet-20240229": "claude-3-sonnet",
@@ -81,7 +88,8 @@ const MODEL_MAPPINGS: Record<string, string> = {
   "gpt-3.5-turbo-0125": "gpt-3.5-turbo",
 
   // Google
-  "google": "gemini",
+  "google": "gemini-3-flash",
+  "googlepro": "gemini-3-pro",
   "gemini": "gemini",
   "gemini-pro": "gemini-pro",
   "gemini-ultra": "gemini-ultra",
@@ -89,6 +97,13 @@ const MODEL_MAPPINGS: Record<string, string> = {
   "gemini-1.5-pro-latest": "gemini-1.5-pro",
   "gemini-1.5-flash": "gemini-1.5-flash",
   "gemini-1.5-flash-latest": "gemini-1.5-flash",
+  "gemini-3-flash": "gemini-3-flash",
+  "gemini-3-flash-preview": "gemini-3-flash",
+  "gemini-3-pro": "gemini-3-pro",
+  "gemini-3-pro-preview": "gemini-3-pro",
+
+  // Claude 4 (app model keys)
+  "opus": "claude-4-opus",
 }
 
 // =============================================================================

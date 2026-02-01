@@ -74,6 +74,7 @@ import {
   createBuildTools,
   createWebsiteTools,
   createCodeTools,
+  createSuggestionTools,
 } from "./tools"
 
 /**
@@ -103,6 +104,7 @@ export function createContextAwareTools(projectId: string) {
   const buildTools = createBuildTools(projectId)
   const websiteTools = createWebsiteTools(projectId)
   const codeTools = createCodeTools(projectId)
+  const suggestionTools = createSuggestionTools(projectId)
 
   // Return combined tools object
   return {
@@ -126,6 +128,9 @@ export function createContextAwareTools(projectId: string) {
 
     // Code execution
     ...codeTools,
+
+    // Suggestion generation
+    ...suggestionTools,
   }
 }
 

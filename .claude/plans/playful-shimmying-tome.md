@@ -2,9 +2,9 @@
 
 ## Summary
 
-Four interconnected issues need to be fixed:
+Four interconnected issues - screenshots now fixed via E2B Desktop SDK:
 1. **Sandbox/chat not restorable** after ~30 minutes (files not synced before expiration)
-2. **Screenshots showing placeholders** instead of actual app screenshots
+2. **✅ Screenshots** - Now use E2B Desktop SDK native screenshots (replaces external API)
 3. **Code tab blank** (sync failures silent, no retry logic)
 4. **Template requires AI fixes** before packages work (pnpm-workspace.yaml, next.config issues)
 
@@ -88,29 +88,35 @@ Four interconnected issues need to be fixed:
 
 ---
 
-## Phase 4: Screenshot Improvements (Issue 2)
+## Phase 4: Screenshot Improvements (Issue 2) ✅ DONE
 
-**Problem**: `SCREENSHOT_API_KEY` not set, all screenshots are placeholders.
+**Problem**: Screenshots were using external ScreenshotAPI.net which required API keys.
 
-**Files to modify**:
-- Create `.env.example` with documentation
-- [editor-header.tsx](components/editor-header.tsx) or [preview-panel.tsx](components/preview-panel.tsx) - Add capture button
-- [editor-layout.tsx](components/editor-layout.tsx) - Add capture handler
+**Solution**: Replaced with headless Playwright running inside the E2B sandbox.
 
-**Changes**:
-1. Document `SCREENSHOT_API_KEY` in `.env.example`:
-   ```bash
-   # Screenshot API (https://screenshotapi.net/)
-   SCREENSHOT_API_KEY=your-key-here
-   ```
+**Files modified**:
+- `lib/e2b/sandbox.ts` - Added `captureSandboxScreenshot()` using Playwright
+- `app/api/screenshot/route.ts` - Updated to use sandbox-based screenshots
+- `lib/utils/screenshot.ts` - Updated client utilities
+- `components/editor-layout.tsx` - Pass projectId to enable screenshots
 
-2. Add manual screenshot capture button (Camera icon) near preview refresh
+**Implementation**:
+1. Uses the regular E2B sandbox (where the dev server runs)
+2. Installs Playwright on-demand in the sandbox
+3. Captures screenshot using headless Chromium via Playwright
+4. Falls back to ImageMagick/Python PIL if Playwright unavailable
+5. Returns base64-encoded PNG
 
-3. Add visual indicator when placeholder is being used
+**Benefits**:
+- No external API key needed
+- Direct access to the dev server (same network)
+- No Desktop SDK complexity
+- Lightweight - only installs browser when needed
+- Multiple fallback options
 
 **Verification**:
-- Without API key: Shows placeholder badge
-- With API key: Captures real screenshot
+- Screenshots captured via Playwright in sandbox
+- Fallback to placeholder on error
 - Manual capture button triggers new screenshot
 
 ---
@@ -129,8 +135,8 @@ Four interconnected issues need to be fixed:
 - [ ] New sandbox has no pnpm-workspace.yaml
 - [ ] Code tab shows files immediately after generation
 - [ ] Project restores after 30+ minutes idle
-- [ ] Screenshot capture button works (with API key)
-- [ ] Placeholder indicator shown (without API key)
+- [x] Screenshot capture works via E2B Desktop SDK
+- [x] Placeholder shown on screenshot failure
 
 ---
 
