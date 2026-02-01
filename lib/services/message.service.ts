@@ -26,24 +26,39 @@ import type { Message, MessagePart } from "@/lib/db/types"
 /**
  * UIMessage format from AI SDK v6
  * This is what we receive from useChat and should store
+ * 
+ * Note: AI SDK v6 UIMessage uses 'parts' array instead of 'content' string
  */
 export interface UIMessage {
-  id: string
+  id?: string
   role: "user" | "assistant" | "system"
-  content?: string
-  parts?: MessagePart[]
+  parts: UIMessagePart[]
   createdAt?: Date
   metadata?: Record<string, unknown>
 }
 
 /**
- * Message for saving (from AI stream completion)
+ * UIMessage part types (AI SDK v6)
+ */
+export type UIMessagePart =
+  | { type: "text"; text: string }
+  | {
+      type: "tool-invocation"
+      toolInvocationId: string
+      toolName: string
+      args: unknown
+    }
+  | { type: "tool-result"; toolInvocationId: string; result: unknown }
+
+/**
+ * Message for saving (from AI SDK stream completion)
+ * More flexible than UIMessage - allows optional parts and content
  */
 export interface MessageToSave {
   id?: string
   role: "user" | "assistant" | "system"
-  content?: string
-  parts?: MessagePart[]
+  content?: string // Optional, extracted from parts if not provided
+  parts?: UIMessagePart[]
   model?: string
 }
 
@@ -100,7 +115,7 @@ export class MessageService {
     const content = message.content ||
       message.parts
         ?.filter((p) => p.type === "text")
-        .map((p) => p.text)
+        .map((p) => (p as { type: "text"; text: string }).text)
         .join("") ||
       ""
 
@@ -108,7 +123,7 @@ export class MessageService {
       projectId,
       role: message.role,
       content,
-      parts: message.parts,
+      parts: message.parts as MessagePart[] | undefined,
       model: message.model,
     })
 
@@ -139,8 +154,13 @@ export class MessageService {
       messages.map((m) => ({
         id: m.id,
         role: m.role,
-        content: m.content,
-        parts: m.parts,
+        content: m.content ||
+          m.parts
+            ?.filter((p) => p.type === "text")
+            .map((p) => (p as { type: "text"; text: string }).text)
+            .join("") ||
+          "",
+        parts: m.parts as MessagePart[] | undefined,
         model: m.model,
       }))
     )
@@ -173,10 +193,10 @@ export class MessageService {
           m.content ||
           m.parts
             ?.filter((p) => p.type === "text")
-            .map((p) => p.text)
+            .map((p) => (p as { type: "text"; text: string }).text)
             .join("") ||
           "",
-        parts: m.parts,
+        parts: m.parts as MessagePart[] | undefined,
         model: m.model,
       })),
     })
@@ -189,13 +209,13 @@ export class MessageService {
 
   /**
    * Convert stored messages to UIMessage format for useChat
+   * This ensures compatibility with AI SDK v6 client-side
    */
   toUIMessages(messages: Message[]): UIMessage[] {
     return messages.map((m) => ({
       id: m.id,
       role: m.role,
-      content: m.content,
-      parts: m.parts || undefined,
+      parts: (m.parts as UIMessagePart[]) || [{ type: "text", text: m.content }],
       createdAt: new Date(m.created_at),
     }))
   }
@@ -244,6 +264,40 @@ export class MessageService {
     role: "user" | "assistant" | "system"
   ): Promise<Message[]> {
     return this.messageRepo.findByRole(projectId, role)
+  }
+
+  /**
+   * Utility: Extract text content from UIMessage parts
+   */
+  extractTextFromParts(parts: UIMessagePart[] | undefined): string {
+    if (!parts || parts.length === 0) {
+      return ""
+    }
+    return parts
+      .filter((p): p is { type: "text"; text: string } => p.type === "text")
+      .map((p) => p.text)
+      .join("")
+  }
+
+  /**
+   * Utility: Convert UIMessage to database format
+   */
+  toDatabaseFormat(message: MessageToSave): CreateMessageData {
+    const content =
+      message.content ||
+      message.parts
+        ?.filter((p) => p.type === "text")
+        .map((p) => (p as { type: "text"; text: string }).text)
+        .join("") ||
+      ""
+
+    return {
+      projectId: "", // Will be set by caller
+      role: message.role,
+      content,
+      parts: message.parts as MessagePart[] | undefined,
+      model: message.model,
+    }
   }
 }
 

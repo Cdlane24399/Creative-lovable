@@ -16,8 +16,9 @@ import {
 import { setProjectInfo, getAgentContext } from "@/lib/ai/agent-context"
 import { withAuth } from "@/lib/auth"
 import { checkChatRateLimit } from "@/lib/rate-limit"
-import { getProjectService, getMessageService } from "@/lib/services"
+import { getProjectService, getMessageService, getTokenUsageService } from "@/lib/services"
 import { logger } from "@/lib/logger"
+import { validateRequest, chatRequestSchema, ValidationError, createValidationErrorResponse } from "@/lib/validations"
 
 export const maxDuration = 300
 
@@ -64,29 +65,28 @@ export const POST = withAuth(async (req: Request) => {
   
   try {
     const body = await req.json()
-    const {
-      messages,
-      projectId = DEFAULT_PROJECT_ID,
-      model = "anthropic",
-    } = body as {
-      messages: UIMessage[]
-      projectId?: string
-      model?: ModelProvider
+    
+    // Validate request body using Zod schema (AI SDK v6 UIMessage format)
+    let validatedRequest: { messages: unknown[]; projectId: string; model: ModelProvider }
+    try {
+      validatedRequest = validateRequest(chatRequestSchema, body)
+    } catch (error) {
+      if (error instanceof ValidationError) {
+        return createValidationErrorResponse(error)
+      }
+      throw error
     }
     
-    // Basic validation
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return Response.json({ error: 'At least one message is required' }, { status: 400 })
-    }
-    if (messages.length > 100) {
-      return Response.json({ error: 'Too many messages (max 100)' }, { status: 400 })
-    }
+    const messages = validatedRequest.messages as UIMessage[]
+    const projectId = validatedRequest.projectId || DEFAULT_PROJECT_ID
+    const model = validatedRequest.model
     
     log.info('Chat request received', { projectId, model, messageCount: messages.length })
 
     // Get services
     const projectService = getProjectService()
     const messageService = getMessageService()
+    const tokenUsageService = getTokenUsageService()
 
     // Get model settings (model instances handled by providers.ts)
     // Validate model exists in our settings, fallback to anthropic
@@ -142,6 +142,35 @@ export const POST = withAuth(async (req: Request) => {
           textLength: text?.length || 0,
           tokensUsed: usage?.totalTokens,
         })
+
+        // Persist token usage to database
+        if (usage && projectId && projectId !== DEFAULT_PROJECT_ID) {
+          try {
+            const promptTokens = usage.promptTokens || 0
+            const completionTokens = usage.completionTokens || 0
+            const totalTokens = usage.totalTokens || promptTokens + completionTokens
+
+            if (totalTokens > 0) {
+              await tokenUsageService.recordTokenUsage({
+                project_id: projectId,
+                model: validModel,
+                prompt_tokens: promptTokens,
+                completion_tokens: completionTokens,
+                total_tokens: totalTokens,
+                step_number: currentStepNumber,
+              })
+
+              log.debug(`Token usage recorded for step ${currentStepNumber}`, {
+                projectId,
+                model: validModel,
+                tokens: totalTokens,
+              })
+            }
+          } catch (error) {
+            // Log error but don't fail the chat request
+            log.error("Failed to record token usage:", { error: error instanceof Error ? error.message : String(error) })
+          }
+        }
       },
 
       // AI SDK v6: prepareStep for dynamic step configuration and activeTools

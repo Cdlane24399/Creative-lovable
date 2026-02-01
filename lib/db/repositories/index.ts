@@ -53,3 +53,12 @@ export {
   type Integration,
   type CreateIntegrationData,
 } from "./integration.repository"
+
+// Token usage repository
+export {
+  TokenUsageRepository,
+  getTokenUsageRepository,
+  resetTokenUsageRepository,
+  type TokenUsageQueryOptions,
+  type TokenUsageStats,
+} from "./token-usage.repository"

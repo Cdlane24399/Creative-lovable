@@ -33,3 +33,10 @@ export {
   getContextService,
   type ContextSummary,
 } from "./context.service"
+
+// Token usage service
+export {
+  TokenUsageService,
+  getTokenUsageService,
+  resetTokenUsageService,
+} from "./token-usage.service"

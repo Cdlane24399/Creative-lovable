@@ -28,9 +28,11 @@ An AI-powered web development assistant that builds real, working applications i
 - ♿ Fully accessible components
 
 ### **Multi-Model AI Support**
-- 🤖 Claude Sonnet 4.5 (Anthropic)
-- ⚡ Gemini 2.0 Flash (Google)
-- 🧠 GPT-4o (OpenAI)
+- 🤖 Claude Sonnet 4.5 (Anthropic) - Complex applications and reasoning
+- ⚡ Gemini 3 Flash Preview (Google) - Fast, cost-effective responses
+- 🧠 Gemini 3 Pro Preview (Google) - Advanced reasoning capabilities
+- 🎯 GPT-5.2 (OpenAI) - Alternative OpenAI option
+- 🚀 Claude Haiku (Anthropic) - Fast title generation
 - 🔀 Switch models on-the-fly
 
 ---
@@ -92,7 +94,11 @@ E2B_API_KEY=your_e2b_api_key
 # This provides 60x faster startup (see Custom Template Setup below)
 E2B_TEMPLATE_ID=nextjs-shadcn-v1
 
-# Required: At least ONE AI provider
+# Required: AI Gateway (recommended) OR at least one direct provider
+AI_GATEWAY_URL=https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}
+AI_GATEWAY_TOKEN=your_gateway_token
+
+# Fallback: Direct provider API keys (if not using Gateway)
 ANTHROPIC_API_KEY=your_anthropic_key
 OPENAI_API_KEY=your_openai_key
 GOOGLE_GENERATIVE_AI_API_KEY=your_google_key

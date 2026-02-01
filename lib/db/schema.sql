@@ -156,3 +156,33 @@ CREATE TRIGGER update_integrations_updated_at
   BEFORE UPDATE ON integrations
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+-- Token usage table: Track AI token consumption per project
+CREATE TABLE IF NOT EXISTS token_usage (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  
+  -- Foreign key to project
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  
+  -- Model information
+  model VARCHAR(100) NOT NULL,
+  
+  -- Token counts
+  prompt_tokens INTEGER NOT NULL DEFAULT 0,
+  completion_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  
+  -- Step tracking for agentic workflows
+  step_number INTEGER,
+  
+  -- Cost tracking (in USD)
+  cost_usd DECIMAL(10, 6),
+  
+  -- Timestamp
+  timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes for token usage queries
+CREATE INDEX IF NOT EXISTS idx_token_usage_project_id ON token_usage(project_id);
+CREATE INDEX IF NOT EXISTS idx_token_usage_timestamp ON token_usage(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_token_usage_project_timestamp ON token_usage(project_id, timestamp DESC);

@@ -19,7 +19,7 @@ However, several gaps exist that could create issues around **security**, **perf
 
 | Feature/Pattern | Current Status | Gap/Issue | Priority | Impact |
 |-----------------|----------------|-----------|----------|--------|
-| **Rate Limiting on Chat API** | ❌ Missing | No rate limiting on `/api/chat` endpoint | P0 - Critical | High abuse risk |
+| **Rate Limiting on Chat API** | ✅ Fixed | `checkChatRateLimit()` implemented in `lib/rate-limit.ts` | - | Resolved |
 | **Input Validation** | ⚠️ Partial | Basic validation but Zod schemas not used in chat route | P1 - High | Injection/malformed input risk |
 | **API Key Exposure** | ⚠️ Risk | Keys initialized even with empty string fallback | P1 - High | Runtime errors, security |
 | **Token Usage Tracking** | ⚠️ Partial | `onStepFinish` logs but doesnt persist or alert | P2 - Medium | Cost monitoring gaps |
@@ -42,46 +42,38 @@ However, several gaps exist that could create issues around **security**, **perf
 
 ### P0 - Critical Issues
 
-#### 2.1 Missing Rate Limiting on Chat API
+#### 2.1 Missing Rate Limiting on Chat API ✅ FIXED
 
-**Current Behavior:** The `/api/chat` endpoint at [`app/api/chat/route.ts:37`](app/api/chat/route.ts:37) wraps with `withAuth` but has no rate limiting.
+**Status:** Resolved - January 2026
 
-**Code Location:**
-- [`app/api/chat/route.ts:37-256`](app/api/chat/route.ts:37-256)
+**Solution:** `checkChatRateLimit()` function implemented in [`lib/rate-limit.ts`](lib/rate-limit.ts:103-147)
 
-**Issue:** Despite having `withRateLimit` middleware in [`lib/rate-limit.ts`](lib/rate-limit.ts:1-150), it is not applied to the chat endpoint. This creates:
-- Abuse risk via automated requests
-- Potential for API cost explosion
-- DoS vector
-
-**SDK v6 Best Practice:** Rate limiting should be applied to all AI-intensive endpoints, especially streaming endpoints.
-
-**Recommended Change:**
+**Implementation:**
 ```typescript
-// Current
 export const POST = withAuth(async (req: Request) => {
-
-// Recommended - compose middleware
-export const POST = withRateLimit(withAuth(async (req: Request) => {
+  // Rate limiting check
+  const rateLimit = checkChatRateLimit(req)
+  if (!rateLimit.allowed) {
+    return Response.json(
+      { error: "Rate limit exceeded" },
+      {
+        status: 429,
+        headers: {
+          "X-RateLimit-Limit": rateLimit.limit.toString(),
+          "X-RateLimit-Remaining": rateLimit.remaining.toString(),
+          "X-RateLimit-Reset": rateLimit.resetTime.toString(),
+        }
+      }
+    )
+  }
+  // ... rest of handler
+})
 ```
 
-**Alternative API:** Consider using AI SDK's built-in provider rate limiting or implement request queuing.
-
-> **⚠️ Type Compatibility Note**
->
-> The existing `withRateLimit` middleware in `lib/rate-limit.ts` expects `NextRequest` (from `next/server`), but the chat route handler receives `Request` (Web API standard). Before composing, either:
->
-> 1. **Option A:** Update `withRateLimit` to accept generic `Request`:
->    ```typescript
->    export function withRateLimit<T extends any[]>(
->      handler: (...args: T) => Promise<Response> | Response
->    ) {
->      return async (...args: T): Promise<Response> => {
->        const request = args[0] as Request
->        // Use request.headers.get() instead of NextRequest-specific methods
->    ```
->
-> 2. **Option B:** Create a chat-specific rate limiter that works with the streaming response pattern.
+**Notes:**
+- Uses in-memory Map for rate limiting (Redis migration pending)
+- Returns proper 429 status with rate limit headers
+- Per-client identification based on IP + user agent hash
 
 ---
 

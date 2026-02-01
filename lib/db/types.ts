@@ -107,3 +107,59 @@ export function formatRelativeTime(dateString: string): string {
 
   return date.toLocaleDateString()
 }
+
+// =============================================================================
+// Token Usage Types
+// =============================================================================
+
+/**
+ * Token usage record for tracking AI consumption
+ */
+export interface TokenUsage {
+  id: string
+  project_id: string
+  model: string
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  step_number: number | null
+  cost_usd: number | null
+  timestamp: string
+  created_at: string
+}
+
+/**
+ * Insert type for token usage records
+ * Omits auto-generated fields
+ */
+export interface TokenUsageInsert {
+  project_id: string
+  model: string
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  step_number?: number
+  cost_usd?: number
+  timestamp?: string
+}
+
+/**
+ * Aggregated token usage statistics
+ */
+export interface TokenUsageStats {
+  total_prompt_tokens: number
+  total_completion_tokens: number
+  total_tokens: number
+  total_cost_usd: number
+  record_count: number
+}
+
+/**
+ * Token usage query options
+ */
+export interface TokenUsageQueryOptions {
+  startDate?: Date
+  endDate?: Date
+  limit?: number
+  offset?: number
+}

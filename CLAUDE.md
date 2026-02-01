@@ -82,10 +82,96 @@ Creative-lovable/
 | Variable | Description | Required |
 |---|---|---|
 | `E2B_API_KEY` | API key for E2B sandboxes. | Yes |
-| `ANTHROPIC_API_KEY` | API key for Anthropic models. | Yes (or other AI provider) |
-| `NEON_DATABASE_URL` | Connection string for the Neon database. | Yes |
+| `AI_GATEWAY_URL` | AI Gateway endpoint URL. | Recommended |
+| `AI_GATEWAY_TOKEN` | AI Gateway authentication token. | Recommended |
+| `ANTHROPIC_API_KEY` | API key for Anthropic models. | Fallback |
+| `OPENAI_API_KEY` | API key for OpenAI models. | Fallback |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | API key for Google models. | Fallback |
+| `DATABASE_URL` | PostgreSQL connection string. | Yes |
 | `NEXT_PUBLIC_SUPABASE_URL` | Public URL for your Supabase project. | Yes |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon key for your Supabase project. | Yes |
+| `E2B_TEMPLATE_ID` | Custom E2B template ID for faster startup. | Recommended |
+
+See `.env.example` for complete configuration options.
+
+### 3.4. AI SDK v6 Patterns
+
+The codebase uses Vercel AI SDK v6 Beta with the following patterns:
+
+**Streaming with streamText:**
+```typescript
+import { streamText } from "ai"
+import { getModel, getGatewayProviderOptions } from "@/lib/ai/providers"
+
+const result = streamText({
+  model: getModel('anthropic'),
+  providerOptions: getGatewayProviderOptions('anthropic'),
+  messages,
+  tools,
+  maxSteps: 10,
+  onStepFinish: async ({ text, toolCalls, usage }) => {
+    // Log or persist token usage
+    logger.info({ usage }, 'Step completed')
+  },
+})
+
+return result.toDataStreamResponse()
+```
+
+**Tool Definition:**
+```typescript
+import { tool } from "ai"
+import { z } from "zod"
+
+const myTool = tool({
+  description: "Does something useful",
+  parameters: z.object({
+    input: z.string().describe("The input to process"),
+  }),
+  execute: async ({ input }) => {
+    // Tool implementation
+    return { result: "processed" }
+  },
+})
+```
+
+**Rate Limiting:**
+```typescript
+import { checkChatRateLimit } from "@/lib/rate-limit"
+
+export const POST = withAuth(async (req: Request) => {
+  // Check rate limit
+  const rateLimit = checkChatRateLimit(req)
+  if (!rateLimit.allowed) {
+    return Response.json(
+      { error: "Rate limit exceeded" },
+      { status: 429, headers: rateLimit.headers }
+    )
+  }
+  // ... handler logic
+})
+```
+
+### 3.5. Error Handling
+
+Always use the custom error classes from `lib/errors.ts`:
+
+```typescript
+import {
+  ValidationError,
+  AuthenticationError,
+  DatabaseError,
+  asyncErrorHandler
+} from "@/lib/errors"
+
+// In API routes
+export const POST = withAuth(asyncErrorHandler(async (req: Request) => {
+  if (!isValid) {
+    throw new ValidationError("Invalid input", errors)
+  }
+  // ...
+}))
+```
 
 ---
 
