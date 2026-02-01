@@ -1,12 +1,24 @@
 "use client"
 
+import * as React from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
+import { CopyButton } from "@/components/shared/copy-button"
 
 interface ChatMarkdownProps {
   content: string
   className?: string
+}
+
+const extractText = (node: React.ReactNode): string => {
+  if (typeof node === 'string') return node
+  if (typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(extractText).join('')
+  if (React.isValidElement(node)) {
+    return extractText((node as React.ReactElement<{ children?: React.ReactNode }>).props.children)
+  }
+  return ''
 }
 
 export function ChatMarkdown({ content, className }: ChatMarkdownProps) {
@@ -39,13 +51,20 @@ export function ChatMarkdown({ content, className }: ChatMarkdownProps) {
           },
           // Custom pre block styling
           pre({ children, ...props }) {
+            const text = extractText(children)
             return (
-              <pre
-                className="my-2 overflow-x-auto rounded-xl border border-zinc-700/50 bg-zinc-900 p-3 text-xs"
-                {...props}
-              >
-                {children}
-              </pre>
+              <div className="relative group my-2">
+                <pre
+                  className="overflow-x-auto rounded-xl border border-zinc-700/50 bg-zinc-900 p-3 text-xs"
+                  {...props}
+                >
+                  {children}
+                </pre>
+                <CopyButton
+                  value={text}
+                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                />
+              </div>
             )
           },
           // Custom link styling

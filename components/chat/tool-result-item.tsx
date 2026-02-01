@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react"
 import { motion } from "framer-motion"
+import { CopyButton } from "@/components/shared/copy-button"
 
 /**
  * Converts an absolute path to a relative display path.
@@ -203,10 +204,14 @@ export function ToolResultItem({
           aria-hidden={!isExpanded}
           id={contentId}
         >
-          <div className="mt-2 ml-6 p-3 bg-[#09090b] rounded-lg border border-white/10">
+          <div className="mt-2 ml-6 p-3 bg-[#09090b] rounded-lg border border-white/10 relative group">
             <pre className="text-xs text-gray-300 font-mono whitespace-pre-wrap break-words">
               {content}
             </pre>
+            <CopyButton
+              value={content!}
+              className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+            />
           </div>
         </motion.div>
       )}
