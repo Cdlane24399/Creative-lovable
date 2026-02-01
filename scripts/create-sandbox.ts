@@ -39,8 +39,7 @@ async function main() {
       throw error;
     }
 
-    console.log('
---- creating Sandbox ---');
+    console.log('\n--- creating Sandbox ---');
 
     // Sandbox Code
     const sandbox = await Sandbox.create();
@@ -55,8 +54,7 @@ async function main() {
     await sandbox.stop();
     
   } catch (error) {
-    console.error('
-Execution failed:', error);
+    console.error('\nExecution failed:', error);
     process.exit(1);
   }
 }
