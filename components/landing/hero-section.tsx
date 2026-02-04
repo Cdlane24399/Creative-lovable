@@ -192,6 +192,7 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
                     />
                     <button
                       onClick={() => removeImage(index)}
+                      aria-label="Remove image"
                       className="absolute -top-1.5 -right-1.5 bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-700 hover:bg-zinc-700 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       <X className="w-3 h-3" />
@@ -295,13 +296,18 @@ export function HeroSection({ onSubmit }: HeroSectionProps) {
               </div>
 
               <div className="flex items-center gap-2">
-                <button className="text-zinc-500 hover:text-zinc-300 h-9 w-9 flex items-center justify-center rounded-xl hover:bg-white/10 transition-colors border border-transparent hover:border-white/5">
+                <button
+                  className="text-zinc-500 hover:text-zinc-300 h-9 w-9 flex items-center justify-center rounded-xl hover:bg-white/10 transition-colors border border-transparent hover:border-white/5"
+                  aria-label="Voice input (coming soon)"
+                  title="Coming soon"
+                >
                   <AudioLines className="w-4 h-4" />
                 </button>
 
                 <button
                   onClick={handleSubmit}
                   disabled={!inputValue.trim() || isImproving}
+                  aria-label="Generate"
                   className="bg-gradient-to-r from-emerald-600 to-emerald-500 text-white disabled:bg-zinc-800 disabled:from-zinc-800 disabled:to-zinc-800 disabled:text-zinc-600 h-9 px-4 flex items-center justify-center gap-2 rounded-xl transition-all hover:from-emerald-500 hover:to-emerald-400 hover:shadow-lg hover:shadow-emerald-500/25 active:scale-[0.98] font-medium text-sm"
                 >
                   <span className="hidden sm:inline">Generate</span>
