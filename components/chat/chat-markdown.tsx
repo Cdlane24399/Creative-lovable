@@ -3,6 +3,7 @@
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
+import { CodeBlock } from "./code-block"
 
 interface ChatMarkdownProps {
   content: string
@@ -40,12 +41,9 @@ export function ChatMarkdown({ content, className }: ChatMarkdownProps) {
           // Custom pre block styling
           pre({ children, ...props }) {
             return (
-              <pre
-                className="my-2 overflow-x-auto rounded-xl border border-zinc-700/50 bg-zinc-900 p-3 text-xs"
-                {...props}
-              >
+              <CodeBlock {...props}>
                 {children}
-              </pre>
+              </CodeBlock>
             )
           },
           // Custom link styling
