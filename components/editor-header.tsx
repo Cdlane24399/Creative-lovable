@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { ChevronDown, Home, Github, Save, Check, Layers, BarChart3, Plus, ExternalLink, Copy, RefreshCw, Loader2, Share2, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -124,40 +125,55 @@ export function EditorHeader({
           </button>
 
           {/* Icon toggles */}
-          <button
-            onClick={() => onViewChange?.("code")}
-            className={cn(
-              "flex items-center justify-center h-7 w-7 rounded-full transition-all p-0",
-              currentView === "code"
-                ? "bg-zinc-800 text-white shadow-none"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
-            )}
-            title="Code"
-          >
-            <Layers className="h-4 w-4" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => onViewChange?.("code")}
+                className={cn(
+                  "flex items-center justify-center h-7 w-7 rounded-full transition-all p-0",
+                  currentView === "code"
+                    ? "bg-zinc-800 text-white shadow-none"
+                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                )}
+                aria-label="Code View"
+              >
+                <Layers className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Code View</TooltipContent>
+          </Tooltip>
 
-          <button
-            onClick={() => onViewChange?.("settings")}
-            className={cn(
-              "flex items-center justify-center h-7 w-7 rounded-full transition-all p-0",
-              currentView === "settings"
-                ? "bg-zinc-800 text-white shadow-none"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
-            )}
-            title="Settings"
-          >
-            <BarChart3 className="h-4 w-4" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => onViewChange?.("settings")}
+                className={cn(
+                  "flex items-center justify-center h-7 w-7 rounded-full transition-all p-0",
+                  currentView === "settings"
+                    ? "bg-zinc-800 text-white shadow-none"
+                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                )}
+                aria-label="Project Settings"
+              >
+                <BarChart3 className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Project Settings</TooltipContent>
+          </Tooltip>
 
           {/* Add button */}
-          <button
-            type="button"
-            className="flex items-center justify-center h-7 w-7 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
-            title="Add"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center justify-center h-7 w-7 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
+                aria-label="Add New Item"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Add New Item</TooltipContent>
+          </Tooltip>
         </div>
 
         {/* Expandable URL bar */}
@@ -173,21 +189,26 @@ export function EditorHeader({
                 className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800/50 h-9"
               >
                 {/* Refresh button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onRefresh?.()
-                  }}
-                  disabled={!!isRefreshing}
-                  className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all disabled:opacity-50"
-                  title="Refresh"
-                >
-                  {isRefreshing ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-3.5 w-3.5" />
-                  )}
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onRefresh?.()
+                      }}
+                      disabled={!!isRefreshing}
+                      className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all disabled:opacity-50"
+                      aria-label="Refresh Preview"
+                    >
+                      {isRefreshing ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Refresh Preview</TooltipContent>
+                </Tooltip>
 
                 {/* URL display */}
                 <span className="text-zinc-400 text-sm max-w-[300px] truncate select-all">
@@ -195,32 +216,42 @@ export function EditorHeader({
                 </span>
 
                 {/* Copy button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleCopyUrl()
-                  }}
-                  className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
-                  title="Copy URL"
-                >
-                  {copied ? (
-                    <Check className="h-3.5 w-3.5 text-emerald-500" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleCopyUrl()
+                      }}
+                      className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
+                      aria-label="Copy URL"
+                    >
+                      {copied ? (
+                        <Check className="h-3.5 w-3.5 text-emerald-500" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Copy URL</TooltipContent>
+                </Tooltip>
 
                 {/* Open external */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    window.open(sandboxUrl, "_blank")
-                  }}
-                  className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
-                  title="Open in new tab"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        window.open(sandboxUrl, "_blank")
+                      }}
+                      className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
+                      aria-label="Open in new tab"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Open in new tab</TooltipContent>
+                </Tooltip>
               </motion.div>
             ) : (
               <motion.button
@@ -237,6 +268,7 @@ export function EditorHeader({
                     : "text-zinc-600 cursor-not-allowed"
                 )}
                 title={sandboxUrl ? "Click to expand URL" : "No preview available"}
+                aria-label={sandboxUrl ? "Expand URL" : "No preview available"}
               >
                 <span className="text-sm">/</span>
                 {sandboxUrl && (
@@ -250,22 +282,34 @@ export function EditorHeader({
 
       {/* Right - Profile & GitHub */}
       <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 rounded-full text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-300"
-        >
-          <Github className="h-4 w-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-full text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-300"
+              aria-label="View on GitHub"
+            >
+              <Github className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>View on GitHub</TooltipContent>
+        </Tooltip>
 
         {/* Share button */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 rounded-full text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-300"
-        >
-          <Share2 className="h-4 w-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-full text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-300"
+              aria-label="Share Project"
+            >
+              <Share2 className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Share Project</TooltipContent>
+        </Tooltip>
 
         {/* Upgrade button */}
         <Button
@@ -286,17 +330,23 @@ export function EditorHeader({
         </Button>
 
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 overflow-hidden rounded-full p-0 hover:ring-2 hover:ring-zinc-700"
-            >
-              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-500 to-pink-500">
-                <span className="text-xs font-medium text-white">U</span>
-              </div>
-            </Button>
-          </DropdownMenuTrigger>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 overflow-hidden rounded-full p-0 hover:ring-2 hover:ring-zinc-700"
+                  aria-label="User Menu"
+                >
+                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-500 to-pink-500">
+                    <span className="text-xs font-medium text-white">U</span>
+                  </div>
+                </Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>User Menu</TooltipContent>
+          </Tooltip>
           <DropdownMenuContent align="end" className="w-48 rounded-xl border-zinc-800 bg-zinc-900 p-1">
             <DropdownMenuItem asChild>
               <a href="/profile" className="flex items-center gap-2 rounded-lg text-zinc-300 focus:bg-zinc-800 focus:text-zinc-100 cursor-pointer">
