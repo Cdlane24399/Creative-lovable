@@ -37,9 +37,11 @@ export const GET = withAuth(asyncErrorHandler(async (request: NextRequest, conte
  * Body: UpdateProjectRequest fields (all optional)
  */
 export const PATCH = withAuth(asyncErrorHandler(async (request: NextRequest, context: RouteContext) => {
-  const { id } = await context.params
+  const [{ id }, body] = await Promise.all([
+    context.params,
+    request.json() as Promise<UpdateProjectRequest>,
+  ])
   const projectService = getProjectService()
-  const body: UpdateProjectRequest = await request.json()
 
   // Update project (service handles validation, cache invalidation)
   const project = await projectService.updateProject(id, body)

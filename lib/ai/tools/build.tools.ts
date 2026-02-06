@@ -8,11 +8,11 @@ import {
   recordToolExecution,
 } from "../agent-context"
 import {
-  createSandbox,
   executeCommand,
   killBackgroundProcess,
   startBackgroundProcess,
 } from "@/lib/e2b/sandbox"
+import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider"
 import { createErrorResult, formatDuration } from "../utils"
 
 /**
@@ -57,7 +57,8 @@ export function createBuildTools(projectId: string) {
         const fullCommand = `cd "${workDir}" && ${command}`
 
         try {
-          const sandbox = await createSandbox(projectId)
+          // Get sandbox from infrastructure context
+          const sandbox = getCurrentSandbox()
           const result = await executeCommand(sandbox, fullCommand, { timeoutMs: timeout })
 
           // Track pnpm add for dependency awareness
@@ -122,7 +123,8 @@ export function createBuildTools(projectId: string) {
         const pnpmFlag = dev ? "-D" : ""
 
         try {
-          const sandbox = await createSandbox(projectId)
+          // Get sandbox from infrastructure context
+          const sandbox = getCurrentSandbox()
 
           // Stop dev server to release lock on pnpm-lock.yaml
           // Turbopack holds the lockfile while running, causing pnpm add to fail
@@ -197,7 +199,8 @@ export function createBuildTools(projectId: string) {
         const startTime = new Date()
 
         try {
-          const sandbox = await createSandbox(projectId)
+          // Get sandbox from infrastructure context
+          const sandbox = getCurrentSandbox()
           const logsResult = await executeCommand(
             sandbox,
             `tail -n ${logLines} /tmp/server.log 2>/dev/null || echo "No server logs found"`

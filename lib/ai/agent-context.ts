@@ -37,6 +37,8 @@ import type {
   TaskGraph,
 } from "./context-types"
 
+type RepositoriesModule = typeof import("@/lib/db/repositories")
+
 // =============================================================================
 // In-Memory Context Store (Fast Read Cache)
 // =============================================================================
@@ -61,6 +63,16 @@ const CLEANUP_INTERVAL_MS = 5 * 60 * 1000
 
 /** Track when cleanup was last run */
 let lastCleanup = Date.now()
+
+/** Memoized dynamic import for repository access */
+let repositoriesModulePromise: Promise<RepositoriesModule> | null = null
+
+async function getRepositoriesModule(): Promise<RepositoriesModule> {
+  if (!repositoriesModulePromise) {
+    repositoriesModulePromise = import("@/lib/db/repositories")
+  }
+  return repositoriesModulePromise
+}
 
 /**
  * Cleanup expired contexts to prevent memory leaks
@@ -163,7 +175,7 @@ export async function getAgentContextAsync(projectId: string): Promise<AgentCont
   // Load from database using new repository
   const loadPromise = (async () => {
     try {
-      const { getContextRepository } = await import("@/lib/db/repositories")
+      const { getContextRepository } = await getRepositoriesModule()
       const contextRepo = getContextRepository()
       const dbContext = await contextRepo.findByProjectId(projectId)
 
@@ -212,7 +224,7 @@ async function persistContext(context: AgentContext): Promise<void> {
   if (!ENABLE_ASYNC_PERSISTENCE) return
 
   try {
-    const { getContextRepository, getProjectRepository } = await import("@/lib/db/repositories")
+    const { getContextRepository, getProjectRepository } = await getRepositoriesModule()
     const contextRepo = getContextRepository()
     const projectRepo = getProjectRepository()
 
@@ -711,7 +723,7 @@ export async function deleteContext(projectId: string): Promise<void> {
   clearContext(projectId)
   
   try {
-    const { getContextRepository } = await import("@/lib/db/repositories")
+    const { getContextRepository } = await getRepositoriesModule()
     const contextRepo = getContextRepository()
     await contextRepo.delete(projectId)
   } catch (error) {

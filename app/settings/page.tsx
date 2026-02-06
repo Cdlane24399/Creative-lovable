@@ -1,16 +1,19 @@
 "use client"
 
-import { useState } from "react"
+import dynamic from "next/dynamic"
 import { ProfileForm } from "@/components/settings/profile-form"
-import { IntegrationsList } from "@/components/settings/integrations-list"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { User, Link2, Monitor, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 
+const IntegrationsList = dynamic(
+    () => import("@/components/settings/integrations-list").then((mod) => mod.IntegrationsList),
+    { loading: () => <div className="h-36 rounded-xl border border-zinc-800 bg-zinc-900/50" /> }
+)
+
 export default function SettingsPage() {
     const router = useRouter()
-    const [activeTab, setActiveTab] = useState("profile")
 
     return (
         <div className="min-h-screen bg-black text-zinc-100 p-8">
@@ -30,7 +33,7 @@ export default function SettingsPage() {
                     </div>
                 </div>
 
-                <Tabs defaultValue="profile" className="space-y-6" onValueChange={setActiveTab}>
+                <Tabs defaultValue="profile" className="space-y-6">
                     <TabsList className="bg-zinc-900 border border-zinc-800 p-1 rounded-xl">
                         <TabsTrigger
                             value="profile"

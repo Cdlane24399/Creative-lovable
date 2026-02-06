@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useRef, useEffect, useImperativeHandle, forwardRef } from "react"
+import { useState, useRef, useEffect, useImperativeHandle, forwardRef, useCallback } from "react"
 import { useChatWithTools } from "@/hooks/use-chat-with-tools"
 import { type ModelProvider } from "@/lib/ai/agent"
 import { MessageList } from "@/components/chat/message-list"
@@ -9,6 +9,17 @@ import { PromptInput } from "@/components/chat/prompt-input"
 import type { MessagePart } from "@/components/chat/message" // Import shared type
 import type { Message } from "@/lib/db/types"
 import { parseToolOutputs } from "@/lib/parsers/tool-outputs"
+
+const VALID_MODEL_KEYS = new Set<ModelProvider>([
+  "anthropic",
+  "opus",
+  "google",
+  "googlePro",
+  "openai",
+  "minimax",
+  "moonshot",
+  "glm",
+])
 
 // Exported handle type for programmatic control
 export interface ChatPanelHandle {
@@ -42,13 +53,90 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
 
   // Load saved model preference from localStorage
   useEffect(() => {
-    if (projectId) {
-      const savedModel = localStorage.getItem(`project-model-${projectId}`)
-      if (savedModel && ['anthropic', 'opus', 'google', 'googlePro', 'openai'].includes(savedModel)) {
-        setSelectedModel(savedModel as ModelProvider)
+    if (!projectId) return
+
+    const savedModel = localStorage.getItem(`project-model-${projectId}`)
+    if (!savedModel || !VALID_MODEL_KEYS.has(savedModel as ModelProvider)) return
+
+    setSelectedModel((prev) => {
+      const nextModel = savedModel as ModelProvider
+      return prev === nextModel ? prev : nextModel
+    })
+  }, [projectId])
+
+  const handleChatError = useCallback((error: Error) => {
+    console.error("Chat error:", error)
+    setLastError(error)
+  }, [])
+
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!isChatEnabled) return
+    if (!inputValue.trim()) return
+
+    const content = inputValue.trim()
+    setInputValue("")
+
+    await sendMessage({ text: content })
+  }, [inputValue, isChatEnabled, sendMessage])
+
+  const handleRetry = useCallback(() => {
+    setLastError(null)
+    // Re-send the last user message if there was one
+    const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")
+    if (lastUserMessage) {
+      const textPart = (lastUserMessage.parts as MessagePart[]).find((p) => p.type === "text")
+      if (textPart && textPart.type === "text") {
+        sendMessage({ text: (textPart as { type: "text"; text: string }).text })
       }
     }
-  }, [projectId])
+  }, [messages, sendMessage])
+
+  const typewriterEffect = useCallback(async (text: string) => {
+    setShowImproveEffect(true)
+    setInputValue("")
+
+    await new Promise((r) => setTimeout(r, 200))
+
+    for (let i = 0; i <= text.length; i++) {
+      setInputValue(text.slice(0, i))
+      const delay = Math.random() * 20 + 10
+      await new Promise((r) => setTimeout(r, delay))
+    }
+
+    setShowImproveEffect(false)
+  }, [])
+
+  const handleImprovePrompt = useCallback(async () => {
+    if (!inputValue.trim() || isImproving || isWorking) return
+
+    setIsImproving(true)
+
+    try {
+      const response = await fetch("/api/improve-prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: inputValue }),
+      })
+
+      if (!response.ok) throw new Error("Failed to improve prompt")
+
+      const { improvedPrompt } = await response.json()
+
+      await typewriterEffect(improvedPrompt)
+      textareaRef.current?.focus()
+    } catch (error) {
+      console.error("Failed to improve prompt:", error)
+    } finally {
+      setIsImproving(false)
+    }
+  }, [inputValue, isImproving, isWorking, typewriterEffect])
+
+  const handleSelectSuggestion = useCallback((suggestion: string) => {
+    if (isWorking) return
+    // Send the suggestion immediately
+    sendMessage({ text: suggestion })
+  }, [isWorking, sendMessage])
 
   // Save model preference when it changes
   useEffect(() => {
@@ -61,10 +149,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     projectId,
     model: selectedModel,
     initialMessages: savedMessages,
-    onError: (error) => {
-      console.error("Chat error:", error)
-      setLastError(error)
-    },
+    onError: handleChatError,
   })
 
   // Expose sendMessage via ref for programmatic control (e.g., auto-fix)
@@ -109,75 +194,6 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
       onFilesReady?.(filesReadyInfo.projectName, filesReadyInfo.sandboxId)
     }
   }, [messages, onSandboxUrlUpdate, onFilesReady])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!isChatEnabled) return
-    if (!inputValue.trim()) return
-
-    const content = inputValue.trim()
-    setInputValue("")
-
-    await sendMessage({ text: content })
-  }
-
-  const handleRetry = () => {
-    setLastError(null)
-    // Re-send the last user message if there was one
-    const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")
-    if (lastUserMessage) {
-      const textPart = (lastUserMessage.parts as MessagePart[]).find((p) => p.type === "text")
-      if (textPart && textPart.type === "text") {
-        sendMessage({ text: (textPart as { type: "text"; text: string }).text })
-      }
-    }
-  }
-
-  const typewriterEffect = async (text: string) => {
-    setShowImproveEffect(true)
-    setInputValue("")
-
-    await new Promise(r => setTimeout(r, 200))
-
-    for (let i = 0; i <= text.length; i++) {
-      setInputValue(text.slice(0, i))
-      const delay = Math.random() * 20 + 10
-      await new Promise(r => setTimeout(r, delay))
-    }
-
-    setShowImproveEffect(false)
-  }
-
-  const handleImprovePrompt = async () => {
-    if (!inputValue.trim() || isImproving || isWorking) return
-
-    setIsImproving(true)
-
-    try {
-      const response = await fetch("/api/improve-prompt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: inputValue }),
-      })
-
-      if (!response.ok) throw new Error("Failed to improve prompt")
-
-      const { improvedPrompt } = await response.json()
-
-      await typewriterEffect(improvedPrompt)
-      textareaRef.current?.focus()
-    } catch (error) {
-      console.error("Failed to improve prompt:", error)
-    } finally {
-      setIsImproving(false)
-    }
-  }
-
-  const handleSelectSuggestion = (suggestion: string) => {
-    if (isWorking) return
-    // Send the suggestion immediately
-    sendMessage({ text: suggestion })
-  }
 
   return (
     <div className="flex h-full flex-col bg-[#111111]">

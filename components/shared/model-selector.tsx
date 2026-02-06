@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { MODEL_DISPLAY_NAMES, MODEL_DESCRIPTIONS, type ModelProvider } from "@/lib/ai/agent"
-import { AnthropicIcon, GoogleIcon, OpenAIIcon } from "./icons"
+import { AnthropicIcon, GoogleIcon, OpenAIIcon, MiniMaxIcon, MoonshotIcon, GLMIcon } from "./icons"
 
 interface ModelSelectorProps {
   selectedModel: ModelProvider
@@ -41,10 +41,16 @@ export function ModelSelector({
         return <GoogleIcon className={className} />
       case "openai":
         return <OpenAIIcon className={className} />
+      case "minimax":
+        return <MiniMaxIcon className={className} />
+      case "moonshot":
+        return <MoonshotIcon className={className} />
+      case "glm":
+        return <GLMIcon className={className} />
     }
   }
 
-  const models: ModelProvider[] = ["anthropic", "opus", "google", "googlePro", "openai"]
+  const models: ModelProvider[] = ["anthropic", "opus", "google", "googlePro", "openai", "minimax", "moonshot", "glm"]
 
   return (
     <DropdownMenu>

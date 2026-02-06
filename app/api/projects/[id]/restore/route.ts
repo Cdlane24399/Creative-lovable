@@ -21,14 +21,16 @@ export const POST = withAuth(async (req: NextRequest, { params }: { params: Prom
   try {
     // Get project from database
     const projectRepo = getProjectRepository()
-    const project = await projectRepo.findById(projectId)
+    const [project, snapshot] = await Promise.all([
+      projectRepo.findById(projectId),
+      getProjectSnapshot(projectId),
+    ])
 
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 })
     }
 
     // Check if we have files to restore
-    const snapshot = await getProjectSnapshot(projectId)
     const fileCount = snapshot ? Object.keys(snapshot.files_snapshot).length : 0
 
     if (!snapshot || fileCount === 0) {

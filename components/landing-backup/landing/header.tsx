@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Menu, X, Github, User, Settings, CreditCard, LogOut, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -20,7 +20,8 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [user, setUser] = useState<SupabaseUser | null>(null)
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
+  const showProfileMenu = Boolean(user && profileOpen)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -32,12 +33,12 @@ export function Header() {
     })
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, [supabase])
 
-  const handleSignOut = async () => {
+  const handleSignOut = useCallback(async () => {
       await supabase.auth.signOut()
       window.location.reload()
-  }
+  }, [supabase])
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50">
@@ -88,7 +89,7 @@ export function Header() {
               {user ? (
                 <div className="relative">
                   <button
-                    onClick={() => setProfileOpen(!profileOpen)}
+                    onClick={() => setProfileOpen((current) => !current)}
                     className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-lg hover:bg-zinc-800 border border-transparent hover:border-zinc-700 transition-all"
                   >
                     <div className="h-8 w-8 rounded-md bg-zinc-800 flex items-center justify-center border border-zinc-700">
@@ -102,7 +103,7 @@ export function Header() {
                     )} />
                   </button>
 
-                  {profileOpen && (
+                  {showProfileMenu ? (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
                       <div className="absolute right-0 top-full mt-2 w-60 bg-[#18181B] rounded-xl py-2 shadow-xl border border-zinc-800 z-50">
@@ -134,7 +135,7 @@ export function Header() {
                         </div>
                       </div>
                     </>
-                  )}
+                  ) : null}
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
@@ -150,7 +151,7 @@ export function Header() {
 
             {/* Mobile menu button */}
             <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              onClick={() => setMobileMenuOpen((current) => !current)}
               className="md:hidden inline-flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800 hover:bg-zinc-700 transition-colors border border-zinc-700"
               aria-label="Toggle menu"
             >
@@ -163,7 +164,7 @@ export function Header() {
           </div>
 
           {/* Mobile Nav Panel */}
-          {mobileMenuOpen && (
+          {mobileMenuOpen ? (
             <div className="md:hidden border-t border-zinc-800 py-4 bg-[#09090B]">
               <div className="space-y-1">
                 {navLinks.map((link) => (
@@ -202,7 +203,7 @@ export function Header() {
                 )}
               </div>
             </div>
-          )}
+          ) : null}
         </div>
       </nav>
     </header>

@@ -44,3 +44,24 @@ export const LovableLogo = ({ className }: { className?: string }) => (
     />
   </svg>
 )
+
+export const MiniMaxIcon = ({ className }: { className?: string }) => (
+  <svg role="img" viewBox="0 0 24 24" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
+    <title>MiniMax</title>
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-13v6h4V7H10zm0 8v2h4v-2h-4z" />
+  </svg>
+)
+
+export const MoonshotIcon = ({ className }: { className?: string }) => (
+  <svg role="img" viewBox="0 0 24 24" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
+    <title>Moonshot AI</title>
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10c.83 0 1.63-.1 2.4-.29-.57-.53-.97-1.24-1.1-2.04-.13.02-.26.03-.4.03-3.31 0-6-2.69-6-6s2.69-6 6-6c.14 0 .27.01.4.03.13-.8.53-1.51 1.1-2.04C13.63 2.1 12.83 2 12 2zm6 10c0 3.31-2.69 6-6 6-.55 0-1.08-.08-1.58-.21.34-.64.54-1.37.54-2.14 0-2.49-1.79-4.58-4.16-5.03C7.31 9.65 8.09 8.5 9.12 7.74 10.25 6.9 11.66 6.43 13.14 6.43c.21 0 .41.01.61.04C17.46 6.88 20 9.62 20 12.5c0 .17-.01.33-.03.5h-.03z" />
+  </svg>
+)
+
+export const GLMIcon = ({ className }: { className?: string }) => (
+  <svg role="img" viewBox="0 0 24 24" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
+    <title>Zhipu AI GLM</title>
+    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+)

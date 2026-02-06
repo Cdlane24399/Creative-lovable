@@ -19,17 +19,16 @@ interface HealthCheck {
  * - 503 Service Unavailable: One or more critical dependencies unhealthy
  */
 export async function GET() {
-  const checks: HealthCheck[] = []
   const startTime = Date.now()
 
-  // Check Database (Supabase/Neon)
-  checks.push(await checkDatabase())
-
-  // Check E2B (optional - don't fail readiness if unavailable)
-  checks.push(await checkE2B())
-
-  // Check AI Provider (optional - don't fail readiness if unavailable)
-  checks.push(await checkAIProvider())
+  const checks: HealthCheck[] = await Promise.all([
+    // Check Database (Supabase/Neon)
+    checkDatabase(),
+    // Check E2B (optional - don't fail readiness if unavailable)
+    checkE2B(),
+    // Check AI Provider (optional - don't fail readiness if unavailable)
+    checkAIProvider(),
+  ])
 
   const allHealthy = checks.every(
     (c) => c.status === "healthy" || c.status === "degraded"

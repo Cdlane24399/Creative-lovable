@@ -18,6 +18,7 @@ import { checkChatRateLimit } from "@/lib/rate-limit"
 import { getProjectService, getMessageService, getTokenUsageService } from "@/lib/services"
 import { logger } from "@/lib/logger"
 import { validateRequest, chatRequestSchema, ValidationError, createValidationErrorResponse } from "@/lib/validations"
+import { withSandbox } from "@/lib/e2b/sandbox-provider"
 
 export const maxDuration = 300
 
@@ -33,6 +34,22 @@ type ToolName = typeof PLANNING_TOOLS[number] | typeof FILE_TOOLS[number] | type
 
 // Default project ID for sandbox operations
 const DEFAULT_PROJECT_ID = "default"
+
+// Tool groups for infrastructure-level management
+const SANBOX_REQUIRED_TOOLS = [
+  "initializeProject",
+  "batchWriteFiles", 
+  "syncProject",
+  "writeFile",
+  "editFile",
+  "readFile",
+  "getProjectStructure",
+  "runCommand",
+  "installPackage",
+  "getBuildStatus",
+  "executeCode",
+  "createWebsite", // deprecated but still needs sandbox
+] as const
 
 // Export type for the chat messages
 export type ChatMessage = UIMessage
@@ -94,8 +111,20 @@ export const POST = withAuth(async (req: Request) => {
     const modelKey = validModel as ModelKey // All ModelProvider values are valid ModelKey values
     const modelSettings = MODEL_SETTINGS[validModel]
 
+    // Start independent async work early to reduce route-level waterfalls
+    const modelMessagesPromise = convertToModelMessages(messages)
+    const ensureProjectExistsPromise: Promise<void> =
+      projectId && projectId !== DEFAULT_PROJECT_ID
+        ? projectService
+            .ensureProjectExists(projectId, "Untitled Project")
+            .then(() => undefined)
+            .catch((dbError) => {
+              console.warn("Failed to ensure project exists:", dbError)
+            })
+        : Promise.resolve()
+
     // Convert messages for the model
-    const modelMessages = await convertToModelMessages(messages)
+    const modelMessages = await modelMessagesPromise
 
     // Create context-aware tools for this project
     const tools = createContextAwareTools(projectId)
@@ -108,13 +137,7 @@ export const POST = withAuth(async (req: Request) => {
 
     // Ensure project exists in database BEFORE any tool calls can trigger context saves
     // This prevents foreign key constraint violations
-    if (projectId && projectId !== DEFAULT_PROJECT_ID) {
-      try {
-        await projectService.ensureProjectExists(projectId, "Untitled Project")
-      } catch (dbError) {
-        console.warn("Failed to ensure project exists:", dbError)
-      }
-    }
+    await ensureProjectExistsPromise
 
     // AI SDK v6 best practice: Track steps for debugging and monitoring
     let currentStepNumber = 0
@@ -336,14 +359,21 @@ export const POST = withAuth(async (req: Request) => {
       })
     }
 
-    // Stream the response with Gateway (provider failover handled by Gateway's order option)
-    const result = streamText({
-      model: getModel(modelKey),
-      providerOptions: getGatewayProviderOptions(modelKey),
-      ...streamConfig,
-    })
+    // Wrap streaming in sandbox context for infrastructure-level lifecycle management
+    // This ensures all tools share the same sandbox instance
+    return withSandbox(projectId, async () => {
+      // Stream the response with Gateway (provider failover handled by Gateway's order option)
+      const result = streamText({
+        model: getModel(modelKey),
+        providerOptions: getGatewayProviderOptions(modelKey),
+        ...streamConfig,
+      })
 
-    return createResponse(result)
+      return createResponse(result)
+    }, {
+      projectDir: "/home/user/project",
+      autoPause: true,
+    })
   } catch (error) {
     console.error("Chat API error:", error)
 

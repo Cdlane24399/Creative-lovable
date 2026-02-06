@@ -10,7 +10,7 @@ const MODEL_CONFIG = {
     providerOrder: ['anthropic', 'vertex'] as const,
   },
   opus: {
-    gatewayId: 'anthropic/claude-opus-4-5-20251101',
+    gatewayId: 'anthropic/claude-opus-4-6',
     providerOrder: ['anthropic', 'vertex'] as const,
   },
   google: {
@@ -28,6 +28,18 @@ const MODEL_CONFIG = {
   haiku: {
     gatewayId: 'anthropic/claude-3-5-haiku-20241022',
     providerOrder: ['anthropic', 'vertex'] as const,
+  },
+  minimax: {
+    gatewayId: 'minimax/minimax-m2.1',
+    providerOrder: ['minimax'] as const,
+  },
+  moonshot: {
+    gatewayId: 'moonshotai/kimi-k2.5',
+    providerOrder: ['moonshotai'] as const,
+  },
+  glm: {
+    gatewayId: 'zai/glm-4.7',
+    providerOrder: ['zai'] as const,
   },
 } as const
 

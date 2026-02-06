@@ -47,14 +47,14 @@ export interface UseDevServerReturn {
   getLogs: () => Promise<string[]>
 }
 
-const DEFAULT_STATUS: DevServerStatus = {
+const createDefaultStatus = (): DevServerStatus => ({
   isRunning: false,
   port: null,
   url: null,
   logs: [],
   errors: [],
   lastChecked: new Date().toISOString(),
-}
+})
 
 export function useDevServer({
   projectId,
@@ -67,18 +67,11 @@ export function useDevServer({
   onReady,
   onStatusChange,
 }: UseDevServerOptions): UseDevServerReturn {
-  // Minimal logging - only log on first render
-  const hasLoggedRef = useRef(false)
-  if (!hasLoggedRef.current && projectId) {
-    console.log("[useDevServer] Initialized for project:", projectId)
-    hasLoggedRef.current = true
-  }
-
-  const [status, setStatus] = useState<DevServerStatus>(DEFAULT_STATUS)
+  const [status, setStatus] = useState<DevServerStatus>(() => createDefaultStatus())
   const [isStarting, setIsStarting] = useState(false)
   const [isStopping, setIsStopping] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  
+
   // Track polling state
   const pollRef = useRef<NodeJS.Timeout | null>(null)
   const lastErrorsRef = useRef<string[]>([])
@@ -91,6 +84,37 @@ export function useDevServer({
   const retryCountRef = useRef(0)
   const backoffIntervalRef = useRef<number>(2000)
   const lastStatusHashRef = useRef<string>("")
+  const startingPollIntervalRef = useRef(startingPollInterval)
+  const loggedProjectIdRef = useRef<string | null>(null)
+  const callbacksRef = useRef({
+    onError,
+    onReady,
+    onStatusChange,
+  })
+
+  useEffect(() => {
+    callbacksRef.current = {
+      onError,
+      onReady,
+      onStatusChange,
+    }
+  }, [onError, onReady, onStatusChange])
+
+  useEffect(() => {
+    startingPollIntervalRef.current = startingPollInterval
+  }, [startingPollInterval])
+
+  useEffect(() => {
+    if (!projectId) {
+      loggedProjectIdRef.current = null
+      return
+    }
+
+    if (loggedProjectIdRef.current !== projectId) {
+      console.log("[useDevServer] Initialized for project:", projectId)
+      loggedProjectIdRef.current = projectId
+    }
+  }, [projectId])
 
   // Clear polling
   const stopPolling = useCallback(() => {
@@ -99,7 +123,7 @@ export function useDevServer({
       pollRef.current = null
     }
     pollActiveRef.current = false
-    backoffIntervalRef.current = 2000
+    backoffIntervalRef.current = startingPollIntervalRef.current
 
     // Abort any ongoing fetch
     if (abortControllerRef.current) {
@@ -128,12 +152,12 @@ export function useDevServer({
       
       if (!response.ok) {
         consecutiveFailuresRef.current++
-        
+
         // Only log after multiple failures
         if (consecutiveFailuresRef.current === 5) {
           console.warn(`[useDevServer] Multiple connection failures (${consecutiveFailuresRef.current})`)
         }
-        
+
         // Stop polling after too many failures
         if (consecutiveFailuresRef.current > 10) {
           console.error("[useDevServer] Stopping poll after 10 consecutive failures")
@@ -146,7 +170,7 @@ export function useDevServer({
       consecutiveFailuresRef.current = 0
       retryCountRef.current = 0
       lastSuccessfulPollRef.current = Date.now()
-      
+
       const data = await response.json()
       return data as DevServerStatus
     } catch (err) {
@@ -154,10 +178,10 @@ export function useDevServer({
       if (err instanceof Error && err.name === 'AbortError') {
         return null
       }
-      
+
       consecutiveFailuresRef.current++
       retryCountRef.current++
-      
+
       // Only log errors after multiple failures
       if (consecutiveFailuresRef.current > 3) {
         console.warn(`[useDevServer] Connection error (${consecutiveFailuresRef.current} consecutive)`)
@@ -167,39 +191,42 @@ export function useDevServer({
   }, [projectId, stopPolling])
 
   // Update status and trigger callbacks
-  const updateStatus = useCallback((newStatus: DevServerStatus) => {
-    setStatus(newStatus)
-    onStatusChange?.(newStatus)
+  const updateStatus = useCallback((nextStatus: DevServerStatus | ((prev: DevServerStatus) => DevServerStatus)) => {
+    setStatus((prevStatus) => {
+      const newStatus = typeof nextStatus === "function" ? nextStatus(prevStatus) : nextStatus
+      callbacksRef.current.onStatusChange?.(newStatus)
 
-    // Check for new errors
-    if (newStatus.errors.length > 0) {
-      const newErrors = newStatus.errors.filter(
-        e => !lastErrorsRef.current.includes(e)
-      )
-      if (newErrors.length > 0) {
-        lastErrorsRef.current = newStatus.errors
-        onError?.(newErrors)
+      // Check for new errors
+      if (newStatus.errors.length > 0) {
+        const newErrors = newStatus.errors.filter(
+          (e) => !lastErrorsRef.current.includes(e)
+        )
+        if (newErrors.length > 0) {
+          lastErrorsRef.current = newStatus.errors
+          callbacksRef.current.onError?.(newErrors)
+        }
       }
-    }
 
-    // Check if server just became ready - only call onReady once
-    if (newStatus.isRunning && !wasRunningRef.current && newStatus.url) {
-      if (!onReadyCalledRef.current) {
-        console.log("[useDevServer] Server ready:", newStatus.url)
-        onReadyCalledRef.current = true
-        onReady?.(newStatus.url)
+      // Check if server just became ready - only call onReady once
+      if (newStatus.isRunning && !wasRunningRef.current && newStatus.url) {
+        if (!onReadyCalledRef.current) {
+          console.log("[useDevServer] Server ready:", newStatus.url)
+          onReadyCalledRef.current = true
+          callbacksRef.current.onReady?.(newStatus.url)
+        }
+        // Slow down polling now that server is running
+        setIsStarting(false)
       }
-      // Slow down polling now that server is running
-      setIsStarting(false)
-    }
-    
-    // Reset onReady flag if server stops
-    if (!newStatus.isRunning && wasRunningRef.current) {
-      onReadyCalledRef.current = false
-    }
-    
-    wasRunningRef.current = newStatus.isRunning
-  }, [onError, onReady, onStatusChange])
+
+      // Reset onReady flag if server stops
+      if (!newStatus.isRunning && wasRunningRef.current) {
+        onReadyCalledRef.current = false
+      }
+
+      wasRunningRef.current = newStatus.isRunning
+      return newStatus
+    })
+  }, [])
 
   // Hash status for change detection
   const hashStatus = useCallback((status: DevServerStatus): string => {
@@ -281,26 +308,21 @@ export function useDevServer({
       }
 
       // Update status with new URL
-      const newStatus: DevServerStatus = {
-        ...status,
+      updateStatus((prevStatus) => ({
+        ...prevStatus,
         isRunning: true,
         url: data.url,
         port: data.port,
         lastChecked: new Date().toISOString(),
-      }
-      updateStatus(newStatus)
+      }))
 
       if (data.url) {
         // Server is ready with URL - stop polling
         stopPolling()
-        if (!onReadyCalledRef.current) {
-          onReadyCalledRef.current = true
-          onReady?.(data.url)
-        }
       } else {
         // No URL yet - start polling to wait for server
         console.log("[useDevServer] No URL in response, starting polling...")
-        startPolling(2000)
+        startPolling(startingPollInterval)
       }
     } catch (err) {
       console.error("[useDevServer] Error starting server:", err)
@@ -310,7 +332,7 @@ export function useDevServer({
     } finally {
       setIsStarting(false)
     }
-  }, [projectId, projectName, sandboxId, status, stopPolling, updateStatus, onReady])
+  }, [projectId, projectName, sandboxId, stopPolling, updateStatus, startPolling, startingPollInterval])
 
   // Stop the dev server
   const stop = useCallback(async () => {
@@ -363,7 +385,7 @@ export function useDevServer({
     if (!projectId || !enabled) {
       stopPolling()
       if (!projectId) {
-        setStatus(DEFAULT_STATUS)
+        setStatus(createDefaultStatus())
       }
       return
     }
@@ -384,6 +406,7 @@ export function useDevServer({
     retryCountRef.current = 0
     onReadyCalledRef.current = false
     lastSuccessfulPollRef.current = Date.now()
+    lastStatusHashRef.current = ""
   }, [projectId])
 
   // Cleanup on unmount

@@ -13,11 +13,11 @@ import { z } from "zod"
 import { SUPPORTED_LANGUAGES } from "../schemas/tool-schemas"
 import { recordToolExecution } from "../agent-context"
 import {
-  createSandbox,
   getCodeInterpreterSandbox,
   executeCode as executeCodeInSandbox,
   type CodeLanguage,
 } from "@/lib/e2b/sandbox"
+import { getSandboxLazy } from "@/lib/e2b/sandbox-provider"
 import { createErrorResult, formatDuration } from "../utils"
 
 /**
@@ -56,10 +56,11 @@ export function createCodeTools(projectId: string) {
 
         try {
           // Use Code Interpreter for Python if available and enabled
+          // For non-Python or when CodeInterpreter is disabled, use the shared sandbox context
           const sandbox =
             useCodeInterpreter && language === "python"
               ? await getCodeInterpreterSandbox(projectId)
-              : await createSandbox(projectId)
+              : await getSandboxLazy(projectId)
 
           const result = await executeCodeInSandbox(sandbox, code, language as CodeLanguage)
 

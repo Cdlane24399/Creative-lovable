@@ -10,14 +10,20 @@ Creative-lovable is an AI-powered web development assistant that builds and iter
 
 | Category | Technology | Version | Notes |
 |---|---|---|---|
-| Framework | Next.js | 15+ | App Router, Server Components |
-| Language | TypeScript | 5.x | Strict mode enabled |
-| Styling | Tailwind CSS | 4.x | Utility-first CSS |
+| Framework | Next.js | ^16.1.6 | App Router, Server Components |
+| Runtime | React | 19.2.4 | Server and Client Components |
+| Language | TypeScript | ^5.9.3 | Strict mode enabled |
+| Styling | Tailwind CSS | ^4.1.18 | Utility-first CSS |
 | UI Components | shadcn/ui, Radix UI | Latest | Pre-installed and configured |
-| AI SDK | Vercel AI SDK | v6 Beta | For streaming, tools, and agentic logic |
-| Code Execution | E2B Code Interpreter | 2.x | Secure sandbox environment |
-| Database | Neon PostgreSQL | | Serverless Postgres |
-| Auth | Supabase Auth | | User authentication and management |
+| AI SDK | Vercel AI SDK | ^6.0.73 (stable) | Streaming, tools, agentic logic via `createGateway()` |
+| Code Execution | E2B Code Interpreter | ^2.3.3 | Secure sandbox environment |
+| Code Execution | Vercel Sandbox | ^1.4.1 | Alternative sandbox runtime |
+| Database | Neon PostgreSQL | ^1.0.2 (dev) | Serverless Postgres |
+| Auth | Supabase Auth | SSR ^0.8.0, JS ^2.95.2 | User authentication and management |
+| Cache | Upstash Redis | ^1.36.2 | Rate limiting and caching |
+| Testing | Jest | ^30.2.0 | Unit and integration tests |
+| Testing | Playwright | ^1.58.1 | End-to-end tests |
+| Package Manager | pnpm | | Used for dependency management |
 
 ---
 
@@ -53,8 +59,14 @@ Creative-lovable/
 |---|---|
 | `lib/ai/web-builder-agent.ts` | Defines the core AI agent tools and logic. **This is the primary file for AI agent development.** |
 | `lib/ai/agent.ts` | Contains the main system prompt and model configurations. |
+| `lib/ai/providers.ts` | AI Gateway and model routing via `createGateway()`. Defines all available models and provider fallback order. |
+| `lib/ai/tools/index.ts` | Tool barrel exports with categories. Central registry for all tool factory functions. |
+| `lib/ai/tools/batch-file.tools.ts` | **NEW**: Batch file write operations (write up to 50 files in one call). |
+| `lib/ai/tools/project-init.tools.ts` | **NEW**: Project initialization and scaffolding from templates. |
+| `lib/ai/tools/sync.tools.ts` | **NEW**: Database sync persistence with retry logic. |
 | `app/api/chat/route.ts` | The main API endpoint for handling chat requests and streaming AI responses. |
 | `lib/e2b/sandbox.ts` | Manages the lifecycle of E2B sandboxes, including creation, cleanup, and state management. |
+| `lib/e2b/sync-manager.ts` | File sync to database for project persistence. |
 | `lib/db/repositories/` | Contains the data access layer for interacting with the database. |
 | `lib/services/` | Implements the business logic that coordinates between the API layer and the database. |
 
@@ -75,7 +87,15 @@ Creative-lovable/
 | `pnpm dev` | Start the Next.js development server. |
 | `pnpm build` | Build the application for production. |
 | `pnpm test` | Run the Jest test suite. |
+| `pnpm test:e2e` | Run Playwright end-to-end tests. |
+| `pnpm test:e2e:ui` | Run Playwright tests with interactive UI. |
 | `pnpm lint` | Run ESLint to check for code quality issues. |
+| `pnpm template:build` | Build the production E2B sandbox template. |
+| `pnpm sandbox` | Create a new sandbox instance via script. |
+| `pnpm db:up` | Start local Supabase via Docker Compose. |
+| `pnpm db:down` | Stop local Supabase containers. |
+| `pnpm db:logs` | Tail Supabase Docker Compose logs. |
+| `pnpm db:psql` | Open psql shell to local Supabase database. |
 
 ### 3.3. Environment Variables
 
@@ -91,12 +111,40 @@ Creative-lovable/
 | `NEXT_PUBLIC_SUPABASE_URL` | Public URL for your Supabase project. | Yes |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon key for your Supabase project. | Yes |
 | `E2B_TEMPLATE_ID` | Custom E2B template ID for faster startup. | Recommended |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST endpoint for caching/rate limiting. | Recommended |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST authentication token. | Recommended |
+| `REDIS_URL` | Alternative name for Redis endpoint. | Fallback |
+| `REDIS_TOKEN` | Alternative name for Redis token. | Fallback |
 
 See `.env.example` for complete configuration options.
 
 ### 3.4. AI SDK v6 Patterns
 
-The codebase uses Vercel AI SDK v6 Beta with the following patterns:
+The codebase uses Vercel AI SDK v6 (stable) with the following patterns:
+
+**AI Gateway Model Routing:**
+```typescript
+import { createGateway } from 'ai'
+
+const aiGateway = createGateway()
+
+// Model config maps keys to gateway IDs and provider fallback order
+const MODEL_CONFIG = {
+  anthropic: {
+    gatewayId: 'anthropic/claude-sonnet-4-5',
+    providerOrder: ['anthropic', 'vertex'] as const,
+  },
+  // ... other models
+}
+
+export function getModel(key: ModelKey) {
+  return aiGateway(MODEL_CONFIG[key].gatewayId)
+}
+
+export function getGatewayProviderOptions(key: ModelKey) {
+  return { gateway: { order: [...MODEL_CONFIG[key].providerOrder] } }
+}
+```
 
 **Streaming with streamText:**
 ```typescript
@@ -108,7 +156,7 @@ const result = streamText({
   providerOptions: getGatewayProviderOptions('anthropic'),
   messages,
   tools,
-  maxSteps: 10,
+  maxSteps: 50,
   onStepFinish: async ({ text, toolCalls, usage }) => {
     // Log or persist token usage
     logger.info({ usage }, 'Step completed')
@@ -117,6 +165,20 @@ const result = streamText({
 
 return result.toDataStreamResponse()
 ```
+
+**Available Models (via AI Gateway):**
+
+| Key | Model | Description |
+|---|---|---|
+| `anthropic` | Claude Sonnet 4.5 | Fast and capable (default) |
+| `opus` | Claude Opus 4.6 | Most capable, best reasoning |
+| `google` | Gemini 3 Flash Preview | Fast, great for tool use |
+| `googlePro` | Gemini 3 Pro Preview | Best multimodal understanding |
+| `openai` | GPT-5.2 | Latest OpenAI model |
+| `haiku` | Claude 3.5 Haiku | Title generation |
+| `minimax` | MiniMax M2.1 | Advanced Chinese LLM with strong reasoning |
+| `moonshot` | Kimi K2.5 | Long context specialist |
+| `glm` | GLM-4.7 | General Language Model from Zhipu AI |
 
 **Tool Definition:**
 ```typescript
@@ -187,16 +249,43 @@ The main system prompt is located in `lib/ai/agent.ts`. It instructs the AI to a
 
 ### 4.2. Available Tools
 
-The AI agent has access to a suite of tools defined in `lib/ai/web-builder-agent.ts`. These tools are context-aware and designed for building web applications. Key tools include:
+The AI agent's tools are organized into category-based factory functions in `lib/ai/tools/`. Each factory creates a set of related tools. The barrel export is at `lib/ai/tools/index.ts`.
 
--   `createWebsite`: Scaffolds a complete Next.js project.
--   `writeFile`: Writes a new file to the sandbox.
--   `editFile`: Makes targeted edits to an existing file.
--   `getProjectStructure`: Scans the project to understand the file structure.
--   `runCommand`: Executes shell commands in the sandbox.
+**Tool Factory Categories:**
+
+| Factory | Description |
+|---|---|
+| `createPlanningTools` | Task planning and workflow organization |
+| `createStateTools` | Sandbox and application state management |
+| `createFileTools` | File operations (read, write, delete) |
+| `createBatchFileTools` | **NEW**: Bulk file operations (up to 50 files per call) |
+| `createProjectTools` | Project structure and configuration |
+| `createProjectInitTools` | **NEW**: Initialize new projects from templates |
+| `createSyncTools` | **NEW**: Database persistence with retry logic |
+| `createBuildTools` | Building and bundling applications |
+| `createWebsiteTools` | **DEPRECATED**: Use `createProjectInitTools` + `createBatchFileTools` + `createSyncTools` instead |
+| `createCodeTools` | Code analysis and transformation |
+| `createSuggestionTools` | Suggestion generation for follow-ups |
+
+**Key Individual Tools:**
+
+-   `initializeProject`: Scaffold a new Next.js project from template.
+-   `batchWriteFiles`: Write multiple files in a single operation (max 50 files).
+-   `syncProject`: Sync project files to database with retry.
+-   `writeFile`: Write an individual file to the sandbox.
+-   `editFile`: Make targeted edits to an existing file.
+-   `readFile`: Read file contents from the sandbox.
+-   `getProjectStructure`: Scan the project to understand the file structure.
+-   `installPackage`: Install npm packages.
+-   `getBuildStatus`: Check dev server logs for errors.
+-   `runCommand`: Execute shell commands in the sandbox.
+-   `executeCode`: Run code in the sandbox.
+-   `generateSuggestions`: Generate follow-up suggestions.
+-   `createWebsite`: **DEPRECATED** -- use `initializeProject` + `batchWriteFiles` + `syncProject` instead.
 
 ### 4.3. Contributing to the AI Agent
 
--   **Adding a new tool**: Add a new tool definition to `lib/ai/web-builder-agent.ts` using the `tool()` function from the AI SDK.
+-   **Adding a new tool**: Create a new tool factory in `lib/ai/tools/` (e.g., `my-feature.tools.ts`), then export it from `lib/ai/tools/index.ts`. Each tool uses the `tool()` function from the AI SDK.
 -   **Modifying the system prompt**: Edit the `SYSTEM_PROMPT` constant in `lib/ai/agent.ts`.
+-   **Adding a new model**: Add a new entry to `MODEL_CONFIG` in `lib/ai/providers.ts` with the gateway ID and provider fallback order.
 -   **Improving context awareness**: Enhance the `generateAgenticSystemPrompt` function in `lib/ai/web-builder-agent.ts` to provide more relevant context to the AI.

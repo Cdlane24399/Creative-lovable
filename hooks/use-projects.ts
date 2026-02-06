@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import type { Project, ProjectCardData, CreateProjectRequest, UpdateProjectRequest, Message } from "@/lib/db/types"
 import { projectToCardData } from "@/lib/db/types"
 
@@ -27,6 +27,8 @@ export function useProjects(options: UseProjectsOptions = {}): UseProjectsReturn
   const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const projectsRef = useRef<Project[]>(projects)
+  projectsRef.current = projects
 
   const fetchProjects = useCallback(async () => {
     setIsLoading(true)
@@ -123,12 +125,12 @@ export function useProjects(options: UseProjectsOptions = {}): UseProjectsReturn
   }, [])
 
   const toggleStarred = useCallback(async (id: string): Promise<boolean> => {
-    const project = projects.find((p) => p.id === id)
+    const project = projectsRef.current.find((p) => p.id === id)
     if (!project) return false
 
     const updated = await updateProject(id, { starred: !project.starred })
     return updated !== null
-  }, [projects, updateProject])
+  }, [updateProject])
 
   // Auto-fetch on mount
   useEffect(() => {
@@ -138,7 +140,7 @@ export function useProjects(options: UseProjectsOptions = {}): UseProjectsReturn
   }, [autoFetch, fetchProjects])
 
   // Convert to card data for UI
-  const projectCards = projects.map(projectToCardData)
+  const projectCards = useMemo(() => projects.map(projectToCardData), [projects])
 
   return {
     projects,

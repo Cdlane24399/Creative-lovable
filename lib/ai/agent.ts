@@ -305,7 +305,7 @@ When you examine the directory with \`getProjectStructure\`:
 You are building the future of the web. Make it interactive, make it beautiful, make it complete.`
 
 // Model provider types - model creation is handled by lib/ai/providers.ts
-export type ModelProvider = 'anthropic' | 'opus' | 'google' | 'googlePro' | 'openai'
+export type ModelProvider = 'anthropic' | 'opus' | 'google' | 'googlePro' | 'openai' | 'minimax' | 'moonshot' | 'glm'
 
 // Model-specific settings for streamText
 export const MODEL_SETTINGS: Record<ModelProvider, {
@@ -317,14 +317,20 @@ export const MODEL_SETTINGS: Record<ModelProvider, {
   google: { maxSteps: 40, maxTokens: 8192 },
   googlePro: { maxSteps: 50, maxTokens: 8192 },
   openai: { maxSteps: 50 },
+  minimax: { maxSteps: 50 },
+  moonshot: { maxSteps: 50 },
+  glm: { maxSteps: 50 },
 }
 
 export const MODEL_DISPLAY_NAMES = {
   anthropic: "Claude Sonnet 4.5",
-  opus: "Claude Opus 4.5",
+  opus: "Claude Opus 4.6",
   google: "Gemini 3 Flash",
   googlePro: "Gemini 3 Pro",
   openai: "GPT-5.2",
+  minimax: "MiniMax M2.1",
+  moonshot: "Kimi K2.5",
+  glm: "GLM-4.7",
 } as const
 
 export const MODEL_DESCRIPTIONS = {
@@ -333,4 +339,7 @@ export const MODEL_DESCRIPTIONS = {
   google: "Fast, great for tool use",
   googlePro: "Best multimodal understanding",
   openai: "Latest OpenAI model",
+  minimax: "Advanced Chinese LLM with strong reasoning",
+  moonshot: "Long context specialist",
+  glm: "General Language Model from Zhipu AI",
 } as const

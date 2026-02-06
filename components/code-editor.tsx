@@ -1,13 +1,17 @@
 "use client"
 
 import * as React from "react"
-import Editor from "@monaco-editor/react"
+import dynamic from "next/dynamic"
 import { File, Folder, ChevronRight, ChevronDown, FileJson, FileCode, FileType, FileText, Image as ImageIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-// Initialize Monaco loader with app theme colors if needed, 
-// but we'll stick to 'vs-dark' for now which is standard and looks good.
-// We can customize it later if the "apps theme" implies strict token matching.
+const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
+  ssr: false,
+  loading: () => <div className="h-full w-full bg-[#1e1e1e]" />,
+})
+
+const OPEN_BY_DEFAULT_FOLDERS = new Set(["app", "components"])
+const DEFAULT_ACTIVE_FILE_PATHS = ["app/page.tsx", "src/App.tsx", "index.js", "package.json"]
 
 interface CodeEditorProps {
   files?: Record<string, string>
@@ -104,12 +108,12 @@ const FileTreeNode = ({
   onSelect: (node: FileNode) => void
   defaultOpen?: boolean
 }) => {
-  const [isOpen, setIsOpen] = React.useState(defaultOpen || node.name === 'app' || node.name === 'components')
+  const [isOpen, setIsOpen] = React.useState(defaultOpen || OPEN_BY_DEFAULT_FOLDERS.has(node.name))
   
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     if (node.type === 'folder') {
-      setIsOpen(!isOpen)
+      setIsOpen((current) => !current)
     } else {
       onSelect(node)
     }
@@ -138,34 +142,36 @@ const FileTreeNode = ({
         <span className="truncate">{node.name}</span>
       </div>
       
-      {node.type === 'folder' && isOpen && node.children && (
-        <div>
-          {node.children.map(child => (
-            <FileTreeNode 
-              key={child.path} 
-              node={child} 
-              level={level + 1} 
-              activePath={activePath}
-              onSelect={onSelect}
-            />
-          ))}
-        </div>
-      )}
+      {node.type === "folder" ? (
+        isOpen && node.children ? (
+          <div>
+            {node.children.map(child => (
+              <FileTreeNode 
+                key={child.path} 
+                node={child} 
+                level={level + 1} 
+                activePath={activePath}
+                onSelect={onSelect}
+              />
+            ))}
+          </div>
+        ) : null
+      ) : null}
     </div>
   )
 }
 
 export const CodeEditor = React.memo(function CodeEditor({ files = {}, readOnly = true, isLoading = false }: CodeEditorProps) {
   const [activeFile, setActiveFile] = React.useState<FileNode | null>(null)
+  const filePaths = React.useMemo(() => Object.keys(files), [files])
   const fileTree = React.useMemo(() => buildFileTree(files), [files])
-  const hasFiles = Object.keys(files).length > 0
+  const hasFiles = filePaths.length > 0
 
   // Select first file by default if no active file
   React.useEffect(() => {
     if (!activeFile && hasFiles) {
       // Try to find a good default file (e.g., page.tsx, App.tsx, index.js)
-      const defaultFiles = ['app/page.tsx', 'src/App.tsx', 'index.js', 'package.json']
-      for (const path of defaultFiles) {
+      for (const path of DEFAULT_ACTIVE_FILE_PATHS) {
         if (files[path]) {
           setActiveFile({
             name: path.split('/').pop()!,
@@ -178,7 +184,7 @@ export const CodeEditor = React.memo(function CodeEditor({ files = {}, readOnly 
       }
 
       // Fallback to first file found
-      const firstPath = Object.keys(files)[0]
+      const firstPath = filePaths[0]
       setActiveFile({
         name: firstPath.split('/').pop()!,
         path: firstPath,
@@ -186,7 +192,7 @@ export const CodeEditor = React.memo(function CodeEditor({ files = {}, readOnly 
         content: files[firstPath]
       })
     }
-  }, [files, activeFile, hasFiles])
+  }, [activeFile, filePaths, files, hasFiles])
 
   // Reset active file when files become empty (e.g., loading new project)
   React.useEffect(() => {
@@ -246,7 +252,7 @@ export const CodeEditor = React.memo(function CodeEditor({ files = {}, readOnly 
         {/* Monaco Editor */}
         <div className="flex-1 relative">
           {activeFile ? (
-            <Editor
+            <MonacoEditor
               height="100%"
               defaultLanguage="typescript"
               language={getLanguageFromPath(activeFile.path)}

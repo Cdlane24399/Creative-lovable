@@ -42,9 +42,8 @@ export const GET = withAuth(asyncErrorHandler(async (request: NextRequest, conte
  * }
  */
 export const POST = withAuth(asyncErrorHandler(async (request: NextRequest, context: RouteContext) => {
-  const { id } = await context.params
+  const [{ id }, body] = await Promise.all([context.params, request.json()])
   const messageService = getMessageService()
-  const body = await request.json()
 
   // Support both single message and batch messages
   const messagesToInsert = Array.isArray(body) ? body : [body]

@@ -32,17 +32,24 @@ interface DevServerStatus {
 // Cache for server status to reduce redundant checks
 const statusCache = new Map<string, { status: DevServerStatus; timestamp: number }>()
 const CACHE_TTL_MS = 1500 // Cache valid for 1.5 seconds
+const DEV_SERVER_PORTS = [3000, 3001, 3002, 3003, 3004, 3005] as const
 
 // Track in-flight start requests to prevent duplicates
 const startingProjects = new Map<string, Promise<any>>()
 
 // Helper to get server status
 async function getStatus(projectId: string): Promise<DevServerStatus> {
+  const now = Date.now()
+  const cached = statusCache.get(projectId)
+  if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+    return cached.status
+  }
+
   try {
     const sandbox = await getSandbox(projectId)
 
     if (!sandbox) {
-      return {
+      const status: DevServerStatus = {
         isRunning: false,
         port: null,
         url: null,
@@ -50,6 +57,8 @@ async function getStatus(projectId: string): Promise<DevServerStatus> {
         errors: [],
         lastChecked: new Date().toISOString(),
       }
+      statusCache.set(projectId, { status, timestamp: Date.now() })
+      return status
     }
 
     // Check if server is responding using curl (more reliable than nc -z)
@@ -75,7 +84,7 @@ async function getStatus(projectId: string): Promise<DevServerStatus> {
 
     const url = isRunning ? getHostUrl(sandbox, activePort) : null
 
-    return {
+    const status: DevServerStatus = {
       isRunning,
       port: isRunning ? activePort : null,
       url,
@@ -83,9 +92,11 @@ async function getStatus(projectId: string): Promise<DevServerStatus> {
       errors,
       lastChecked: new Date().toISOString(),
     }
+    statusCache.set(projectId, { status, timestamp: Date.now() })
+    return status
   } catch (error) {
     console.error("[DevServer] Error checking status:", error)
-    return {
+    const status: DevServerStatus = {
       isRunning: false,
       port: null,
       url: null,
@@ -93,6 +104,8 @@ async function getStatus(projectId: string): Promise<DevServerStatus> {
       errors: ["Failed to check server status"],
       lastChecked: new Date().toISOString(),
     }
+    statusCache.set(projectId, { status, timestamp: Date.now() })
+    return status
   }
 }
 
@@ -268,24 +281,27 @@ export const POST = withAuth(async (
 
       // Kill any existing processes if force restart OR if server isn't responding
       // This prevents lock file issues when a stale process is holding the lock
-      const shouldCleanup = forceRestart || !(await checkDevServerStatus(sandbox)).isRunning
+      const initialStatus = await checkDevServerStatus(sandbox)
+      const shouldCleanup = forceRestart || !initialStatus.isRunning
 
       if (shouldCleanup) {
         console.log("[dev-server POST] Cleaning up existing processes and lock files")
-        await killBackgroundProcess(projectId)
-        await executeCommand(
-          sandbox,
-          `pkill -f "next dev" 2>/dev/null || true`,
-          { timeoutMs: 5000 }
-        )
+        await Promise.all([
+          killBackgroundProcess(projectId),
+          executeCommand(
+            sandbox,
+            `pkill -f "next dev" 2>/dev/null || true`,
+            { timeoutMs: 5000 }
+          ),
+        ])
         // Kill all ports in range
-        for (const port of [3000, 3001, 3002, 3003, 3004, 3005]) {
-          await executeCommand(
+        await Promise.all(DEV_SERVER_PORTS.map((port) =>
+          executeCommand(
             sandbox,
             `lsof -ti :${port} | xargs kill -9 2>/dev/null || true`,
             { timeoutMs: 2000 }
           )
-        }
+        ))
         // Remove Next.js lock file to prevent "Unable to acquire lock" errors
         // Also clear .next cache completely to prevent Turbopack panics from stale cache
         // (Error: "Turbopack Error: Failed to write app endpoint /page")
@@ -298,7 +314,9 @@ export const POST = withAuth(async (
       }
 
       // Quick check if server is already running using HTTP status (more reliable)
-      const existingStatus = await checkDevServerStatus(sandbox)
+      const existingStatus = shouldCleanup
+        ? await checkDevServerStatus(sandbox)
+        : initialStatus
       const alreadyRunning = existingStatus.isRunning
       const existingPort = existingStatus.port || 3000
 
@@ -478,23 +496,24 @@ export const DELETE = withAuth(async (
       return NextResponse.json({ success: true, message: "No sandbox to stop" })
     }
 
-    // Kill the background process
-    await killBackgroundProcess(projectId)
+    await Promise.all([
+      // Kill the background process
+      killBackgroundProcess(projectId),
+      // Also kill any lingering processes on all potential ports
+      executeCommand(
+        sandbox,
+        `pkill -f "next dev" 2>/dev/null || true`,
+        { timeoutMs: 5000 }
+      ),
+    ])
 
-    // Also kill any lingering processes on all potential ports
-    await executeCommand(
-      sandbox,
-      `pkill -f "next dev" 2>/dev/null || true`,
-      { timeoutMs: 5000 }
-    )
-
-    for (const port of [3000, 3001, 3002, 3003, 3004, 3005]) {
-      await executeCommand(
+    await Promise.all(DEV_SERVER_PORTS.map((port) =>
+      executeCommand(
         sandbox,
         `lsof -ti :${port} | xargs kill -9 2>/dev/null || true`,
         { timeoutMs: 2000 }
       )
-    }
+    ))
 
     return NextResponse.json({
       success: true,

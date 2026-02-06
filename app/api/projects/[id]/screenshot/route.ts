@@ -15,9 +15,8 @@ interface RouteContext {
  * - sandbox_url?: string - Optional sandbox preview URL
  */
 export const POST = withAuth(asyncErrorHandler(async (request: NextRequest, context: RouteContext) => {
-  const { id } = await context.params
+  const [{ id }, body] = await Promise.all([context.params, request.json()])
   const projectService = getProjectService()
-  const body = await request.json()
 
   const { screenshot_base64, sandbox_url } = body
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useMemo, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { ArrowRight, Clock, Star, Folder, Grid3X3, Plus, Loader2, Trash2, ExternalLink } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -17,6 +17,18 @@ const templates = [
   { id: "t6", title: "Documentation", image: "/saas-pricing-page-dark.jpg", lastEdited: "Template", category: "Docs" },
 ]
 
+type DisplayProject = ProjectCardData & { category?: string }
+
+const templateProjects: DisplayProject[] = templates.map((template) => ({
+  id: template.id,
+  title: template.title,
+  image: template.image,
+  lastEdited: template.lastEdited,
+  starred: false,
+  sandboxUrl: null,
+  category: template.category,
+}))
+
 interface ProjectsSectionProps {
   onNavigateToEditor: (projectId?: string, prompt?: string) => void
 }
@@ -26,37 +38,36 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
   const { projects, projectCards, isLoading, error, refetch, deleteProject, toggleStarred } = useProjects()
 
   // Separate starred and recent projects
-  const starredProjects = projectCards.filter((p) => p.starred)
-  const recentProjects = projectCards.slice(0, 8) // Most recent 8
+  const starredProjects = useMemo(() => projectCards.filter((p) => p.starred), [projectCards])
+  const recentProjects = useMemo(() => projectCards.slice(0, 8), [projectCards])
 
-  const tabs = [
+  const tabs = useMemo(() => [
     { id: "My projects", icon: Folder, count: projectCards.length },
     { id: "Starred", icon: Star, count: starredProjects.length },
     { id: "Templates", icon: Grid3X3, count: templates.length },
-  ]
+  ], [projectCards.length, starredProjects.length])
 
-  const getProjectsForTab = () => {
-    switch (selectedTab) {
-      case "Starred":
-        return starredProjects
-      case "Templates":
-        return templates.map((t) => ({
-          id: t.id,
-          title: t.title,
-          image: t.image,
-          lastEdited: t.lastEdited,
-          starred: false,
-          sandboxUrl: null,
-          category: t.category,
-        }))
-      default:
-        return recentProjects
+  const isTemplatesTab = selectedTab === "Templates"
+  const isMyProjectsTab = selectedTab === "My projects"
+
+  const currentProjects = useMemo<DisplayProject[]>(() => {
+    if (selectedTab === "Starred") {
+      return starredProjects
     }
-  }
 
-  const currentProjects = getProjectsForTab()
+    if (isTemplatesTab) {
+      return templateProjects
+    }
 
-  const handleProjectClick = (project: ProjectCardData & { category?: string }) => {
+    return recentProjects
+  }, [isTemplatesTab, recentProjects, selectedTab, starredProjects])
+
+  const shouldShowLoading = isLoading && !isTemplatesTab
+  const shouldShowError = Boolean(error) && !isTemplatesTab
+  const shouldShowEmptyState = !isLoading && !error && currentProjects.length === 0 && !isTemplatesTab
+  const shouldShowProjectsGrid = (!isLoading || isTemplatesTab) && currentProjects.length > 0
+
+  const handleProjectClick = (project: DisplayProject) => {
     if (selectedTab === "Templates") {
       // For templates, start a new project with the template prompt
       const templatePrompt = `Create a ${project.title.toLowerCase()} website`
@@ -118,24 +129,24 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
               <Plus className="w-4 h-4" />
               New Project
             </button>
-            {projectCards.length > 8 && (
+            {projectCards.length > 8 ? (
               <button className="flex items-center gap-1.5 text-zinc-400 hover:text-white text-sm transition-colors group px-3 py-2 rounded-lg hover:bg-[#18181B]">
                 Browse all
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
               </button>
-            )}
+            ) : null}
           </div>
         </div>
 
         {/* Loading state */}
-        {isLoading && selectedTab !== "Templates" && (
+        {shouldShowLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
           </div>
-        )}
+        ) : null}
 
         {/* Error state */}
-        {error && selectedTab !== "Templates" && (
+        {shouldShowError ? (
           <div className="flex flex-col items-center justify-center py-12 gap-4">
             <p className="text-zinc-400">Failed to load projects</p>
             <button
@@ -145,10 +156,10 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
               Try again
             </button>
           </div>
-        )}
+        ) : null}
 
         {/* Empty state */}
-        {!isLoading && !error && currentProjects.length === 0 && selectedTab !== "Templates" && (
+        {shouldShowEmptyState ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4">
             <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center">
               <Folder className="w-8 h-8 text-zinc-500" />
@@ -163,19 +174,19 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                   : "Create your first project to get started building with AI."}
               </p>
             </div>
-            {selectedTab === "My projects" && (
+            {isMyProjectsTab ? (
               <button
                 onClick={() => onNavigateToEditor()}
                 className="mt-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-xl transition-all"
               >
                 Create your first project
               </button>
-            )}
+            ) : null}
           </div>
-        )}
+        ) : null}
 
         {/* Projects Grid */}
-        {(!isLoading || selectedTab === "Templates") && currentProjects.length > 0 && (
+        {shouldShowProjectsGrid ? (
           <AnimatePresence mode="wait">
             <motion.div
               key={selectedTab}
@@ -195,7 +206,11 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                 >
                   <div
                     onClick={() => handleProjectClick(project)}
-                    onKeyDown={(e) => e.key === "Enter" && handleProjectClick(project)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleProjectClick(project)
+                      }
+                    }}
                     role="button"
                     tabIndex={0}
                     className="w-full text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/50 rounded-2xl"
@@ -221,25 +236,25 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                         )}
 
                         {/* Starred badge */}
-                        {project.starred && (
+                        {project.starred ? (
                           <div className="absolute top-3 right-3">
                             <div className="w-7 h-7 rounded-full bg-[#18181B] border border-zinc-700 flex items-center justify-center shadow-sm">
                               <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
                             </div>
                           </div>
-                        )}
+                        ) : null}
 
                         {/* Category badge for templates */}
-                        {"category" in project && (project as { category?: string }).category && (
+                        {"category" in project && (project as { category?: string }).category ? (
                           <div className="absolute top-3 left-3">
                             <span className="px-2 py-1 text-[10px] font-medium text-zinc-200 bg-[#18181B] rounded-md border border-zinc-700 shadow-sm">
                               {(project as { category?: string }).category}
                             </span>
                           </div>
-                        )}
+                        ) : null}
 
                         {/* Hover overlay with actions (for non-templates) */}
-                        {selectedTab !== "Templates" && (
+                        {!isTemplatesTab ? (
                           <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                             <button
                               onClick={(e) => handleToggleStar(e, project.id)}
@@ -253,7 +268,7 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                                 )}
                               />
                             </button>
-                            {project.sandboxUrl && (
+                            {project.sandboxUrl ? (
                               <a
                                 href={project.sandboxUrl}
                                 target="_blank"
@@ -264,7 +279,7 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                               >
                                 <ExternalLink className="w-4 h-4 text-zinc-300" />
                               </a>
-                            )}
+                            ) : null}
                             <button
                               onClick={(e) => handleDeleteProject(e, project.id)}
                               className="p-2 rounded-lg bg-zinc-800/80 hover:bg-red-600 transition-colors"
@@ -273,7 +288,7 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                               <Trash2 className="w-4 h-4 text-zinc-300" />
                             </button>
                           </div>
-                        )}
+                        ) : null}
                       </div>
 
                       {/* Content */}
@@ -292,7 +307,7 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
               ))}
             </motion.div>
           </AnimatePresence>
-        )}
+        ) : null}
       </div>
     </section>
   )

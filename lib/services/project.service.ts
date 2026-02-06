@@ -122,8 +122,11 @@ export class ProjectService {
    * Updates last_opened_at timestamp
    */
   async getProjectWithMessages(id: string): Promise<ProjectWithMessagesResult> {
+    const projectPromise = this.projectRepo.findById(id)
+    const cachedMessagesPromise = messagesCache.get(id)
+
     // Get project
-    const project = await this.projectRepo.findById(id)
+    const project = await projectPromise
     if (!project) {
       throw new NotFoundError("Project")
     }
@@ -132,7 +135,7 @@ export class ProjectService {
     this.projectRepo.updateLastOpened(id).catch(console.error)
 
     // Try to get messages from cache
-    const cachedMessages = await messagesCache.get(id)
+    const cachedMessages = await cachedMessagesPromise
     if (cachedMessages) {
       return {
         project,

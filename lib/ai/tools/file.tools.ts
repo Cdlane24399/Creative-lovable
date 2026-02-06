@@ -17,12 +17,12 @@ import {
   recordToolExecution,
 } from "../agent-context"
 import {
-  createSandbox,
   executeCommand,
   writeFile as writeFileToSandbox,
   readFile as readFileFromSandbox,
   fileExists,
 } from "@/lib/e2b/sandbox"
+import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider"
 import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager"
 import { createErrorResult } from "../utils"
 
@@ -56,7 +56,8 @@ export function createFileTools(projectId: string) {
         const fullPath = `${projectDir}/${filePath}`
 
         try {
-          const sandbox = await createSandbox(projectId)
+          // Get sandbox from infrastructure context
+          const sandbox = getCurrentSandbox()
 
           // Ensure parent directory exists
           const dir = fullPath.substring(0, fullPath.lastIndexOf("/"))
@@ -115,7 +116,8 @@ export function createFileTools(projectId: string) {
         const fullPath = `${projectDir}/${filePath}`
 
         try {
-          const sandbox = await createSandbox(projectId)
+          // Get sandbox from infrastructure context
+          const sandbox = getCurrentSandbox()
 
           // Check if file exists first to provide a clearer error message
           const exists = await fileExists(sandbox, fullPath)
@@ -186,7 +188,8 @@ export function createFileTools(projectId: string) {
         const fullPath = `${projectDir}/${filePath}`
 
         try {
-          const sandbox = await createSandbox(projectId)
+          // Get sandbox from infrastructure context
+          const sandbox = getCurrentSandbox()
 
           // Check if file exists first
           const exists = await fileExists(sandbox, fullPath)

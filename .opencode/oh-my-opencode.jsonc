@@ -2,21 +2,28 @@
   "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/master/assets/oh-my-opencode.schema.json",
 
   "agents": {
+    // Core agents (existing, updated models)
     "sisyphus": { "model": "anthropic/claude-opus-4-6" },
     "hephaestus": { "model": "anthropic/claude-opus-4-6" },
-    "oracle": { "model": "openai/gpt-5.3-codex" },
-    "prometheus": { "model": "openai/gpt-5.3-codex" },
-    "metis": { "model": "openai/gpt-5.3-codex" },
-    "momus": { "model": "openai/gpt-5.3-codex" }
+    "oracle": { "model": "openai/gpt-5.2" },
+    "prometheus": { "model": "openai/gpt-5.2" },
+    "metis": { "model": "anthropic/claude-sonnet-4-5" },
+    "momus": { "model": "anthropic/claude-sonnet-4-5" },
+
+    // Project-specific agents
+    "athena": { "model": "anthropic/claude-sonnet-4-5" },       // AI Integration (AI SDK, tools, agent logic)
+    "aphrodite": { "model": "google/gemini-3-pro-preview" },    // UI Builder (components, layouts, styling)
+    "artemis": { "model": "google/gemini-3-flash-preview" },    // Testing (test runner, fast feedback)
+    "atlas": { "model": "anthropic/claude-sonnet-4-5" }         // Infrastructure (E2B sandbox, config)
   },
 
   "categories": {
     "visual-engineering": { "model": "google/gemini-3-pro-preview" },
     "artistry": { "model": "google/gemini-3-pro-preview" },
-    "ultrabrain": { "model": "openai/gpt-5.3-codex" },
-    "deep": { "model": "openai/gpt-5.3-codex" },
-    "unspecified-low": { "model": "anthropic/claude-opus-4-6" },
+    "ultrabrain": { "model": "anthropic/claude-opus-4-6" },
+    "deep": { "model": "openai/gpt-5.2" },
+    "unspecified-low": { "model": "anthropic/claude-sonnet-4-5" },
     "unspecified-high": { "model": "anthropic/claude-opus-4-6" },
-    "quick": { "model": "anthropic/claude-opus-4-6" }
+    "quick": { "model": "google/gemini-3-flash-preview" }
   }
 }

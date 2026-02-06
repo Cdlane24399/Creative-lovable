@@ -17,7 +17,8 @@ import { tool } from "ai"
 import { z } from "zod"
 import { projectNameSchema, pageSchema, componentSchema, PHASES } from "../schemas/tool-schemas"
 import { getAgentContext, setProjectInfo, recordToolExecution } from "../agent-context"
-import { createSandboxWithAutoPause, directoryExists, executeCommand } from "@/lib/e2b/sandbox"
+import { directoryExists, executeCommand } from "@/lib/e2b/sandbox"
+import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider"
 import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager"
 import { isRecord } from "../utils"
 import { scaffoldNextProject, writePages, writeComponents } from "../helpers"
@@ -81,6 +82,7 @@ interface ErrorResult extends ProgressResult {
 /**
  * Creates website-related tools for the web builder agent.
  *
+ * @deprecated Use createProjectInitTools + createBatchFileTools instead
  * @param projectId - Unique identifier for the project/session
  * @returns Object containing the createWebsite tool
  */
@@ -89,9 +91,11 @@ export function createWebsiteTools(projectId: string) {
     /**
      * Creates or updates a complete website with live preview.
      * Uses AI SDK v6 async generator for streaming progress updates.
+     * @deprecated Use initializeProject + batchWriteFiles + syncProject instead
      */
     createWebsite: tool({
       description:
+        "DEPRECATED: Use initializeProject + batchWriteFiles + syncProject instead. " +
         "Create or update a complete website with live preview. Use this for building " +
         "full web applications. Optimized for E2B custom templates with hot-reload support.",
       inputSchema: z.object({
@@ -130,6 +134,7 @@ export function createWebsiteTools(projectId: string) {
 
       // AI SDK v6: Use async generator for preliminary results (streaming progress)
       async *execute({ name, description, pages, components }) {
+        console.warn("[DEPRECATED] createWebsite is deprecated. Use initializeProject + batchWriteFiles + syncProject instead.")
         const startTime = new Date()
         // Check if using E2B template (pre-built sandbox with dependencies)
         const hasTemplate = !!process.env.E2B_TEMPLATE_ID
@@ -149,9 +154,9 @@ export function createWebsiteTools(projectId: string) {
         }
 
         try {
-          // Create sandbox with auto-pause for cost savings
-          console.log(`[createWebsite] Creating/getting sandbox for projectId: ${projectId}`)
-          const sandbox = await createSandboxWithAutoPause(projectId)
+          // Get sandbox from infrastructure context (created by withSandbox)
+          console.log(`[createWebsite] Using sandbox from context for projectId: ${projectId}`)
+          const sandbox = getCurrentSandbox()
           console.log(`[createWebsite] Got sandbox: ${sandbox.sandboxId}`)
 
           yield {

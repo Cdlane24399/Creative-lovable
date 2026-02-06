@@ -70,7 +70,10 @@ import {
   createPlanningTools,
   createStateTools,
   createFileTools,
+  createBatchFileTools,
   createProjectTools,
+  createProjectInitTools,
+  createSyncTools,
   createBuildTools,
   createWebsiteTools,
   createCodeTools,
@@ -100,7 +103,10 @@ export function createContextAwareTools(projectId: string) {
   const planningTools = createPlanningTools(projectId)
   const stateTools = createStateTools(projectId)
   const fileTools = createFileTools(projectId)
+  const batchFileTools = createBatchFileTools(projectId)
   const projectTools = createProjectTools(projectId)
+  const projectInitTools = createProjectInitTools(projectId)
+  const syncTools = createSyncTools(projectId)
   const buildTools = createBuildTools(projectId)
   const websiteTools = createWebsiteTools(projectId)
   const codeTools = createCodeTools(projectId)
@@ -117,13 +123,22 @@ export function createContextAwareTools(projectId: string) {
     // File operations
     ...fileTools,
 
+    // Batch file operations (new)
+    ...batchFileTools,
+
     // Project management
     ...projectTools,
+
+    // Project initialization (new)
+    ...projectInitTools,
+
+    // Database sync (new)
+    ...syncTools,
 
     // Build & server tools
     ...buildTools,
 
-    // Website creation
+    // Website creation (deprecated - use initializeProject + batchWriteFiles)
     ...websiteTools,
 
     // Code execution
@@ -139,8 +154,12 @@ export {
   createPlanningTools,
   createStateTools,
   createFileTools,
+  createBatchFileTools,
   createProjectTools,
+  createProjectInitTools,
+  createSyncTools,
   createBuildTools,
+  /** @deprecated Use createProjectInitTools + createBatchFileTools instead */
   createWebsiteTools,
   createCodeTools,
 } from "./tools"

@@ -16,10 +16,10 @@ import {
   recordToolExecution,
 } from "../agent-context"
 import {
-  createSandbox,
   executeCommand,
   readFile as readFileFromSandbox,
 } from "@/lib/e2b/sandbox"
+import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider"
 import { createErrorResult } from "../utils"
 import { categorizeFiles } from "../helpers"
 
@@ -55,7 +55,8 @@ export function createProjectTools(projectId: string) {
         const projectDir = "/home/user/project"
 
         try {
-          const sandbox = await createSandbox(projectId)
+          // Get sandbox from infrastructure context
+          const sandbox = getCurrentSandbox()
 
           // Get file tree - exclude node_modules and .next
           const treeResult = await executeCommand(

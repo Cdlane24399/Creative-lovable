@@ -5,6 +5,7 @@ import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
 import type { ChatMessage } from "@/app/api/chat/route"
 import type { Message, MessagePart } from "@/lib/db/types"
+import type { ModelProvider } from "@/lib/ai/agent"
 
 // Progress state for a single tool call (for future use with data streaming)
 export interface ToolProgress {
@@ -26,7 +27,7 @@ export interface ThinkingTime {
 
 interface UseChatWithToolsOptions {
   projectId?: string
-  model?: "anthropic" | "opus" | "google" | "googlePro" | "openai"
+  model?: ModelProvider
   onError?: (error: Error) => void
   /** Initial messages to restore from database */
   initialMessages?: Message[]

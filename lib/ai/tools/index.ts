@@ -9,17 +9,24 @@
  * - Planning: Tools for task planning and workflow organization
  * - State: Tools for managing sandbox and application state
  * - File: Tools for file operations (read, write, delete)
+ * - BatchFile: Tools for bulk file operations
  * - Project: Tools for project structure and configuration
+ * - ProjectInit: Tools for initializing new projects
+ * - Sync: Tools for database persistence
  * - Build: Tools for building and bundling applications
- * - Website: Tools for website scaffolding and deployment
+ * - Website: Tools for website scaffolding (DEPRECATED - use ProjectInit + BatchFile)
  * - Code: Tools for code analysis and transformation
  */
 
 export { createPlanningTools } from "./planning.tools";
 export { createStateTools } from "./state.tools";
 export { createFileTools } from "./file.tools";
+export { createBatchFileTools } from "./batch-file.tools";
 export { createProjectTools } from "./project.tools";
+export { createProjectInitTools } from "./project-init.tools";
+export { createSyncTools } from "./sync.tools";
 export { createBuildTools } from "./build.tools";
+/** @deprecated Use createProjectInitTools + createBatchFileTools instead */
 export { createWebsiteTools } from "./website.tools";
 export { createCodeTools } from "./code.tools";
 export { createSuggestionTools } from "./suggestion.tools";
