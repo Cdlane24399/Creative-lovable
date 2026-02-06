@@ -163,7 +163,7 @@ interface UseProjectReturn {
   error: string | null
   refetch: () => Promise<void>
   /** Refetch project data only (not messages) - useful after files are saved */
-  refetchProject: () => Promise<void>
+  refetchProject: () => Promise<Project | null>
   updateProject: (data: UpdateProjectRequest) => Promise<Project | null>
   saveScreenshot: (base64: string, sandboxUrl?: string) => Promise<boolean>
 }
@@ -243,13 +243,12 @@ export function useProject(projectId: string | null): UseProjectReturn {
           sandbox_url: sandboxUrl,
         }),
       })
+      const result = await response.json()
 
       if (!response.ok) {
-        const result = await response.json()
         throw new Error(result.error || "Failed to save screenshot")
       }
 
-      const result = await response.json()
       setProject(result.project)
       return true
     } catch (err) {
@@ -262,8 +261,8 @@ export function useProject(projectId: string | null): UseProjectReturn {
    * Refetch project data only (without messages).
    * Useful after files are saved to get updated files_snapshot.
    */
-  const refetchProject = useCallback(async () => {
-    if (!projectId) return
+  const refetchProject = useCallback(async (): Promise<Project | null> => {
+    if (!projectId) return null
 
     try {
       const response = await fetch(`/api/projects/${projectId}`)
@@ -271,10 +270,12 @@ export function useProject(projectId: string | null): UseProjectReturn {
         const data = await response.json()
         setProject(data.project)
         console.log("[useProject] Refetched project data, files_snapshot keys:", Object.keys(data.project?.files_snapshot || {}).length)
+        return data.project ?? null
       }
     } catch (err) {
       console.error("Error refetching project:", err)
     }
+    return null
   }, [projectId])
 
   useEffect(() => {

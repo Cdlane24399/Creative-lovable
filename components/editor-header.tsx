@@ -1,57 +1,70 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { ChevronDown, Home, Github, Save, Check, Layers, BarChart3, Plus, ExternalLink, Copy, RefreshCw, Loader2, Share2, Zap } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { cn } from "@/lib/utils"
-import { motion, AnimatePresence } from "framer-motion"
+import { useState, useEffect } from "react";
+import {
+  ChevronDown,
+  Home,
+  Github,
+  Save,
+  Check,
+  Layers,
+  BarChart3,
+  Plus,
+  ExternalLink,
+  Copy,
+  RefreshCw,
+  Loader2,
+  Share2,
+  Zap,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
+import { motion, AnimatePresence } from "framer-motion";
+import { useEditor } from "@/components/contexts/editor-context";
 
-export type EditorView = "preview" | "code" | "settings"
+export type EditorView = "preview" | "code" | "settings";
 
-interface EditorHeaderProps {
-  onNavigateHome?: () => void
-  projectName?: string
-  hasUnsavedChanges?: boolean
-  onSave?: () => void
-  sandboxUrl?: string | null
-  currentView?: EditorView
-  onViewChange?: (view: EditorView) => void
-  isRefreshing?: boolean
-  onRefresh?: () => void
-}
+export function EditorHeader() {
+  // Consume shared state from EditorContext (no prop drilling)
+  const { state, actions, meta } = useEditor();
+  const {
+    currentView,
+    projectName,
+    hasUnsavedChanges,
+    sandboxUrl,
+    isPreviewLoading,
+    isDevServerStarting,
+  } = state;
+  const { setCurrentView, handleRefresh, saveProject } = actions;
+  const { onNavigateHome } = meta;
 
-export function EditorHeader({
-  onNavigateHome,
-  projectName = "Untitled Project",
-  hasUnsavedChanges = false,
-  onSave,
-  sandboxUrl,
-  currentView = "preview",
-  onViewChange,
-  isRefreshing = false,
-  onRefresh,
-}: EditorHeaderProps) {
-  const [urlExpanded, setUrlExpanded] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const isRefreshing = isPreviewLoading || isDevServerStarting;
+  const [urlExpanded, setUrlExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Copy URL to clipboard
   const handleCopyUrl = () => {
     if (sandboxUrl) {
-      navigator.clipboard.writeText(sandboxUrl)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      navigator.clipboard.writeText(sandboxUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
-  }
+  };
 
   // Close URL bar when clicking outside
   useEffect(() => {
     if (urlExpanded) {
-      const handleClickOutside = () => setUrlExpanded(false)
-      document.addEventListener("click", handleClickOutside)
-      return () => document.removeEventListener("click", handleClickOutside)
+      const handleClickOutside = () => setUrlExpanded(false);
+      document.addEventListener("click", handleClickOutside);
+      return () => document.removeEventListener("click", handleClickOutside);
     }
-  }, [urlExpanded])
+  }, [urlExpanded]);
 
   return (
     <header className="flex h-14 items-center justify-between px-4 bg-[#111111]">
@@ -63,14 +76,22 @@ export function EditorHeader({
               variant="ghost"
               className="h-9 gap-2 rounded-xl px-3 text-zinc-300 hover:bg-zinc-800/70 hover:text-zinc-100"
             >
-              <span className="text-sm font-medium max-w-[200px] truncate">{projectName}</span>
+              <span className="text-sm font-medium max-w-[200px] truncate">
+                {projectName}
+              </span>
               {hasUnsavedChanges && (
-                <span className="w-2 h-2 rounded-full bg-amber-500" title="Unsaved changes" />
+                <span
+                  className="w-2 h-2 rounded-full bg-amber-500"
+                  title="Unsaved changes"
+                />
               )}
               <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-48 rounded-xl border-zinc-800 bg-zinc-900 p-1">
+          <DropdownMenuContent
+            align="start"
+            className="w-48 rounded-xl border-zinc-800 bg-zinc-900 p-1"
+          >
             <DropdownMenuItem
               onClick={onNavigateHome}
               className="gap-2 rounded-lg text-zinc-300 focus:bg-zinc-800 focus:text-zinc-100 cursor-pointer"
@@ -78,19 +99,17 @@ export function EditorHeader({
               <Home className="h-4 w-4" />
               <span>Home</span>
             </DropdownMenuItem>
-            {onSave && (
-              <DropdownMenuItem
-                onClick={onSave}
-                disabled={!hasUnsavedChanges}
-                className={cn(
-                  "gap-2 rounded-lg text-zinc-300 focus:bg-zinc-800 focus:text-zinc-100 cursor-pointer",
-                  !hasUnsavedChanges && "opacity-50"
-                )}
-              >
-                <Save className="h-4 w-4" />
-                <span>Save Project</span>
-              </DropdownMenuItem>
-            )}
+            <DropdownMenuItem
+              onClick={saveProject}
+              disabled={!hasUnsavedChanges}
+              className={cn(
+                "gap-2 rounded-lg text-zinc-300 focus:bg-zinc-800 focus:text-zinc-100 cursor-pointer",
+                !hasUnsavedChanges && "opacity-50",
+              )}
+            >
+              <Save className="h-4 w-4" />
+              <span>Save Project</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -108,12 +127,12 @@ export function EditorHeader({
         <div className="flex items-center gap-1 p-1 rounded-full bg-zinc-900/80 border border-zinc-800/50 h-9">
           {/* Preview toggle with green indicator */}
           <button
-            onClick={() => onViewChange?.("preview")}
+            onClick={() => setCurrentView("preview")}
             className={cn(
               "relative flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition-all h-full",
               currentView === "preview"
                 ? "bg-zinc-800 text-white shadow-none"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
             )}
           >
             <span className="relative flex h-2.5 w-2.5">
@@ -125,12 +144,12 @@ export function EditorHeader({
 
           {/* Icon toggles */}
           <button
-            onClick={() => onViewChange?.("code")}
+            onClick={() => setCurrentView("code")}
             className={cn(
               "flex items-center justify-center h-7 w-7 rounded-full transition-all p-0",
               currentView === "code"
                 ? "bg-zinc-800 text-white shadow-none"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
             )}
             title="Code"
           >
@@ -138,12 +157,12 @@ export function EditorHeader({
           </button>
 
           <button
-            onClick={() => onViewChange?.("settings")}
+            onClick={() => setCurrentView("settings")}
             className={cn(
               "flex items-center justify-center h-7 w-7 rounded-full transition-all p-0",
               currentView === "settings"
                 ? "bg-zinc-800 text-white shadow-none"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
             )}
             title="Settings"
           >
@@ -175,8 +194,8 @@ export function EditorHeader({
                 {/* Refresh button */}
                 <button
                   onClick={(e) => {
-                    e.stopPropagation()
-                    onRefresh?.()
+                    e.stopPropagation();
+                    handleRefresh();
                   }}
                   disabled={!!isRefreshing}
                   className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all disabled:opacity-50"
@@ -197,8 +216,8 @@ export function EditorHeader({
                 {/* Copy button */}
                 <button
                   onClick={(e) => {
-                    e.stopPropagation()
-                    handleCopyUrl()
+                    e.stopPropagation();
+                    handleCopyUrl();
                   }}
                   className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
                   title="Copy URL"
@@ -213,8 +232,8 @@ export function EditorHeader({
                 {/* Open external */}
                 <button
                   onClick={(e) => {
-                    e.stopPropagation()
-                    window.open(sandboxUrl, "_blank")
+                    e.stopPropagation();
+                    window.open(sandboxUrl, "_blank");
                   }}
                   className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
                   title="Open in new tab"
@@ -234,9 +253,11 @@ export function EditorHeader({
                   "flex items-center justify-center px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800/50 transition-all h-9",
                   sandboxUrl
                     ? "text-zinc-400 hover:text-zinc-300 hover:border-zinc-700 cursor-pointer"
-                    : "text-zinc-600 cursor-not-allowed"
+                    : "text-zinc-600 cursor-not-allowed",
                 )}
-                title={sandboxUrl ? "Click to expand URL" : "No preview available"}
+                title={
+                  sandboxUrl ? "Click to expand URL" : "No preview available"
+                }
               >
                 <span className="text-sm">/</span>
                 {sandboxUrl && (
@@ -279,9 +300,7 @@ export function EditorHeader({
         </Button>
 
         {/* Publish button */}
-        <Button
-          className="h-9 gap-1.5 rounded-full px-4 bg-emerald-500 hover:bg-emerald-400 text-black font-medium"
-        >
+        <Button className="h-9 gap-1.5 rounded-full px-4 bg-emerald-500 hover:bg-emerald-400 text-black font-medium">
           Publish
         </Button>
 
@@ -297,10 +316,18 @@ export function EditorHeader({
               </div>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48 rounded-xl border-zinc-800 bg-zinc-900 p-1">
+          <DropdownMenuContent
+            align="end"
+            className="w-48 rounded-xl border-zinc-800 bg-zinc-900 p-1"
+          >
             <DropdownMenuItem asChild>
-              <a href="/profile" className="flex items-center gap-2 rounded-lg text-zinc-300 focus:bg-zinc-800 focus:text-zinc-100 cursor-pointer">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800 text-xs">U</span>
+              <a
+                href="/profile"
+                className="flex items-center gap-2 rounded-lg text-zinc-300 focus:bg-zinc-800 focus:text-zinc-100 cursor-pointer"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800 text-xs">
+                  U
+                </span>
                 <div className="flex flex-col space-y-0.5">
                   <span className="text-sm font-medium">Username</span>
                   <span className="text-xs text-zinc-500">View Profile</span>
@@ -309,7 +336,10 @@ export function EditorHeader({
             </DropdownMenuItem>
             <div className="my-1 h-px bg-zinc-800" />
             <DropdownMenuItem asChild>
-              <a href="/settings" className="flex items-center gap-2 rounded-lg text-zinc-300 focus:bg-zinc-800 focus:text-zinc-100 cursor-pointer">
+              <a
+                href="/settings"
+                className="flex items-center gap-2 rounded-lg text-zinc-300 focus:bg-zinc-800 focus:text-zinc-100 cursor-pointer"
+              >
                 <div className="w-4 h-4" /> {/* Spacer or Icon */}
                 <span>Settings</span>
               </a>
@@ -322,5 +352,5 @@ export function EditorHeader({
         </DropdownMenu>
       </div>
     </header>
-  )
+  );
 }

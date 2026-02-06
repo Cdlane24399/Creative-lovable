@@ -80,8 +80,6 @@ export function useDevServer({
   const consecutiveFailuresRef = useRef(0)
   const onReadyCalledRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
-  const lastSuccessfulPollRef = useRef<number>(Date.now())
-  const retryCountRef = useRef(0)
   const backoffIntervalRef = useRef<number>(2000)
   const lastStatusHashRef = useRef<string>("")
   const startingPollIntervalRef = useRef(startingPollInterval)
@@ -168,8 +166,6 @@ export function useDevServer({
       }
       
       consecutiveFailuresRef.current = 0
-      retryCountRef.current = 0
-      lastSuccessfulPollRef.current = Date.now()
 
       const data = await response.json()
       return data as DevServerStatus
@@ -180,7 +176,6 @@ export function useDevServer({
       }
 
       consecutiveFailuresRef.current++
-      retryCountRef.current++
 
       // Only log errors after multiple failures
       if (consecutiveFailuresRef.current > 3) {
@@ -291,7 +286,6 @@ export function useDevServer({
     setIsStarting(true)
     setError(null)
     consecutiveFailuresRef.current = 0
-    retryCountRef.current = 0
     onReadyCalledRef.current = false
 
     try {
@@ -403,9 +397,7 @@ export function useDevServer({
     lastErrorsRef.current = []
     wasRunningRef.current = false
     consecutiveFailuresRef.current = 0
-    retryCountRef.current = 0
     onReadyCalledRef.current = false
-    lastSuccessfulPollRef.current = Date.now()
     lastStatusHashRef.current = ""
   }, [projectId])
 

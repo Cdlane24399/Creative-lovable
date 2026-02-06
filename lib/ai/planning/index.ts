@@ -49,9 +49,6 @@ export {
   matchErrorToStrategy,
   selectRecoveryStrategy,
   executeRecovery,
-  calculateRetryDelay,
-  isTransientError,
-  isPermanentError,
   RecoveryStrategyBuilder,
   createDefaultRecoveryBuilder,
 } from "./recovery-strategies"

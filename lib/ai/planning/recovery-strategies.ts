@@ -16,11 +16,6 @@ import type {
   TaskExecutionResult,
 } from "./types"
 import { incrementRetryCount, resetTask, updateTaskStatus } from "./task-graph"
-import { 
-  calculateDelay as calculateDelayFromRetry,
-  isTransientError as isTransientErrorFromRetry,
-  isPermanentError as isPermanentErrorFromRetry 
-} from "@/lib/utils/retry"
 
 // =============================================================================
 // Error Pattern Matching
@@ -359,36 +354,6 @@ function findTasksAfterCheckpoint(graph: TaskGraph, checkpointTaskId: string): s
 
   visit(checkpointTaskId)
   return result
-}
-
-/**
- * Calculate recommended retry delay based on attempt number
- * @deprecated Use calculateDelay from @/lib/utils/retry instead
- */
-export function calculateRetryDelay(
-  attempt: number,
-  baseDelayMs: number = 1000,
-  maxDelayMs: number = 30000,
-  jitter: boolean = true
-): number {
-  // Delegate to centralized retry utility
-  return calculateDelayFromRetry(attempt, { baseDelayMs, maxDelayMs, jitter, backoffMultiplier: 2 })
-}
-
-/**
- * Determine if an error is transient (likely to succeed on retry)
- * @deprecated Use isTransientError from @/lib/utils/retry instead
- */
-export function isTransientError(errorMessage: string): boolean {
-  return isTransientErrorFromRetry(new Error(errorMessage))
-}
-
-/**
- * Determine if an error is permanent (retry won't help)
- * @deprecated Use isPermanentError from @/lib/utils/retry instead
- */
-export function isPermanentError(errorMessage: string): boolean {
-  return isPermanentErrorFromRetry(new Error(errorMessage))
 }
 
 // =============================================================================
