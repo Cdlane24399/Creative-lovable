@@ -266,6 +266,7 @@ Creative-lovable/
 ## 📚 Documentation
 
 - **[E2B Template Setup](lib/e2b/templates/README.md)** - Custom template guide
+- **[Playwright Test Setup](PLAYWRIGHT_SETUP.md)** - End-to-end testing guide
 - **[CLAUDE.md](CLAUDE.md)** - Project documentation for AI assistants
 
 ---
