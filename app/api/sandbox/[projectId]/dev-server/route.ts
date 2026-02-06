@@ -63,7 +63,7 @@ async function getStatus(projectId: string): Promise<DevServerStatus> {
       return status
     }
 
-    // Check if server is responding using curl (more reliable than nc -z)
+    // Check if server has a listening port (fast kernel-level check via ss -tln)
     const serverStatus = await checkDevServerStatus(sandbox)
     const isRunning = serverStatus.isRunning
     const activePort = serverStatus.port || 3000
@@ -377,46 +377,37 @@ export const POST = withAuth(async (
       for (let i = 0; i < maxPolls; i++) {
         await new Promise(resolve => setTimeout(resolve, getInterval(i)))
 
-        // Early success: Check if Next.js reports "Ready" before doing HTTP check
-        const readyCheck = await executeCommand(
-          sandbox,
-          `grep -c "Ready in" /tmp/server.log 2>/dev/null || echo "0"`,
-          { timeoutMs: 3000 }
-        )
-        if (parseInt(readyCheck.stdout.trim()) > 0) {
-          console.log("[dev-server POST] Next.js reports ready, verifying with HTTP...")
-        }
-
-        // Check for port in logs first (Next.js logs the port it binds to)
+        // Combined check: look for "Ready in" AND port in logs with a single command
         const logCheck = await executeCommand(
           sandbox,
-          `grep -oE "http://localhost:[0-9]+" /tmp/server.log 2>/dev/null | tail -1 | grep -oE "[0-9]+$" || echo ""`,
-          { timeoutMs: 5000 }  // Increased from 2000ms - sandbox under load during compilation
+          `grep -c "Ready in" /tmp/server.log 2>/dev/null && grep -oE "http://localhost:[0-9]+" /tmp/server.log 2>/dev/null | tail -1 | grep -oE "[0-9]+$" || echo ""`,
+          { timeoutMs: 5000 }
         )
-        const logPort = parseInt(logCheck.stdout.trim(), 10)
+        const lines = logCheck.stdout.trim().split("\n")
+        const readyCount = parseInt(lines[0] || "0", 10)
+        const logPort = parseInt(lines[1] || "", 10)
 
-        if (logPort > 0) {
-          console.log(`[dev-server POST] Found port ${logPort} in logs, verifying with HTTP check...`)
-          // Use curl to verify server is actually responding (not just port open)
-          // Added --max-time 10 and increased timeoutMs to handle slow compilation
-          const httpCheck = await executeCommand(
+        // Trust Next.js "Ready" signal + port as sufficient evidence
+        // No HTTP verification needed - the "Ready in" message means the server is accepting connections
+        if (readyCount > 0 && logPort > 0) {
+          // Verify the port is actually listening (fast kernel-level check)
+          const portCheck = await executeCommand(
             sandbox,
-            `curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://localhost:${logPort} 2>/dev/null || echo "000"`,
-            { timeoutMs: 15000 }  // Increased from 5000ms - Next.js first request can be slow
+            `ss -tln 2>/dev/null | grep -q ":${logPort} " && echo "listening" || echo "closed"`,
+            { timeoutMs: 2000 }
           )
-          const httpCode = httpCheck.stdout.trim()
-          if (httpCode.startsWith('2') || httpCode.startsWith('3')) {
-            console.log(`[dev-server POST] Server responding on port ${logPort} with HTTP ${httpCode}`)
+          if (portCheck.stdout.trim() === "listening") {
+            console.log(`[dev-server POST] Server ready on port ${logPort} (Next.js Ready + port listening)`)
             serverReady = true
             actualPort = logPort
             break
           }
         }
 
-        // Fallback: Check all possible ports using HTTP status
+        // Fallback: Check all common ports for a listening socket
         const portStatus = await checkDevServerStatus(sandbox)
         if (portStatus.isRunning && portStatus.port) {
-          console.log(`[dev-server POST] Server responding on port ${portStatus.port} with HTTP ${portStatus.httpCode}`)
+          console.log(`[dev-server POST] Server detected on port ${portStatus.port}`)
           serverReady = true
           actualPort = portStatus.port
           break
@@ -430,20 +421,20 @@ export const POST = withAuth(async (
           // Check for fatal errors in logs that indicate server won't recover
           const errorCheck = await executeCommand(
             sandbox,
-            `tail -n 15 /tmp/server.log 2>/dev/null | grep -iE "error|failed|EADDRINUSE" || echo ""`,
-            { timeoutMs: 5000 }  // Increased from 2000ms
+            `tail -n 15 /tmp/server.log 2>/dev/null | grep -iE "error|failed|EADDRINUSE|FATAL" || echo ""`,
+            { timeoutMs: 5000 }
           )
           if (errorCheck.stdout.trim()) {
             console.warn(`[dev-server POST] Potential issues in logs:`, errorCheck.stdout.trim())
 
-            // Check for fatal compilation errors that won't self-resolve
+            // Check for fatal errors that won't self-resolve
             const fatalCheck = await executeCommand(
               sandbox,
               `tail -n 30 /tmp/server.log 2>/dev/null | grep -c "EADDRINUSE\\|Cannot find module\\|SyntaxError\\|FATAL" || echo "0"`,
               { timeoutMs: 3000 }
             )
             const fatalCount = parseInt(fatalCheck.stdout.trim())
-            if (fatalCount > 0 && elapsed >= 30) {
+            if (fatalCount > 0 && elapsed >= 15) {
               console.error(`[dev-server POST] Fatal errors detected after ${elapsed}s, stopping wait`)
               break
             }

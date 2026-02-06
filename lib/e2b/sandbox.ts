@@ -1275,9 +1275,9 @@ export function getHostUrl(sandbox: Sandbox, port: number = 3000): string {
 }
 
 /**
- * Wait for a dev server to be ready by polling HTTP status.
- * Uses curl to verify the server is actually responding to HTTP requests.
- * This is more reliable than just checking if the port is open.
+ * Wait for a dev server to be ready by polling port status.
+ * Uses `ss -tln` to check if the port has a listening socket.
+ * This is more reliable than HTTP checks which depend on curl/bun availability.
  *
  * @param sandbox - The E2B sandbox instance
  * @param port - Port to check (default: 3000)
@@ -1295,16 +1295,13 @@ export async function waitForDevServer(
 
   while (Date.now() - startTime < maxWaitMs) {
     try {
-      // Use curl to check HTTP response - more reliable than nc -z
       const result = await sandbox.commands.run(
-        `curl -s -o /dev/null -w '%{http_code}' http://localhost:${port} 2>/dev/null || echo "000"`,
-        { timeoutMs: 5000 }
+        `ss -tln 2>/dev/null | grep -q ":${port} " && echo "listening" || echo "closed"`,
+        { timeoutMs: 3000 }
       )
-      const httpCode = result.stdout.trim()
 
-      // 200, 304, or any 2xx/3xx response means server is ready
-      if (httpCode.startsWith('2') || httpCode.startsWith('3')) {
-        console.log(`[waitForDevServer] Server ready on port ${port} (HTTP ${httpCode})`)
+      if (result.stdout.trim() === "listening") {
+        console.log(`[waitForDevServer] Server ready on port ${port}`)
         return { success: true, port }
       }
     } catch {
@@ -1322,8 +1319,9 @@ export async function waitForDevServer(
 }
 
 /**
- * Check if a dev server is running and responding on any of the common ports.
- * Uses curl for HTTP-level verification.
+ * Check if a dev server is running and listening on any of the common ports.
+ * Uses `ss -tln` for fast, reliable port-listening detection.
+ * This works in any sandbox environment without depending on curl or bun fetch.
  *
  * @param sandbox - The E2B sandbox instance
  * @param ports - Ports to check (default: [3000, 3001, 3002, 3003, 3004, 3005])
@@ -1333,29 +1331,34 @@ export async function checkDevServerStatus(
   sandbox: Sandbox | CodeInterpreterSandbox,
   ports: number[] = [3000, 3001, 3002, 3003, 3004, 3005]
 ): Promise<{ isRunning: boolean; port: number | null; httpCode?: string }> {
-  // Check all ports in parallel
-  const checks = await Promise.all(
-    ports.map(async port => {
+  try {
+    // Single command to check all ports at once - much faster than parallel bun processes
+    const result = await sandbox.commands.run(
+      `ss -tln 2>/dev/null | grep -oE ':(${ports.join('|')}) ' | grep -oE '[0-9]+' | head -1`,
+      { timeoutMs: 3000 }
+    )
+    const detectedPort = parseInt(result.stdout.trim(), 10)
+    if (detectedPort > 0) {
+      return { isRunning: true, port: detectedPort, httpCode: "listening" }
+    }
+  } catch {
+    // ss might not be available, try /dev/tcp fallback
+    for (const port of ports) {
       try {
         const result = await sandbox.commands.run(
-          `curl -s -o /dev/null -w '%{http_code}' http://localhost:${port} 2>/dev/null || echo "000"`,
-          { timeoutMs: 3000 }
+          `(echo > /dev/tcp/localhost/${port}) 2>/dev/null && echo "open" || echo "closed"`,
+          { timeoutMs: 2000 }
         )
-        const httpCode = result.stdout.trim()
-        const isUp = httpCode.startsWith('2') || httpCode.startsWith('3')
-        return { port, isUp, httpCode }
+        if (result.stdout.trim() === "open") {
+          return { isRunning: true, port, httpCode: "listening" }
+        }
       } catch {
-        return { port, isUp: false, httpCode: "000" }
+        continue
       }
-    })
-  )
-
-  const activePort = checks.find(c => c.isUp)
-  return {
-    isRunning: !!activePort,
-    port: activePort?.port || null,
-    httpCode: activePort?.httpCode,
+    }
   }
+
+  return { isRunning: false, port: null }
 }
 
 /**
@@ -1692,15 +1695,15 @@ const { chromium } = require('playwright');
   } catch (error) {
     console.warn("[Screenshot] Primary method failed:", error instanceof Error ? error.message : error)
 
-    // Fallback: Try simple curl check to verify URL is accessible
+    // Fallback: Try simple HTTP check to verify URL is accessible
     if (sandbox) {
       try {
         console.log("[Screenshot] Verifying URL is accessible...")
-        const curlCheck = await executeCommand(sandbox, `curl -s -o /dev/null -w "%{http_code}" "${sandboxUrl}" 2>&1 || echo "failed"`, { timeoutMs: 10000 })
-        console.log(`[Screenshot] URL check result: ${curlCheck.stdout}`)
+        const httpCheck = await executeCommand(sandbox, `bun -e "try{const r=await fetch('${sandboxUrl}');console.log(r.status)}catch(e){console.log('failed: '+e.message)}"`, { timeoutMs: 10000 })
+        console.log(`[Screenshot] URL check result: ${httpCheck.stdout}`)
 
-        if (!curlCheck.stdout?.includes('200')) {
-          console.warn("[Screenshot] URL not accessible, got status:", curlCheck.stdout)
+        if (!httpCheck.stdout?.includes('200')) {
+          console.warn("[Screenshot] URL not accessible, got status:", httpCheck.stdout)
         }
       } catch (checkError) {
         console.warn("[Screenshot] URL check failed:", checkError)
