@@ -122,9 +122,10 @@ Tools are implemented as factory functions in `lib/ai/tools/`, each taking a `pr
 ### Dynamic Tool Activation (prepareStep)
 
 The chat route uses AI SDK v6 `prepareStep` to dynamically select active tools per step:
-- **Step 0**: Planning + Creation + `getProjectStructure` + Suggestions
-- **Build errors detected**: File + Build + Suggestions
-- **Server running with task graph**: File + Build + `markStepComplete` + Suggestions
+- **Step 0**: Planning + Creation (`initializeProject`, `batchWriteFiles`, `syncProject`) + File + Build + Suggestions
+- **Build errors detected**: File + BatchFile + Build + Suggestions
+- **Server running with task graph**: File + BatchFile + Build + `markStepComplete` + `syncProject` + Suggestions
+- **Otherwise (step 1+)**: All tools available (no restriction)
 
 ---
 
@@ -299,12 +300,14 @@ return result.toUIMessageStreamResponse({ originalMessages, onError, onFinish })
 
 ```typescript
 // Tool definition
+// IMPORTANT: Use `inputSchema` (NOT `parameters`) — AI SDK v6 reads `inputSchema` internally.
+// The `tool()` function is a passthrough; `parameters` would result in tools with no schema.
 import { tool } from "ai"
 import { z } from "zod"
 
 const myTool = tool({
   description: "Does something useful",
-  parameters: z.object({
+  inputSchema: z.object({
     input: z.string().describe("The input to process"),
   }),
   execute: async ({ input }) => {

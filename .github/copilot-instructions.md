@@ -358,12 +358,13 @@ return result.toUIMessageStreamResponse({
 ### Tool Definition
 
 ```typescript
+// IMPORTANT: Use `inputSchema` (NOT `parameters`) — AI SDK v6 reads `inputSchema` internally
 import { tool } from "ai";
 import { z } from "zod";
 
 const myTool = tool({
   description: "Does something useful",
-  parameters: z.object({
+  inputSchema: z.object({
     input: z.string().describe("The input to process"),
   }),
   execute: async ({ input }) => {
@@ -383,7 +384,7 @@ export function createFileTools(projectId: string) {
   return {
     writeFile: tool({
       description: "...",
-      parameters: z.object({ ... }),
+      inputSchema: z.object({ ... }),
       execute: async ({ path, content }) => {
         const sandbox = getCurrentSandbox()
         // implementation
@@ -448,9 +449,10 @@ Uses `DefaultChatTransport` with `/api/chat` endpoint. Transport is recreated wh
 
 The chat route uses `prepareStep` to control which tools are available at each step:
 
-- Step 0: Planning + creation + getProjectStructure + suggestions
-- Build errors detected: File ops + build tools + suggestions
-- Server running with task graph: File ops + build tools + markStepComplete + suggestions
+- Step 0: Planning + Creation (`initializeProject`, `batchWriteFiles`, `syncProject`) + File + Build + Suggestions
+- Build errors detected: File + BatchFile + Build + Suggestions
+- Server running with task graph: File + BatchFile + Build + `markStepComplete` + `syncProject` + Suggestions
+- Otherwise (step 1+): All tools available (no restriction)
 
 ---
 

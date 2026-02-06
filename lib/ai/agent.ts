@@ -233,11 +233,14 @@ export function Scene() {
 \`\`\`
 
 ### Tool Usage
-1. **createWebsite**: Initial project scaffolding with full structure
-2. **writeFile**: Add new components, pages, or utilities
-3. **editFile**: Modify existing files
-4. **getBuildStatus**: Check for errors after changes
-5. **runCommand**: Run shell commands (use \`bun\` for package operations)
+1. **getProjectStructure**: Check what exists before making changes
+2. **initializeProject**: Scaffold a new project (if template not already set up)
+3. **batchWriteFiles**: Write all pages, components, and files in a single operation
+4. **writeFile**: Add individual new files
+5. **editFile**: Modify existing files
+6. **getBuildStatus**: Check for errors after changes
+7. **syncProject**: Persist files to database for recovery
+8. **runCommand**: Run shell commands (use \`bun\` for package operations)
 
 ## Workflow
 
@@ -259,20 +262,21 @@ You operate in a pre-configured sandbox template that includes:
 
 When you examine the directory with \`getProjectStructure\`:
 - If you see an existing app with components and pages → This is a continuation. Build upon what exists.
-- If you see only a minimal Next.js skeleton → This is a fresh start. Use \`createWebsite\` to scaffold properly.
+- If you see only a minimal Next.js skeleton → This is a fresh start. Use \`initializeProject\` then \`batchWriteFiles\` to build the complete app.
 - NEVER blindly overwrite existing files. Check first, then decide whether to edit or create new files.
 
 ### For New Projects:
 1. **Understand**: Parse the request for features, pages, and interactions needed
 2. **Plan**: Mentally map out file structure and components
 3. **Name**: Choose a descriptive project name based on the user's request (e.g., "coffee-shop-landing", "portfolio-site", "fitness-tracker"). NEVER use generic names like "project" or "my-app".
-4. **Build**: Use \`createWebsite\` with complete initial structure including:
+4. **Build**: Use \`initializeProject\` to set up the project, then \`batchWriteFiles\` to write all files at once:
    - Root layout with proper providers (ThemeProvider, QueryClientProvider if needed)
    - Multiple pages if applicable
    - Component folders with initial components
    - All interactive elements wired up with proper state management
-5. **Polish**: Add animations, loading states, and micro-interactions
-6. **Verify**: Check build status and fix any issues
+5. **Sync**: Use \`syncProject\` to persist files to the database
+6. **Polish**: Add animations, loading states, and micro-interactions
+7. **Verify**: Check build status and fix any issues
 
 ### For Modifications:
 1. Use \`editFile\` for targeted changes
@@ -302,16 +306,27 @@ When you examine the directory with \`getProjectStructure\`:
 ❌ BAD: Manual useState for forms without validation
 ✅ GOOD: react-hook-form + Zod with proper error handling
 
-You are building the future of the web. Make it interactive, make it beautiful, make it complete.`
+You are building the future of the web. Make it interactive, make it beautiful, make it complete.`;
 
 // Model provider types - model creation is handled by lib/ai/providers.ts
-export type ModelProvider = 'anthropic' | 'opus' | 'google' | 'googlePro' | 'openai' | 'minimax' | 'moonshot' | 'glm'
+export type ModelProvider =
+  | "anthropic"
+  | "opus"
+  | "google"
+  | "googlePro"
+  | "openai"
+  | "minimax"
+  | "moonshot"
+  | "glm";
 
 // Model-specific settings for streamText
-export const MODEL_SETTINGS: Record<ModelProvider, {
-  maxSteps?: number
-  maxTokens?: number
-}> = {
+export const MODEL_SETTINGS: Record<
+  ModelProvider,
+  {
+    maxSteps?: number;
+    maxTokens?: number;
+  }
+> = {
   anthropic: { maxSteps: 50 },
   opus: { maxSteps: 50 },
   google: { maxSteps: 40, maxTokens: 8192 },
@@ -320,7 +335,7 @@ export const MODEL_SETTINGS: Record<ModelProvider, {
   minimax: { maxSteps: 50 },
   moonshot: { maxSteps: 50 },
   glm: { maxSteps: 50 },
-}
+};
 
 export const MODEL_DISPLAY_NAMES = {
   anthropic: "Claude Sonnet 4.5",
@@ -331,7 +346,7 @@ export const MODEL_DISPLAY_NAMES = {
   minimax: "MiniMax M2.1",
   moonshot: "Kimi K2.5",
   glm: "GLM-4.7",
-} as const
+} as const;
 
 export const MODEL_DESCRIPTIONS = {
   anthropic: "Fast & capable (default)",
@@ -342,4 +357,4 @@ export const MODEL_DESCRIPTIONS = {
   minimax: "Advanced Chinese LLM with strong reasoning",
   moonshot: "Long context specialist",
   glm: "General Language Model from Zhipu AI",
-} as const
+} as const;

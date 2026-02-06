@@ -148,7 +148,7 @@ export function getGatewayProviderOptions(key: ModelKey) {
 
 **Streaming with streamText:**
 ```typescript
-import { streamText } from "ai"
+import { streamText, stepCountIs } from "ai"
 import { getModel, getGatewayProviderOptions } from "@/lib/ai/providers"
 
 const result = streamText({
@@ -156,14 +156,14 @@ const result = streamText({
   providerOptions: getGatewayProviderOptions('anthropic'),
   messages,
   tools,
-  maxSteps: 50,
+  stopWhen: stepCountIs(50),
   onStepFinish: async ({ text, toolCalls, usage }) => {
     // Log or persist token usage
     logger.info({ usage }, 'Step completed')
   },
 })
 
-return result.toDataStreamResponse()
+return result.toUIMessageStreamResponse()
 ```
 
 **Available Models (via AI Gateway):**
@@ -182,12 +182,13 @@ return result.toDataStreamResponse()
 
 **Tool Definition:**
 ```typescript
+// IMPORTANT: Use `inputSchema` (NOT `parameters`) — AI SDK v6 reads `inputSchema` internally.
 import { tool } from "ai"
 import { z } from "zod"
 
 const myTool = tool({
   description: "Does something useful",
-  parameters: z.object({
+  inputSchema: z.object({
     input: z.string().describe("The input to process"),
   }),
   execute: async ({ input }) => {
