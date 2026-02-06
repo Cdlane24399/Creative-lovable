@@ -36,14 +36,14 @@ export {
   type ComponentDefinition,
   type SupportedLanguage,
   type Phase,
-} from "./schemas/tool-schemas"
+} from "./schemas/tool-schemas";
 
 // Re-export errors
 export {
   WebBuilderError,
   InvalidPathError,
   SandboxError,
-} from "./errors/web-builder-errors"
+} from "./errors/web-builder-errors";
 
 // Re-export utilities
 export {
@@ -52,7 +52,7 @@ export {
   formatDuration,
   isRecord,
   type ToolResult,
-} from "./utils"
+} from "./utils";
 
 // Re-export helpers
 export {
@@ -60,10 +60,10 @@ export {
   writePages,
   writeComponents,
   categorizeFiles,
-} from "./helpers"
+} from "./helpers";
 
 // Re-export prompt generator
-export { generateAgenticSystemPrompt } from "./prompt-generator"
+export { generateAgenticSystemPrompt } from "./prompt-generator";
 
 // Import tool factories
 import {
@@ -72,17 +72,19 @@ import {
   createFileTools,
   createBatchFileTools,
   createProjectTools,
-  createProjectInitTools,
-  createSyncTools,
   createBuildTools,
   createWebsiteTools,
   createCodeTools,
   createSuggestionTools,
-} from "./tools"
+} from "./tools";
 
 /**
  * Creates context-aware tools for the web builder agent.
  * Each tool automatically tracks execution in the AgentContext.
+ *
+ * Note: initializeProject and syncProject are NOT exposed to the agent.
+ * Project initialization happens automatically in withSandbox (sandbox-provider.ts).
+ * File sync happens automatically after writes and at session end.
  *
  * @param projectId - Unique identifier for the project/session
  * @returns Object containing all available tools
@@ -100,17 +102,15 @@ import {
  */
 export function createContextAwareTools(projectId: string) {
   // Compose all tool factories
-  const planningTools = createPlanningTools(projectId)
-  const stateTools = createStateTools(projectId)
-  const fileTools = createFileTools(projectId)
-  const batchFileTools = createBatchFileTools(projectId)
-  const projectTools = createProjectTools(projectId)
-  const projectInitTools = createProjectInitTools(projectId)
-  const syncTools = createSyncTools(projectId)
-  const buildTools = createBuildTools(projectId)
-  const websiteTools = createWebsiteTools(projectId)
-  const codeTools = createCodeTools(projectId)
-  const suggestionTools = createSuggestionTools(projectId)
+  const planningTools = createPlanningTools(projectId);
+  const stateTools = createStateTools(projectId);
+  const fileTools = createFileTools(projectId);
+  const batchFileTools = createBatchFileTools(projectId);
+  const projectTools = createProjectTools(projectId);
+  const buildTools = createBuildTools(projectId);
+  const websiteTools = createWebsiteTools(projectId);
+  const codeTools = createCodeTools(projectId);
+  const suggestionTools = createSuggestionTools(projectId);
 
   // Return combined tools object
   return {
@@ -123,22 +123,16 @@ export function createContextAwareTools(projectId: string) {
     // File operations
     ...fileTools,
 
-    // Batch file operations (new)
+    // Batch file operations
     ...batchFileTools,
 
     // Project management
     ...projectTools,
 
-    // Project initialization (new)
-    ...projectInitTools,
-
-    // Database sync (new)
-    ...syncTools,
-
     // Build & server tools
     ...buildTools,
 
-    // Website creation (deprecated - use initializeProject + batchWriteFiles)
+    // Website creation (deprecated - use batchWriteFiles)
     ...websiteTools,
 
     // Code execution
@@ -146,7 +140,7 @@ export function createContextAwareTools(projectId: string) {
 
     // Suggestion generation
     ...suggestionTools,
-  }
+  };
 }
 
 // Re-export tool factories for advanced usage
@@ -156,10 +150,8 @@ export {
   createFileTools,
   createBatchFileTools,
   createProjectTools,
-  createProjectInitTools,
-  createSyncTools,
   createBuildTools,
-  /** @deprecated Use createProjectInitTools + createBatchFileTools instead */
+  /** @deprecated Use createBatchFileTools instead */
   createWebsiteTools,
   createCodeTools,
-} from "./tools"
+} from "./tools";

@@ -5,13 +5,21 @@
  * replacing the file-writing loops hidden inside the legacy createWebsite tool.
  */
 
-import { tool } from "ai"
-import { z } from "zod"
-import { getAgentContext, updateFileInContext, recordToolExecution } from "../agent-context"
-import { executeCommand, writeFile as writeFileToSandbox } from "@/lib/e2b/sandbox"
-import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider"
+import { tool } from "ai";
+import { z } from "zod";
+import {
+  getAgentContext,
+  updateFileInContext,
+  recordToolExecution,
+} from "../agent-context";
+import {
+  executeCommand,
+  writeFile as writeFileToSandbox,
+} from "@/lib/e2b/sandbox";
+import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
+import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager";
 
-const projectDir = "/home/user/project"
+const projectDir = "/home/user/project";
 
 // Schema for a single file in a batch operation
 const batchFileSchema = z.object({
@@ -25,7 +33,7 @@ const batchFileSchema = z.object({
     .optional()
     .default("create")
     .describe("Whether to create new or update existing"),
-})
+});
 
 /**
  * Creates batch file operation tools.
@@ -60,79 +68,112 @@ export function createBatchFileTools(projectId: string) {
       }),
 
       execute: async ({ files, baseDir }) => {
-        const startTime = new Date()
-        const ctx = getAgentContext(projectId)
+        const startTime = new Date();
+        const ctx = getAgentContext(projectId);
         const results = {
           created: [] as string[],
           updated: [] as string[],
           skipped: [] as string[],
           failed: [] as { path: string; error: string }[],
-        }
+        };
 
-        console.log(`[batchWriteFiles] Writing ${files.length} files`)
+        console.log(`[batchWriteFiles] Writing ${files.length} files`);
 
         try {
           // Get sandbox from infrastructure context
-          const sandbox = getCurrentSandbox()
-          
+          const sandbox = getCurrentSandbox();
+
           // Get project name from context for frontend parser
-          const projectName = ctx.projectName || "project"
+          const projectName = ctx.projectName || "project";
 
           // Resolve app directory
-          const hasSrcApp = await sandbox.files.exists(`${projectDir}/src/app`)
-          const appDir = hasSrcApp ? "src/app" : "app"
+          const hasSrcApp = await sandbox.files.exists(`${projectDir}/src/app`);
+          const appDir = hasSrcApp ? "src/app" : "app";
 
           // Process files sequentially to avoid race conditions with directory creation
           for (const file of files) {
             try {
               // Determine full path
-              const isAbsolutePath = file.path.startsWith("app/") || file.path.startsWith("components/")
-              const relativePath = isAbsolutePath ? file.path : `${baseDir}/${file.path}`
-              const fullPath = `${projectDir}/${relativePath}`
+              const isAbsolutePath =
+                file.path.startsWith("app/") ||
+                file.path.startsWith("components/");
+              const relativePath = isAbsolutePath
+                ? file.path
+                : `${baseDir}/${file.path}`;
+              const fullPath = `${projectDir}/${relativePath}`;
 
               // Create parent directories
-              const dirIndex = fullPath.lastIndexOf("/")
+              const dirIndex = fullPath.lastIndexOf("/");
               if (dirIndex > projectDir.length) {
-                const dir = fullPath.substring(0, dirIndex)
-                await executeCommand(sandbox, `mkdir -p "${dir}"`)
+                const dir = fullPath.substring(0, dirIndex);
+                await executeCommand(sandbox, `mkdir -p "${dir}"`);
               }
 
               // Check if file exists and compare content
-              let shouldWrite = true
-              let action: "created" | "updated" = file.action === "update" ? "updated" : "created"
+              let shouldWrite = true;
+              let action: "created" | "updated" =
+                file.action === "update" ? "updated" : "created";
 
               try {
-                const existing = await sandbox.files.read(fullPath)
+                const existing = await sandbox.files.read(fullPath);
                 if (existing === file.content) {
-                  shouldWrite = false
-                  results.skipped.push(relativePath)
+                  shouldWrite = false;
+                  results.skipped.push(relativePath);
                 } else {
-                  action = "updated"
+                  action = "updated";
                 }
               } catch {
                 // File doesn't exist, will create
-                action = "created"
+                action = "created";
               }
 
               if (shouldWrite) {
-                await writeFileToSandbox(sandbox, fullPath, file.content)
-                updateFileInContext(projectId, relativePath, file.content, action)
+                await writeFileToSandbox(sandbox, fullPath, file.content);
+                updateFileInContext(
+                  projectId,
+                  relativePath,
+                  file.content,
+                  action,
+                );
 
                 if (action === "created") {
-                  results.created.push(relativePath)
+                  results.created.push(relativePath);
                 } else {
-                  results.updated.push(relativePath)
+                  results.updated.push(relativePath);
                 }
               }
             } catch (error) {
-              const errorMsg = error instanceof Error ? error.message : "Write failed"
-              results.failed.push({ path: file.path, error: errorMsg })
-              console.error(`[batchWriteFiles] Failed to write ${file.path}:`, errorMsg)
+              const errorMsg =
+                error instanceof Error ? error.message : "Write failed";
+              results.failed.push({ path: file.path, error: errorMsg });
+              console.error(
+                `[batchWriteFiles] Failed to write ${file.path}:`,
+                errorMsg,
+              );
             }
           }
 
-          const success = results.failed.length === 0
-          const totalProcessed = results.created.length + results.updated.length + results.skipped.length
+          const success = results.failed.length === 0;
+          const totalProcessed =
+            results.created.length +
+            results.updated.length +
+            results.skipped.length;
+
+          // Auto-sync to database after batch write
+          if (results.created.length > 0 || results.updated.length > 0) {
+            try {
+              const syncResult = await quickSyncToDatabaseWithRetry(
+                sandbox,
+                projectId,
+                projectDir,
+              );
+              console.log(
+                `[batchWriteFiles] Auto-synced: ${syncResult.filesWritten} files`,
+              );
+            } catch (syncError) {
+              console.warn("[batchWriteFiles] Auto-sync failed:", syncError);
+            }
+          }
 
           const result = {
             success,
@@ -147,21 +188,26 @@ export function createBatchFileTools(projectId: string) {
             message: success
               ? `Wrote ${results.created.length} new, ${results.updated.length} updated, ${results.skipped.length} skipped`
               : `Partial success: ${totalProcessed} succeeded, ${results.failed.length} failed`,
-          }
+          };
 
           recordToolExecution(
             projectId,
             "batchWriteFiles",
             { fileCount: files.length },
-            { created: results.created.length, updated: results.updated.length, filesReady: success },
+            {
+              created: results.created.length,
+              updated: results.updated.length,
+              filesReady: success,
+            },
             success,
             success ? undefined : `${results.failed.length} files failed`,
-            startTime
-          )
+            startTime,
+          );
 
-          return result
+          return result;
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : "Batch write failed"
+          const errorMsg =
+            error instanceof Error ? error.message : "Batch write failed";
           recordToolExecution(
             projectId,
             "batchWriteFiles",
@@ -169,12 +215,13 @@ export function createBatchFileTools(projectId: string) {
             undefined,
             false,
             errorMsg,
-            startTime
-          )
+            startTime,
+          );
 
           // Get project name from context for error response
-          const projectName = getAgentContext(projectId).projectName || "project"
-          
+          const projectName =
+            getAgentContext(projectId).projectName || "project";
+
           return {
             success: false,
             totalFiles: files.length,
@@ -187,9 +234,9 @@ export function createBatchFileTools(projectId: string) {
             filesReady: false,
             projectName,
             message: `Failed to write files: ${errorMsg}`,
-          }
+          };
         }
       },
     }),
-  }
+  };
 }

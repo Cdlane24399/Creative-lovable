@@ -1,19 +1,19 @@
-import { tool } from "ai"
-import { z } from "zod"
+import { tool } from "ai";
+import { z } from "zod";
 import {
   getAgentContext,
   addDependency,
   updateBuildStatus,
   setProjectInfo,
   recordToolExecution,
-} from "../agent-context"
+} from "../agent-context";
 import {
   executeCommand,
   killBackgroundProcess,
   startBackgroundProcess,
-} from "@/lib/e2b/sandbox"
-import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider"
-import { createErrorResult, formatDuration } from "../utils"
+} from "@/lib/e2b/sandbox";
+import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
+import { createErrorResult, formatDuration } from "../utils";
 
 /**
  * Factory function to create build and server management tools.
@@ -23,7 +23,7 @@ import { createErrorResult, formatDuration } from "../utils"
  * @returns Object containing build and server tools
  */
 export function createBuildTools(projectId: string) {
-  const ctx = () => getAgentContext(projectId)
+  const ctx = () => getAgentContext(projectId);
 
   return {
     /**
@@ -32,7 +32,7 @@ export function createBuildTools(projectId: string) {
      */
     runCommand: tool({
       description:
-        "Run a shell command in the sandbox (e.g., pnpm add, pnpm run build). " +
+        "Run a shell command in the project environment (e.g., pnpm add, pnpm run build). " +
         "Use for any command-line operations. Uses pnpm (not npm) for package management.",
       inputSchema: z.object({
         command: z
@@ -43,7 +43,9 @@ export function createBuildTools(projectId: string) {
         cwd: z
           .string()
           .optional()
-          .describe("Working directory relative to /home/user/ (defaults to project directory)"),
+          .describe(
+            "Working directory relative to /home/user/ (defaults to project directory)",
+          ),
         timeout: z
           .number()
           .optional()
@@ -51,26 +53,38 @@ export function createBuildTools(projectId: string) {
           .describe("Command timeout in milliseconds (default: 60000)"),
       }),
       execute: async ({ command, cwd, timeout }) => {
-        const startTime = new Date()
-        const projectDir = "/home/user/project"
-        const workDir = cwd ? `/home/user/${cwd}` : projectDir
-        const fullCommand = `cd "${workDir}" && ${command}`
+        const startTime = new Date();
+        const projectDir = "/home/user/project";
+        const workDir = cwd ? `/home/user/${cwd}` : projectDir;
+        const fullCommand = `cd "${workDir}" && ${command}`;
 
         try {
           // Get sandbox from infrastructure context
-          const sandbox = getCurrentSandbox()
-          const result = await executeCommand(sandbox, fullCommand, { timeoutMs: timeout })
+          const sandbox = getCurrentSandbox();
+          const result = await executeCommand(sandbox, fullCommand, {
+            timeoutMs: timeout,
+          });
 
           // Track pnpm add for dependency awareness
-          if ((command.includes("pnpm add") || command.includes("pnpm install")) && result.exitCode === 0) {
-            const packageMatch = command.match(/pnpm (?:add|install)\s+(?:-D\s+)?(.+)$/)
+          if (
+            (command.includes("pnpm add") ||
+              command.includes("pnpm install")) &&
+            result.exitCode === 0
+          ) {
+            const packageMatch = command.match(
+              /pnpm (?:add|install)\s+(?:-D\s+)?(.+)$/,
+            );
             if (packageMatch) {
-              const packages = packageMatch[1].split(/\s+/).filter((pkg) => pkg && !pkg.startsWith("-"))
-              packages.forEach((pkg) => addDependency(projectId, pkg, "latest"))
+              const packages = packageMatch[1]
+                .split(/\s+/)
+                .filter((pkg) => pkg && !pkg.startsWith("-"));
+              packages.forEach((pkg) =>
+                addDependency(projectId, pkg, "latest"),
+              );
             }
           }
 
-          const success = result.exitCode === 0
+          const success = result.exitCode === 0;
 
           recordToolExecution(
             projectId,
@@ -79,8 +93,8 @@ export function createBuildTools(projectId: string) {
             { exitCode: result.exitCode },
             success,
             success ? undefined : result.stderr,
-            startTime
-          )
+            startTime,
+          );
 
           return {
             success,
@@ -89,11 +103,20 @@ export function createBuildTools(projectId: string) {
             stderr: result.stderr,
             exitCode: result.exitCode,
             duration: formatDuration(startTime),
-          }
+          };
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : "Command failed"
-          recordToolExecution(projectId, "runCommand", { command }, undefined, false, errorMsg, startTime)
-          return createErrorResult(error, { command })
+          const errorMsg =
+            error instanceof Error ? error.message : "Command failed";
+          recordToolExecution(
+            projectId,
+            "runCommand",
+            { command },
+            undefined,
+            false,
+            errorMsg,
+            startTime,
+          );
+          return createErrorResult(error, { command });
         }
       },
     }),
@@ -118,41 +141,49 @@ export function createBuildTools(projectId: string) {
           .describe("Install as dev dependency (--save-dev)"),
       }),
       execute: async ({ packages, dev }) => {
-        const startTime = new Date()
-        const projectDir = "/home/user/project"
-        const pnpmFlag = dev ? "-D" : ""
+        const startTime = new Date();
+        const projectDir = "/home/user/project";
+        const pnpmFlag = dev ? "-D" : "";
 
         try {
           // Get sandbox from infrastructure context
-          const sandbox = getCurrentSandbox()
+          const sandbox = getCurrentSandbox();
 
           // Stop dev server to release lock on pnpm-lock.yaml
           // Turbopack holds the lockfile while running, causing pnpm add to fail
-          const wasRunning = await killBackgroundProcess(projectId)
+          const wasRunning = await killBackgroundProcess(projectId);
           if (wasRunning) {
-            console.log("[installPackage] Stopped dev server for package install")
+            console.log(
+              "[installPackage] Stopped dev server for package install",
+            );
           }
 
-          const packageList = packages.join(" ")
+          const packageList = packages.join(" ");
           const result = await executeCommand(
             sandbox,
             `cd "${projectDir}" && pnpm add ${pnpmFlag} ${packageList}`.trim(),
-            { timeoutMs: 120_000 } // 2 minutes for package install
-          )
+            { timeoutMs: 120_000 }, // 2 minutes for package install
+          );
 
-          const success = result.exitCode === 0
+          const success = result.exitCode === 0;
 
           // Restart dev server if it was running
           if (wasRunning) {
-            await startBackgroundProcess(sandbox, "pnpm run dev > /tmp/server.log 2>&1", {
-              workingDir: projectDir,
-              projectId,
-            })
-            console.log("[installPackage] Restarted dev server after package install")
+            await startBackgroundProcess(
+              sandbox,
+              "pnpm run dev > /tmp/server.log 2>&1",
+              {
+                workingDir: projectDir,
+                projectId,
+              },
+            );
+            console.log(
+              "[installPackage] Restarted dev server after package install",
+            );
           }
 
           if (success) {
-            packages.forEach((pkg) => addDependency(projectId, pkg, "latest"))
+            packages.forEach((pkg) => addDependency(projectId, pkg, "latest"));
           }
 
           recordToolExecution(
@@ -162,20 +193,31 @@ export function createBuildTools(projectId: string) {
             { success },
             success,
             success ? undefined : result.stderr,
-            startTime
-          )
+            startTime,
+          );
 
           return {
             success,
             packages,
             dev,
-            message: success ? `Installed: ${packages.join(", ")}` : `Failed: ${result.stderr}`,
+            message: success
+              ? `Installed: ${packages.join(", ")}`
+              : `Failed: ${result.stderr}`,
             duration: formatDuration(startTime),
-          }
+          };
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : "Installation failed"
-          recordToolExecution(projectId, "installPackage", { packages }, undefined, false, errorMsg, startTime)
-          return createErrorResult(error, { packages })
+          const errorMsg =
+            error instanceof Error ? error.message : "Installation failed";
+          recordToolExecution(
+            projectId,
+            "installPackage",
+            { packages },
+            undefined,
+            false,
+            errorMsg,
+            startTime,
+          );
+          return createErrorResult(error, { packages });
         }
       },
     }),
@@ -196,30 +238,40 @@ export function createBuildTools(projectId: string) {
           .describe("Number of log lines to retrieve (default: 100)"),
       }),
       execute: async ({ logLines }) => {
-        const startTime = new Date()
+        const startTime = new Date();
 
         try {
           // Get sandbox from infrastructure context
-          const sandbox = getCurrentSandbox()
+          const sandbox = getCurrentSandbox();
           const logsResult = await executeCommand(
             sandbox,
-            `tail -n ${logLines} /tmp/server.log 2>/dev/null || echo "No server logs found"`
-          )
-          const logs = logsResult.stdout
+            `tail -n ${logLines} /tmp/server.log 2>/dev/null || echo "No server logs found"`,
+          );
+          const logs = logsResult.stdout;
 
           // Parse for errors and warnings with better regex
-          const errorPatterns = [/Error:/i, /\berror\b/i, /ERROR/, /Failed to compile/i, /Module not found/i]
-          const warningPatterns = [/\bwarn(ing)?\b/i, /Warning:/i]
+          const errorPatterns = [
+            /Error:/i,
+            /\berror\b/i,
+            /ERROR/,
+            /Failed to compile/i,
+            /Module not found/i,
+          ];
+          const warningPatterns = [/\bwarn(ing)?\b/i, /Warning:/i];
 
-          const lines = logs.split("\n")
+          const lines = logs.split("\n");
 
-          const errorLines = lines.filter((line) => errorPatterns.some((pattern) => pattern.test(line)))
+          const errorLines = lines.filter((line) =>
+            errorPatterns.some((pattern) => pattern.test(line)),
+          );
           const warningLines = lines.filter(
-            (line) => warningPatterns.some((pattern) => pattern.test(line)) && !errorPatterns.some((p) => p.test(line))
-          )
+            (line) =>
+              warningPatterns.some((pattern) => pattern.test(line)) &&
+              !errorPatterns.some((p) => p.test(line)),
+          );
 
-          const hasErrors = errorLines.length > 0
-          const hasWarnings = warningLines.length > 0
+          const hasErrors = errorLines.length > 0;
+          const hasWarnings = warningLines.length > 0;
 
           // Update context
           updateBuildStatus(projectId, {
@@ -227,7 +279,7 @@ export function createBuildTools(projectId: string) {
             hasWarnings,
             errors: errorLines.slice(0, 5),
             warnings: warningLines.slice(0, 3),
-          })
+          });
 
           const result = {
             success: true,
@@ -243,15 +295,32 @@ export function createBuildTools(projectId: string) {
               : hasWarnings
                 ? "Consider addressing warnings, but they won't block the build."
                 : "Build looks healthy. Ready to proceed.",
-          }
+          };
 
-          recordToolExecution(projectId, "getBuildStatus", {}, { hasErrors, hasWarnings }, true, undefined, startTime)
+          recordToolExecution(
+            projectId,
+            "getBuildStatus",
+            {},
+            { hasErrors, hasWarnings },
+            true,
+            undefined,
+            startTime,
+          );
 
-          return result
+          return result;
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : "Status check failed"
-          recordToolExecution(projectId, "getBuildStatus", {}, undefined, false, errorMsg, startTime)
-          return createErrorResult(error)
+          const errorMsg =
+            error instanceof Error ? error.message : "Status check failed";
+          recordToolExecution(
+            projectId,
+            "getBuildStatus",
+            {},
+            undefined,
+            false,
+            errorMsg,
+            startTime,
+          );
+          return createErrorResult(error);
         }
       },
     }),
@@ -265,14 +334,20 @@ export function createBuildTools(projectId: string) {
         "DEPRECATED: Do not use this tool. The dev server is started automatically " +
         "by the application. Use createWebsite to write files instead.",
       inputSchema: z.object({
-        port: z.number().optional().describe("Port number (ignored - server managed automatically)"),
+        port: z
+          .number()
+          .optional()
+          .describe("Port number (ignored - server managed automatically)"),
       }),
       execute: async () => {
-        const context = ctx()
-        const projectName = context.projectName || "project"
+        const context = ctx();
+        const projectName = context.projectName || "project";
 
         // Just update context - the frontend handles server management
-        setProjectInfo(projectId, { projectName, projectDir: `/home/user/${projectName}` })
+        setProjectInfo(projectId, {
+          projectName,
+          projectDir: `/home/user/${projectName}`,
+        });
 
         return {
           success: true,
@@ -281,8 +356,8 @@ export function createBuildTools(projectId: string) {
             "Files are ready - the preview will appear shortly.",
           deprecated: true,
           note: "This tool is deprecated. Use createWebsite to write files instead.",
-        }
+        };
       },
     }),
-  }
+  };
 }

@@ -39,6 +39,8 @@ export interface EditorActions {
   handleManualScreenshot: () => Promise<void>;
   handleSandboxUrlUpdate: (url: string | null) => void;
   handleFilesReady: (projectName: string, sandboxId?: string) => void;
+  /** Refetch project data (including files_snapshot) from the database */
+  refetchProjectData: () => Promise<number>;
 }
 
 export interface EditorMeta {
@@ -662,6 +664,27 @@ export function EditorProvider({
     [refetchProject, initialPrompt, generateProjectTitle],
   );
 
+  /**
+   * Simple refetch of project data (including files_snapshot).
+   * Used as a fallback when the chat completes, to ensure files are visible.
+   */
+  const refetchProjectData = useCallback(async (): Promise<number> => {
+    const result = await refetchProject();
+    if (result) {
+      const fileCount = Object.keys(result.files_snapshot || {}).length;
+      if (fileCount > 0) {
+        setIsFilesLoading(false);
+        console.log(
+          "[EditorProvider] refetchProjectData: loaded",
+          fileCount,
+          "files",
+        );
+      }
+      return fileCount;
+    }
+    return 0;
+  }, [refetchProject]);
+
   const handleSandboxUrlUpdate = useCallback(
     (url: string | null) => {
       console.log("[EditorProvider] Sandbox URL update requested:", url);
@@ -712,6 +735,7 @@ export function EditorProvider({
       handleManualScreenshot,
       handleSandboxUrlUpdate,
       handleFilesReady,
+      refetchProjectData,
     },
     meta: {
       projectId,

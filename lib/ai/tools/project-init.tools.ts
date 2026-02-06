@@ -5,16 +5,16 @@
  * without the complexity of the legacy createWebsite god tool.
  */
 
-import { tool } from "ai"
-import { z } from "zod"
-import { projectNameSchema } from "../schemas/tool-schemas"
-import { setProjectInfo, recordToolExecution } from "../agent-context"
-import { directoryExists, executeCommand } from "@/lib/e2b/sandbox"
-import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider"
-import { scaffoldNextProject } from "../helpers"
-import { SandboxError } from "../errors/web-builder-errors"
+import { tool } from "ai";
+import { z } from "zod";
+import { projectNameSchema } from "../schemas/tool-schemas";
+import { setProjectInfo, recordToolExecution } from "../agent-context";
+import { directoryExists, executeCommand } from "@/lib/e2b/sandbox";
+import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
+import { scaffoldNextProject } from "../helpers";
+import { SandboxError } from "../errors/web-builder-errors";
 
-const projectDir = "/home/user/project"
+const projectDir = "/home/user/project";
 
 /**
  * Creates project initialization tools.
@@ -32,7 +32,7 @@ export function createProjectInitTools(projectId: string) {
     initializeProject: tool({
       description:
         "Initialize a new Next.js project from a template or fresh scaffold. " +
-        "Creates the sandbox and basic project structure. " +
+        "Creates the basic project structure. " +
         "Does NOT create any pages or components - use writeFile or batchWriteFiles after this. " +
         "Use this once at the start of a new project.",
       inputSchema: z.object({
@@ -50,62 +50,74 @@ export function createProjectInitTools(projectId: string) {
       }),
 
       execute: async ({ name, description, useTemplate }) => {
-        const startTime = new Date()
-        const hasTemplate = useTemplate && !!process.env.E2B_TEMPLATE_ID
+        const startTime = new Date();
+        const hasTemplate = useTemplate && !!process.env.E2B_TEMPLATE_ID;
 
-        console.log(`[initializeProject] Starting: ${name}, template: ${hasTemplate}`)
+        console.log(
+          `[initializeProject] Starting: ${name}, template: ${hasTemplate}`,
+        );
 
         try {
           // Get sandbox from infrastructure context (created by withSandbox)
-          const sandbox = getCurrentSandbox()
-          console.log(`[initializeProject] Using sandbox: ${sandbox.sandboxId}`)
+          const sandbox = getCurrentSandbox();
+          console.log(
+            `[initializeProject] Using sandbox: ${sandbox.sandboxId}`,
+          );
 
           // Check if project already exists
-          const projectExists = await directoryExists(sandbox, projectDir)
+          const projectExists = await directoryExists(sandbox, projectDir);
 
           if (projectExists) {
             // Just update context for existing project
             setProjectInfo(projectId, {
               projectName: name,
               projectDir,
-              sandboxId: sandbox.sandboxId,
-            })
+            });
 
             const result = {
               success: true as const,
               projectName: name,
               projectDir,
-              sandboxId: sandbox.sandboxId,
               isNewProject: false,
               message: `Project already exists at ${projectDir}`,
-            }
+            };
 
-            recordToolExecution(projectId, "initializeProject", { name }, result, true, undefined, startTime)
-            return result
+            recordToolExecution(
+              projectId,
+              "initializeProject",
+              { name },
+              result,
+              true,
+              undefined,
+              startTime,
+            );
+            return result;
           }
 
           // Scaffold new project (skip if using template - template already has structure)
           if (!hasTemplate) {
-            console.log(`[initializeProject] Scaffolding fresh project (no template)`)
-            await scaffoldNextProject(sandbox, projectDir, name, description)
+            console.log(
+              `[initializeProject] Scaffolding fresh project (no template)`,
+            );
+            await scaffoldNextProject(sandbox, projectDir, name, description);
           } else {
-            console.log(`[initializeProject] Using E2B template - no scaffold needed`)
+            console.log(
+              `[initializeProject] Using E2B template - no scaffold needed`,
+            );
           }
 
           // Update context
           setProjectInfo(projectId, {
             projectName: name,
             projectDir: projectDir,
-            sandboxId: sandbox.sandboxId,
-          })
+          });
 
-          const totalTime = Date.now() - startTime.getTime()
+          const totalTime = Date.now() - startTime.getTime();
 
           const result = {
             success: true as const,
             projectName: name,
             projectDir: projectDir,
-            sandboxId: sandbox.sandboxId,
             isNewProject: true,
             usedTemplate: hasTemplate,
             setupTimeMs: totalTime,
@@ -113,22 +125,41 @@ export function createProjectInitTools(projectId: string) {
             message: hasTemplate
               ? `Project initialized from template in ${(totalTime / 1000).toFixed(1)}s`
               : `Project scaffolded in ${(totalTime / 1000).toFixed(1)}s`,
-          }
+          };
 
-          recordToolExecution(projectId, "initializeProject", { name, useTemplate }, result, true, undefined, startTime)
-          return result
+          recordToolExecution(
+            projectId,
+            "initializeProject",
+            { name, useTemplate },
+            result,
+            true,
+            undefined,
+            startTime,
+          );
+          return result;
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : "Failed to initialize project"
-          recordToolExecution(projectId, "initializeProject", { name }, undefined, false, errorMsg, startTime)
+          const errorMsg =
+            error instanceof Error
+              ? error.message
+              : "Failed to initialize project";
+          recordToolExecution(
+            projectId,
+            "initializeProject",
+            { name },
+            undefined,
+            false,
+            errorMsg,
+            startTime,
+          );
 
           return {
             success: false as const,
             error: errorMsg,
             message: "Failed to initialize project",
             filesReady: false,
-          }
+          };
         }
       },
     }),
-  }
+  };
 }

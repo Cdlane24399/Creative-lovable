@@ -6,27 +6,27 @@
  * what's happening before making decisions or when debugging issues.
  */
 
-import { tool } from "ai"
-import { z } from "zod"
-import { MAX_CONTENT_PREVIEW } from "../schemas/tool-schemas"
+import { tool } from "ai";
+import { z } from "zod";
+import { MAX_CONTENT_PREVIEW } from "../schemas/tool-schemas";
 import {
   getAgentContext,
   generateContextSummary,
   getContextRecommendations,
   recordToolExecution,
-} from "../agent-context"
-import { createErrorResult } from "../utils/format-utils"
+} from "../agent-context";
+import { createErrorResult } from "../utils/format-utils";
 
 /**
  * Creates state analysis tools for a specific project.
- * These tools provide deep awareness of the sandbox state, project structure,
+ * These tools provide deep awareness of the project state, structure,
  * build status, and execution history for intelligent agentic decisions.
  *
  * @param projectId - The unique identifier for the project
  * @returns Object containing state analysis tools
  */
 export function createStateTools(projectId: string) {
-  const ctx = () => getAgentContext(projectId)
+  const ctx = () => getAgentContext(projectId);
 
   return {
     /**
@@ -43,15 +43,17 @@ export function createStateTools(projectId: string) {
           .boolean()
           .optional()
           .default(false)
-          .describe("Include content previews of recently modified files (first 1KB each)"),
+          .describe(
+            "Include content previews of recently modified files (first 1KB each)",
+          ),
       }),
       execute: async ({ includeFileContents }) => {
-        const startTime = new Date()
+        const startTime = new Date();
 
         try {
-          const context = ctx()
-          const summary = generateContextSummary(projectId)
-          const recommendations = getContextRecommendations(projectId)
+          const context = ctx();
+          const summary = generateContextSummary(projectId);
+          const recommendations = getContextRecommendations(projectId);
 
           const result: Record<string, unknown> = {
             success: true,
@@ -66,27 +68,32 @@ export function createStateTools(projectId: string) {
             recentErrors: context.errorHistory.slice(-5),
             planProgress: context.currentPlan
               ? {
-                total: context.currentPlan.length,
-                completed: context.completedSteps.length,
-                remaining: context.currentPlan.length - context.completedSteps.length,
-                nextStep: context.currentPlan[context.completedSteps.length] ?? null,
-                completedSteps: context.completedSteps,
-              }
+                  total: context.currentPlan.length,
+                  completed: context.completedSteps.length,
+                  remaining:
+                    context.currentPlan.length - context.completedSteps.length,
+                  nextStep:
+                    context.currentPlan[context.completedSteps.length] ?? null,
+                  completedSteps: context.completedSteps,
+                }
               : null,
-          }
+          };
 
           // Optionally include file content previews
           if (includeFileContents && context.files.size > 0) {
-            const recentFiles: Record<string, string> = {}
-            const entries = Array.from(context.files.entries()).slice(-5)
+            const recentFiles: Record<string, string> = {};
+            const entries = Array.from(context.files.entries()).slice(-5);
 
             for (const [filePath, info] of entries) {
               if (info.content) {
-                recentFiles[filePath] = info.content.slice(0, MAX_CONTENT_PREVIEW)
+                recentFiles[filePath] = info.content.slice(
+                  0,
+                  MAX_CONTENT_PREVIEW,
+                );
               }
             }
 
-            result.recentFileContents = recentFiles
+            result.recentFileContents = recentFiles;
           }
 
           recordToolExecution(
@@ -96,12 +103,13 @@ export function createStateTools(projectId: string) {
             result,
             true,
             undefined,
-            startTime
-          )
+            startTime,
+          );
 
-          return result
+          return result;
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : "Analysis failed"
+          const errorMsg =
+            error instanceof Error ? error.message : "Analysis failed";
           recordToolExecution(
             projectId,
             "analyzeProjectState",
@@ -109,11 +117,11 @@ export function createStateTools(projectId: string) {
             undefined,
             false,
             errorMsg,
-            startTime
-          )
-          return createErrorResult(error)
+            startTime,
+          );
+          return createErrorResult(error);
         }
       },
     }),
-  }
+  };
 }

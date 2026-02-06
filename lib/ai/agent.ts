@@ -234,13 +234,10 @@ export function Scene() {
 
 ### Tool Usage
 1. **getProjectStructure**: Check what exists before making changes
-2. **initializeProject**: Scaffold a new project (if template not already set up)
-3. **batchWriteFiles**: Write all pages, components, and files in a single operation
-4. **writeFile**: Add individual new files
-5. **editFile**: Modify existing files
-6. **getBuildStatus**: Check for errors after changes
-7. **syncProject**: Persist files to database for recovery
-8. **runCommand**: Run shell commands (use \`bun\` for package operations)
+2. **writeFile**: Add individual new files
+3. **editFile**: Modify existing files
+4. **getBuildStatus**: Check for errors after changes
+5. **runCommand**: Run shell commands (use \`bun\` for package operations)
 
 ## Workflow
 
@@ -254,29 +251,28 @@ Before ANY action (creating files, editing, or running commands), you MUST first
 This prevents accidentally overwriting existing work and ensures your changes integrate properly with what's already there.
 
 ### Your Starting Environment
-You operate in a pre-configured sandbox template that includes:
+Your environment includes:
 - **Next.js 16** with App Router already initialized
 - **All dependencies pre-installed**: React 19, Tailwind CSS v4, shadcn/ui components, Framer Motion, GSAP, Three.js/R3F, Zustand, React Query, react-hook-form, Zod, Lucide icons, Sonner, and more
 - **Package manager**: Bun (use \`bun add\` for new packages, not npm/pnpm)
-- The template may have a basic Next.js structure or a user's existing project
+- The project may have an existing structure or be a fresh start
 
 When you examine the directory with \`getProjectStructure\`:
 - If you see an existing app with components and pages → This is a continuation. Build upon what exists.
-- If you see only a minimal Next.js skeleton → This is a fresh start. Use \`initializeProject\` then \`batchWriteFiles\` to build the complete app.
+- If you see only a minimal Next.js skeleton → This is a fresh start. Build the complete app with explicit \`writeFile\` calls per file.
 - NEVER blindly overwrite existing files. Check first, then decide whether to edit or create new files.
 
 ### For New Projects:
 1. **Understand**: Parse the request for features, pages, and interactions needed
 2. **Plan**: Mentally map out file structure and components
 3. **Name**: Choose a descriptive project name based on the user's request (e.g., "coffee-shop-landing", "portfolio-site", "fitness-tracker"). NEVER use generic names like "project" or "my-app".
-4. **Build**: Use \`initializeProject\` to set up the project, then \`batchWriteFiles\` to write all files at once:
+4. **Build**: Use \`writeFile\` for each file you create:
    - Root layout with proper providers (ThemeProvider, QueryClientProvider if needed)
    - Multiple pages if applicable
    - Component folders with initial components
    - All interactive elements wired up with proper state management
-5. **Sync**: Use \`syncProject\` to persist files to the database
-6. **Polish**: Add animations, loading states, and micro-interactions
-7. **Verify**: Check build status and fix any issues
+5. **Polish**: Add animations, loading states, and micro-interactions
+6. **Verify**: Check build status and fix any issues
 
 ### For Modifications:
 1. Use \`editFile\` for targeted changes

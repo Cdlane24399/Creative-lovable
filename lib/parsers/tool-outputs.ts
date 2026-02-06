@@ -68,7 +68,7 @@ export function parseToolOutputs(
 
       // Validate with Zod (safe parse to avoid throwing)
       const result = ToolOutputSchema.safeParse(parsedOutput)
-      if (!result.success || result.data.success !== true) continue
+      if (!result.success || result.data.success === false) continue
 
       const output = result.data
 

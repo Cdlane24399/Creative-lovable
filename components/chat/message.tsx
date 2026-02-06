@@ -32,6 +32,7 @@ const TOOL_ACTION_MAP: Record<string, ToolAction> = {
   writeFile: 'Created',
   createFile: 'Created',
   createWebsite: 'Created',
+  batchWriteFiles: 'Generated',
   editFile: 'Edited',
   readFile: 'Read',
   getProjectStructure: 'Searched',
@@ -57,11 +58,154 @@ function extractFilePath(toolName: string, input?: Record<string, unknown>): str
   return toolName
 }
 
-function extractToolContent(output?: Record<string, unknown> | string): string | undefined {
-  if (typeof output === 'string') return output
-  if (!output) return undefined
-  const o = output as Record<string, unknown>
-  return (o.diff ?? o.content ?? o.result ?? o.stdout ?? o.message) as string | undefined
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function toStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []
+}
+
+function normalizeBatchPath(path: string, baseDir?: string): string {
+  const cleanPath = path.replace(/^\/+/, "")
+
+  if (
+    cleanPath.startsWith("app/") ||
+    cleanPath.startsWith("src/") ||
+    cleanPath.startsWith("components/") ||
+    cleanPath.startsWith("lib/") ||
+    cleanPath.startsWith("public/") ||
+    cleanPath.startsWith("styles/") ||
+    cleanPath.startsWith("hooks/")
+  ) {
+    return cleanPath
+  }
+
+  const resolvedBaseDir =
+    typeof baseDir === "string" && baseDir.trim().length > 0 ? baseDir : "app"
+  return `${resolvedBaseDir}/${cleanPath}`
+}
+
+function toPathSet(paths: string[], baseDir?: string): Set<string> {
+  const set = new Set<string>()
+  for (const path of paths) {
+    set.add(path)
+    set.add(normalizeBatchPath(path, baseDir))
+  }
+  return set
+}
+
+function getBatchAction(
+  relativePath: string,
+  declaredAction: unknown,
+  createdSet: Set<string>,
+  updatedSet: Set<string>,
+  skippedSet: Set<string>,
+): ToolAction {
+  if (createdSet.has(relativePath)) return "Created"
+  if (updatedSet.has(relativePath)) return "Edited"
+  if (skippedSet.has(relativePath)) return "Read"
+  if (declaredAction === "update") return "Edited"
+  return "Created"
+}
+
+function safeStringify(value: unknown): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value === "string") return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function extractToolContent(
+  toolName: string,
+  input?: Record<string, unknown>,
+  output?: Record<string, unknown> | string,
+  errorText?: string,
+): string | undefined {
+  if (toolName === "writeFile" && typeof input?.content === "string") {
+    return input.content
+  }
+
+  if (toolName === "editFile" && typeof input?.replace === "string") {
+    return input.replace
+  }
+
+  if (typeof output === "string") return output
+  if (!output) return errorText
+
+  const selectedValue =
+    output.diff ??
+    output.content ??
+    output.result ??
+    output.stdout ??
+    output.stderr ??
+    output.message
+
+  if (typeof selectedValue === "string") {
+    return selectedValue
+  }
+
+  return safeStringify(output) ?? errorText
+}
+
+interface ExpandedToolRow {
+  action: ToolAction
+  filePath: string
+  content?: string
+}
+
+function expandBatchWriteToolPart(toolPart: ToolPart): ExpandedToolRow[] {
+  if (!isRecord(toolPart.input)) return []
+  const files = Array.isArray(toolPart.input.files) ? toolPart.input.files : []
+  if (files.length === 0) return []
+
+  const baseDir =
+    typeof toolPart.input.baseDir === "string" ? toolPart.input.baseDir : "app"
+
+  const output = isRecord(toolPart.output) ? toolPart.output : {}
+  const createdSet = toPathSet(toStringArray(output.created), baseDir)
+  const updatedSet = toPathSet(toStringArray(output.updated), baseDir)
+  const skippedSet = toPathSet(toStringArray(output.skipped), baseDir)
+
+  const rows: ExpandedToolRow[] = []
+  for (const file of files) {
+    if (!isRecord(file) || typeof file.path !== "string") continue
+    const filePath = normalizeBatchPath(file.path, baseDir)
+    rows.push({
+      action: getBatchAction(
+        filePath,
+        file.action,
+        createdSet,
+        updatedSet,
+        skippedSet,
+      ),
+      filePath,
+      content: typeof file.content === "string" ? file.content : undefined,
+    })
+  }
+
+  const failedItems = Array.isArray(output.failed) ? output.failed : []
+  for (const failed of failedItems) {
+    if (!isRecord(failed) || typeof failed.path !== "string") continue
+    rows.push({
+      action: "Executed",
+      filePath: normalizeBatchPath(failed.path, baseDir),
+      content: safeStringify(failed),
+    })
+  }
+
+  if (isRecord(toolPart.output)) {
+    rows.push({
+      action: "Generated",
+      filePath: "batchWriteFiles/result.json",
+      content: safeStringify(toolPart.output),
+    })
+  }
+
+  return rows
 }
 
 interface MessageProps {
@@ -139,9 +283,33 @@ function AssistantMessageParts({ parts }: { parts: MessagePart[] }) {
         } else if (part.type.startsWith("tool-")) {
             const toolPart = part as ToolPart
             const toolName = toolPart.type.replace("tool-", "")
+
+            if (toolName === "batchWriteFiles") {
+                const expandedRows = expandBatchWriteToolPart(toolPart)
+                if (expandedRows.length > 0) {
+                    expandedRows.forEach((row, rowIndex) => {
+                        elements.push(
+                            <ToolResultItem
+                                key={`tool-${index}-row-${rowIndex}`}
+                                action={row.action}
+                                filePath={row.filePath}
+                                content={row.content}
+                                state={toolPart.state}
+                            />
+                        )
+                    })
+                    return
+                }
+            }
+
             const action = getToolAction(toolName)
             const filePath = extractFilePath(toolName, toolPart.input)
-            const content = extractToolContent(toolPart.output)
+            const content = extractToolContent(
+                toolName,
+                toolPart.input,
+                toolPart.output,
+                toolPart.errorText,
+            )
 
             elements.push(
                 <ToolResultItem

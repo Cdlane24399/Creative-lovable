@@ -11,7 +11,10 @@ import {
 import { useChatWithTools } from "@/hooks/use-chat-with-tools";
 import { type ModelProvider } from "@/lib/ai/agent";
 import { MessageList } from "@/components/chat/message-list";
-import { PromptInput, type PromptInputStatus } from "@/components/chat/prompt-input";
+import {
+  PromptInput,
+  type PromptInputStatus,
+} from "@/components/chat/prompt-input";
 import type { MessagePart } from "@/components/chat/message";
 import { parseToolOutputs } from "@/lib/parsers/tool-outputs";
 import { useEditor } from "@/components/contexts/editor-context";
@@ -226,6 +229,46 @@ export function ChatPanel({ ref }: ChatPanelProps) {
     }
   }, [messages, actions]);
 
+  // Refetch project files when chat completes (safety net)
+  // Ensures files appear even if parseToolOutputs missed the filesReady signal
+  const wasWorkingRef = useRef(false);
+  useEffect(() => {
+    let isCancelled = false;
+    let startTimer: NodeJS.Timeout | undefined;
+
+    if (isWorking) {
+      wasWorkingRef.current = true;
+    } else if (wasWorkingRef.current) {
+      wasWorkingRef.current = false;
+      // Chat just completed — poll project data until files_snapshot is populated.
+      // This prevents the Code tab from staying empty when sync finishes slightly later.
+      const pollForFiles = async () => {
+        const maxAttempts = 6;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          if (isCancelled) return;
+          const fileCount = await actions.refetchProjectData();
+          if (fileCount > 0) return;
+
+          if (attempt < maxAttempts - 1) {
+            const delayMs = 1500 + attempt * 1000;
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+          }
+        }
+      };
+
+      startTimer = setTimeout(() => {
+        void pollForFiles();
+      }, 1500);
+    }
+
+    return () => {
+      isCancelled = true;
+      if (startTimer) {
+        clearTimeout(startTimer);
+      }
+    };
+  }, [isWorking, actions]);
+
   return (
     <div className="flex h-full flex-col bg-[#111111]">
       {/* Messages Area */}
@@ -251,10 +294,13 @@ export function ChatPanel({ ref }: ChatPanelProps) {
           onSubmit={handleSubmit}
           onStop={stop}
           status={
-            isWorking ? "working"
-              : isImproving ? "improving"
-              : !isChatEnabled ? "disabled"
-              : "idle" as PromptInputStatus
+            isWorking
+              ? "working"
+              : isImproving
+                ? "improving"
+                : !isChatEnabled
+                  ? "disabled"
+                  : ("idle" as PromptInputStatus)
           }
           selectedModel={selectedModel}
           setSelectedModel={setSelectedModel}

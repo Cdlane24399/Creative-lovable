@@ -8,17 +8,17 @@
  * @see {@link ../web-builder-agent.ts} for additional tool implementations
  */
 
-import { tool } from "ai"
-import { z } from "zod"
-import { SUPPORTED_LANGUAGES } from "../schemas/tool-schemas"
-import { recordToolExecution } from "../agent-context"
+import { tool } from "ai";
+import { z } from "zod";
+import { SUPPORTED_LANGUAGES } from "../schemas/tool-schemas";
+import { recordToolExecution } from "../agent-context";
 import {
   getCodeInterpreterSandbox,
   executeCode as executeCodeInSandbox,
   type CodeLanguage,
-} from "@/lib/e2b/sandbox"
-import { getSandboxLazy } from "@/lib/e2b/sandbox-provider"
-import { createErrorResult, formatDuration } from "../utils"
+} from "@/lib/e2b/sandbox";
+import { getSandboxLazy } from "@/lib/e2b/sandbox-provider";
+import { createErrorResult, formatDuration } from "../utils";
 
 /**
  * Creates code execution tools for running code in the project sandbox.
@@ -36,7 +36,7 @@ export function createCodeTools(projectId: string) {
      */
     executeCode: tool({
       description:
-        "Execute Python, JavaScript, or TypeScript code in a secure sandbox. " +
+        "Execute Python, JavaScript, or TypeScript code in a secure environment. " +
         "Python code uses optimized Code Interpreter for better output handling.",
       inputSchema: z.object({
         code: z.string().min(1).describe("Code to execute"),
@@ -51,8 +51,12 @@ export function createCodeTools(projectId: string) {
           .default(true)
           .describe("Use Code Interpreter for Python (better output handling)"),
       }),
-      execute: async ({ code, language = "python", useCodeInterpreter = true }) => {
-        const startTime = new Date()
+      execute: async ({
+        code,
+        language = "python",
+        useCodeInterpreter = true,
+      }) => {
+        const startTime = new Date();
 
         try {
           // Use Code Interpreter for Python if available and enabled
@@ -60,13 +64,20 @@ export function createCodeTools(projectId: string) {
           const sandbox =
             useCodeInterpreter && language === "python"
               ? await getCodeInterpreterSandbox(projectId)
-              : await getSandboxLazy(projectId)
+              : await getSandboxLazy(projectId);
 
-          const result = await executeCodeInSandbox(sandbox, code, language as CodeLanguage)
+          const result = await executeCodeInSandbox(
+            sandbox,
+            code,
+            language as CodeLanguage,
+          );
 
-          const output = [...result.logs.stdout, ...result.logs.stderr].join("\n")
-          const success = !result.error
-          const usedCodeInterpreter = useCodeInterpreter && language === "python" && "runCode" in sandbox
+          const output = [...result.logs.stdout, ...result.logs.stderr].join(
+            "\n",
+          );
+          const success = !result.error;
+          const usedCodeInterpreter =
+            useCodeInterpreter && language === "python" && "runCode" in sandbox;
 
           recordToolExecution(
             projectId,
@@ -75,8 +86,8 @@ export function createCodeTools(projectId: string) {
             { output, success, usedCodeInterpreter },
             success,
             result.error?.message,
-            startTime
-          )
+            startTime,
+          );
 
           return {
             success,
@@ -86,13 +97,22 @@ export function createCodeTools(projectId: string) {
             usedCodeInterpreter,
             results: result.results ?? [],
             duration: formatDuration(startTime),
-          }
+          };
         } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : "Execution failed"
-          recordToolExecution(projectId, "executeCode", { language }, undefined, false, errorMsg, startTime)
-          return createErrorResult(error, { language })
+          const errorMsg =
+            error instanceof Error ? error.message : "Execution failed";
+          recordToolExecution(
+            projectId,
+            "executeCode",
+            { language },
+            undefined,
+            false,
+            errorMsg,
+            startTime,
+          );
+          return createErrorResult(error, { language });
         }
       },
     }),
-  }
+  };
 }

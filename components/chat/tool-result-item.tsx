@@ -214,7 +214,7 @@ export function ToolResultItem({
           aria-hidden={!isExpanded}
           id={contentId}
         >
-          <div className="mt-2 ml-6 p-3 bg-[#09090b] rounded-lg border border-white/10">
+          <div className="mt-2 ml-6 p-3 bg-[#09090b] rounded-lg border border-white/10 max-h-96 overflow-auto">
             <pre className="text-xs text-gray-300 font-mono whitespace-pre-wrap break-words">
               {content}
             </pre>

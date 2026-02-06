@@ -51,17 +51,11 @@ const FILE_TOOLS = [
   "editFile",
   "getProjectStructure",
 ] as const;
-const BATCH_FILE_TOOLS = ["batchWriteFiles"] as const;
 const BUILD_TOOLS = [
   "runCommand",
   "installPackage",
   "getBuildStatus",
   "startDevServer",
-] as const;
-const CREATION_TOOLS = [
-  "initializeProject",
-  "batchWriteFiles",
-  "syncProject",
 ] as const;
 const CODE_TOOLS = ["executeCode"] as const;
 const SUGGESTION_TOOLS = ["generateSuggestions"] as const; // Always available for contextual suggestions
@@ -69,30 +63,20 @@ const SUGGESTION_TOOLS = ["generateSuggestions"] as const; // Always available f
 type ToolName =
   | (typeof PLANNING_TOOLS)[number]
   | (typeof FILE_TOOLS)[number]
-  | (typeof BATCH_FILE_TOOLS)[number]
   | (typeof BUILD_TOOLS)[number]
-  | (typeof CREATION_TOOLS)[number]
   | (typeof CODE_TOOLS)[number]
   | (typeof SUGGESTION_TOOLS)[number];
 
 // Default project ID for sandbox operations
 const DEFAULT_PROJECT_ID = "default";
 
-// Tool groups for infrastructure-level management
-const SANBOX_REQUIRED_TOOLS = [
-  "initializeProject",
-  "batchWriteFiles",
-  "syncProject",
-  "writeFile",
-  "editFile",
-  "readFile",
-  "getProjectStructure",
-  "runCommand",
-  "installPackage",
-  "getBuildStatus",
-  "executeCode",
-  "createWebsite", // deprecated but still needs sandbox
-] as const;
+const DEFAULT_ACTIVE_TOOLS: ToolName[] = [
+  ...PLANNING_TOOLS,
+  ...FILE_TOOLS,
+  ...BUILD_TOOLS,
+  ...CODE_TOOLS,
+  ...SUGGESTION_TOOLS,
+];
 
 // Export type for the chat messages
 export type ChatMessage = UIMessage;
@@ -267,6 +251,7 @@ export const POST = withAuth(async (req: Request) => {
           messages?: typeof stepMessages;
           activeTools?: ToolName[];
         } = {};
+        config.activeTools = DEFAULT_ACTIVE_TOOLS;
 
         // Model-aware compression thresholds
         // Gemini models have 1M+ token context windows, so we can be much more generous
@@ -338,20 +323,12 @@ export const POST = withAuth(async (req: Request) => {
         // This optimizes token usage by only including relevant tools
         // SUGGESTION_TOOLS always included for contextual follow-up suggestions
         if (stepNumber === 0) {
-          // First step: Planning, project creation, file operations, and build tools
-          // The agent needs all creation tools to go from understanding → building in one flow
-          config.activeTools = [
-            ...PLANNING_TOOLS,
-            ...CREATION_TOOLS,
-            ...FILE_TOOLS,
-            ...BUILD_TOOLS,
-            ...SUGGESTION_TOOLS,
-          ] as ToolName[];
+          // First step: keep scope tight for reliable bootstrap behavior.
+          config.activeTools = DEFAULT_ACTIVE_TOOLS;
         } else if (context.buildStatus?.hasErrors) {
           // Build errors: Focus on debugging and file operations
           config.activeTools = [
             ...FILE_TOOLS,
-            ...BATCH_FILE_TOOLS,
             ...BUILD_TOOLS,
             ...SUGGESTION_TOOLS,
           ] as ToolName[];
@@ -362,10 +339,8 @@ export const POST = withAuth(async (req: Request) => {
           // Server running with active task graph: Focus on file operations
           config.activeTools = [
             ...FILE_TOOLS,
-            ...BATCH_FILE_TOOLS,
             ...BUILD_TOOLS,
             "markStepComplete",
-            "syncProject",
             ...SUGGESTION_TOOLS,
           ] as ToolName[];
         }
@@ -391,25 +366,40 @@ export const POST = withAuth(async (req: Request) => {
           // Common fixes for path-related issues
           if (typeof toolCall.input === "object" && toolCall.input !== null) {
             const input = toolCall.input as Record<string, unknown>;
+            const repairedInput = { ...input };
 
             // Fix common path issues
-            if (typeof input.path === "string") {
+            if (typeof repairedInput.path === "string") {
               // Remove leading slashes if present
-              input.path = (input.path as string).replace(/^\/+/, "");
+              repairedInput.path = (repairedInput.path as string).replace(
+                /^\/+/,
+                "",
+              );
             }
 
             // Fix projectName issues
-            if (typeof input.projectName === "string") {
+            if (typeof repairedInput.projectName === "string") {
               // Convert to lowercase with hyphens
-              input.projectName = (input.projectName as string)
+              repairedInput.projectName = (repairedInput.projectName as string)
                 .toLowerCase()
                 .replace(/\s+/g, "-")
                 .replace(/[^a-z0-9-]/g, "");
             }
 
+            // Normalize malformed files payloads sent as an object map.
+            if (
+              repairedInput.files &&
+              !Array.isArray(repairedInput.files) &&
+              typeof repairedInput.files === "object"
+            ) {
+              repairedInput.files = Object.values(
+                repairedInput.files as Record<string, unknown>,
+              );
+            }
+
             return {
               ...toolCall,
-              input: JSON.stringify(input),
+              input: repairedInput,
             };
           }
         }
@@ -419,8 +409,8 @@ export const POST = withAuth(async (req: Request) => {
       },
     };
 
-    // Response handler
-    const createResponse = (result: any) => {
+    // Response handler - takes sandbox reference for onFinish sync
+    const createResponse = (result: any, sandboxRef: any) => {
       return result.toUIMessageStreamResponse({
         originalMessages: messages,
         // AI SDK v6: Custom error messages for better UX
@@ -459,6 +449,19 @@ export const POST = withAuth(async (req: Request) => {
             } catch (dbError) {
               console.error("Failed to save messages:", dbError);
             }
+
+            // Auto-sync project files to database at session end (safety net)
+            // Uses sandbox reference captured in closure (AsyncLocalStorage context
+            // may have exited by the time onFinish runs)
+            if (sandboxRef) {
+              try {
+                const { quickSyncToDatabaseWithRetry } = await import("@/lib/e2b/sync-manager");
+                await quickSyncToDatabaseWithRetry(sandboxRef, projectId);
+                console.log(`[Chat] Auto-synced project files for ${projectId}`);
+              } catch (syncError) {
+                console.warn("[Chat] Session-end sync failed:", syncError);
+              }
+            }
           }
 
           // Log completion summary with context
@@ -472,9 +475,15 @@ export const POST = withAuth(async (req: Request) => {
 
     // Wrap streaming in sandbox context for infrastructure-level lifecycle management
     // This ensures all tools share the same sandbox instance
+    // initProject: true auto-initializes the project structure before the agent starts
     return withSandbox(
       projectId,
       async () => {
+        // Capture sandbox reference for onFinish callback (which runs after
+        // AsyncLocalStorage context has exited)
+        const { getCurrentSandbox } = await import("@/lib/e2b/sandbox-provider");
+        const sandboxRef = getCurrentSandbox();
+
         // Stream the response with Gateway (provider failover handled by Gateway's order option)
         const result = streamText({
           model: getModel(modelKey),
@@ -482,11 +491,12 @@ export const POST = withAuth(async (req: Request) => {
           ...streamConfig,
         });
 
-        return createResponse(result);
+        return createResponse(result, sandboxRef);
       },
       {
         projectDir: "/home/user/project",
         autoPause: true,
+        initProject: true,
       },
     );
   } catch (error) {
