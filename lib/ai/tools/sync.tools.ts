@@ -8,10 +8,11 @@
 import { tool } from "ai"
 import { z } from "zod"
 import { getAgentContext, recordToolExecution } from "../agent-context"
+import { getProjectDir } from "@/lib/e2b/project-dir"
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider"
 import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager"
 
-const projectDir = "/home/user/project"
+const projectDir = getProjectDir()
 
 /**
  * Creates sync tools for database persistence.

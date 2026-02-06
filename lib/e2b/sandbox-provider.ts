@@ -11,7 +11,9 @@ import {
   createSandbox,
   createSandboxWithAutoPause,
   directoryExists,
+  fileExists,
 } from "./sandbox";
+import { getProjectDir } from "./project-dir";
 import { setProjectInfo } from "../ai/agent-context";
 import { scaffoldNextProject } from "../ai/helpers";
 
@@ -131,27 +133,34 @@ async function ensureProjectInitialized(
 ): Promise<void> {
   const hasTemplate = !!process.env.E2B_TEMPLATE_ID;
 
-  // Check if the project directory already has files
+  // Check if project directory exists and has a valid Next.js project shape
   const projectExists = await directoryExists(sandbox, projectDir);
+  const hasPackageJson = projectExists
+    ? await fileExists(sandbox, `${projectDir}/package.json`)
+    : false;
+  const hasAppDir = projectExists
+    ? (await directoryExists(sandbox, `${projectDir}/app`)) ||
+      (await directoryExists(sandbox, `${projectDir}/src/app`))
+    : false;
+  const projectReady = projectExists && hasPackageJson && hasAppDir;
 
-  if (projectExists) {
+  if (projectReady) {
     // Project already exists (restored from snapshot or template), just set context
     setProjectInfo(projectId, { projectName: projectId, projectDir });
     return;
   }
 
-  // No project directory — scaffold or at least create the directory
+  // Missing/incomplete project — scaffold or at least create the directory
   if (!hasTemplate) {
     console.log(`[SandboxProvider] Scaffolding fresh project for ${projectId}`);
     await scaffoldNextProject(sandbox, projectDir, projectId, "");
   } else {
-    // Template is set but project dir doesn't exist (template may not include it).
-    // Create the directory so tools like getProjectStructure don't fail.
-    console.log(
-      `[SandboxProvider] Template active but project dir missing — creating ${projectDir}`,
+    // Template is set but project is missing/incomplete.
+    // Attempt a lightweight scaffold fallback to keep the agent unblocked.
+    console.warn(
+      `[SandboxProvider] Template active but project is incomplete at ${projectDir} (exists=${projectExists}, package.json=${hasPackageJson}, appDir=${hasAppDir}) — scaffolding fallback project`,
     );
-    const { executeCommand } = await import("./sandbox");
-    await executeCommand(sandbox, `mkdir -p "${projectDir}"`);
+    await scaffoldNextProject(sandbox, projectDir, projectId, "");
   }
 
   setProjectInfo(projectId, { projectName: projectId, projectDir });
@@ -163,7 +172,7 @@ async function ensureProjectInitialized(
  *
  * @param projectId - The project ID for sandbox identification
  * @param fn - Function to execute with sandbox context
- * @param options.projectDir - Project directory path (default: /home/user/project)
+ * @param options.projectDir - Project directory path (default: resolved by getProjectDir())
  * @param options.autoPause - Enable auto-pause for idle sandboxes (default: true)
  * @param options.initProject - Automatically initialize project structure before fn() runs
  * @returns Result of the function
@@ -177,7 +186,7 @@ export async function withSandbox<T>(
     initProject?: boolean;
   } = {},
 ): Promise<T> {
-  const projectDir = options.projectDir || "/home/user/project";
+  const projectDir = options.projectDir || getProjectDir();
   const autoPause = options.autoPause ?? true;
 
   // Create or get existing sandbox

@@ -36,6 +36,7 @@ import {
   createValidationErrorResponse,
 } from "@/lib/validations";
 import { withSandbox } from "@/lib/e2b/sandbox-provider";
+import { getProjectDir } from "@/lib/e2b/project-dir";
 
 export const maxDuration = 300;
 
@@ -494,7 +495,7 @@ export const POST = withAuth(async (req: Request) => {
         return createResponse(result, sandboxRef);
       },
       {
-        projectDir: "/home/user/project",
+        projectDir: getProjectDir(),
         autoPause: true,
         initProject: true,
       },

@@ -1,5 +1,6 @@
 import { Sandbox } from "e2b"
 import { getSandboxStateMachine } from "./sandbox-state-machine"
+import { getProjectDir } from "./project-dir"
 
 // Type alias for CodeInterpreter sandbox
 type CodeInterpreterSandbox = import("@e2b/code-interpreter").Sandbox
@@ -58,16 +59,17 @@ function updateSandboxActivity(projectId: string): void {
  * Called after sandbox creation when using a template to ensure clean state.
  */
 async function cleanupTemplateArtifacts(sandbox: Sandbox): Promise<void> {
+  const projectDir = getProjectDir()
   try {
     // Remove pnpm-workspace.yaml which conflicts with non-monorepo setups
-    await sandbox.commands.run('rm -f /home/user/project/pnpm-workspace.yaml', { timeoutMs: 5000 })
+    await sandbox.commands.run(`rm -f "${projectDir}/pnpm-workspace.yaml"`, { timeoutMs: 5000 })
 
     // IMPORTANT: Write a valid JavaScript config instead of renaming TypeScript file
     // create-next-app generates next.config.ts with TypeScript syntax (import type { NextConfig })
     // which is NOT valid in .mjs files and causes "Unexpected token '{'" errors
-    await sandbox.commands.run('rm -f /home/user/project/next.config.ts', { timeoutMs: 5000 })
+    await sandbox.commands.run(`rm -f "${projectDir}/next.config.ts"`, { timeoutMs: 5000 })
     await sandbox.files.write(
-      '/home/user/project/next.config.mjs',
+      `${projectDir}/next.config.mjs`,
       `/** @type {import('next').NextConfig} */
 const nextConfig = {};
 export default nextConfig;
@@ -254,13 +256,13 @@ export async function saveFilesSnapshot(
  *
  * @param sandbox - The new sandbox to restore files to
  * @param snapshot - Project snapshot containing files and dependencies
- * @param projectDir - Project directory path (default: /home/user/project)
+ * @param projectDir - Project directory path (default: resolved by getProjectDir())
  * @returns Object with success status and counts
  */
 async function restoreFilesFromSnapshot(
   sandbox: Sandbox,
   snapshot: ProjectSnapshot,
-  projectDir: string = "/home/user/project"
+  projectDir: string = getProjectDir()
 ): Promise<{ success: boolean; filesRestored: number; dependenciesInstalled: boolean }> {
   const result = { success: false, filesRestored: 0, dependenciesInstalled: false }
 
@@ -274,12 +276,12 @@ async function restoreFilesFromSnapshot(
     console.log(`[Sandbox] Restoring ${fileEntries.length} files from snapshot...`)
 
     // Create project directory if needed
-    await sandbox.commands.run(`mkdir -p ${projectDir}`)
+    await sandbox.commands.run(`mkdir -p "${projectDir}"`)
 
     // CRITICAL: Clear .next cache to ensure restored files are used
     // The E2B template may have pre-built files that would override restored content
     console.log("[Sandbox] Clearing .next cache to ensure fresh build...")
-    await sandbox.commands.run(`rm -rf ${projectDir}/.next 2>/dev/null || true`)
+    await sandbox.commands.run(`rm -rf "${projectDir}/.next" 2>/dev/null || true`)
 
     // Prepare files for batch write
     const filesToWrite = fileEntries.map(([path, content]) => ({

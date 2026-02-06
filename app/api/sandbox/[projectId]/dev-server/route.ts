@@ -15,6 +15,7 @@ import {
   killBackgroundProcess,
   checkDevServerStatus,
 } from "@/lib/e2b/sandbox"
+import { getProjectDir } from "@/lib/e2b/project-dir"
 import { withAuth } from "@/lib/auth"
 import { type ReadableStreamDefaultController } from "node:stream/web"
 
@@ -258,15 +259,13 @@ export const POST = withAuth(async (
       }
       console.log("[dev-server POST] Using sandbox:", sandbox.sandboxId)
 
-      // When using E2B template, files are written to /home/user/project
-      // The template already has the dev server running there
-      const hasTemplate = !!process.env.E2B_TEMPLATE_ID
-      const projectDir = hasTemplate ? "/home/user/project" : `/home/user/${projectName}`
+      // Always use the shared sandbox project directory resolver
+      const projectDir = getProjectDir()
 
       // Check if project directory exists
       const checkDir = await executeCommand(
         sandbox,
-        `test -d ${projectDir} && echo "exists" || echo "not_exists"`,
+        `test -d "${projectDir}" && echo "exists" || echo "not_exists"`,
         { timeoutMs: 5000 }
       )
       console.log("[dev-server POST] Directory check:", { projectDir, result: checkDir.stdout.trim() })
@@ -276,6 +275,20 @@ export const POST = withAuth(async (
         return NextResponse.json(
           { error: `Project directory not found: ${projectDir}` },
           { status: 404 }
+        )
+      }
+
+      // Ensure we're pointing to a real Next.js workspace, not just an existing directory
+      const packageJsonCheck = await executeCommand(
+        sandbox,
+        `test -f "${projectDir}/package.json" && echo "exists" || echo "missing"`,
+        { timeoutMs: 5000 }
+      )
+      if (packageJsonCheck.stdout.trim() !== "exists") {
+        console.error("[dev-server POST] package.json not found in project directory:", projectDir)
+        return NextResponse.json(
+          { error: `Project appears uninitialized at ${projectDir} (missing package.json)` },
+          { status: 422 }
         )
       }
 
@@ -307,7 +320,7 @@ export const POST = withAuth(async (
         // (Error: "Turbopack Error: Failed to write app endpoint /page")
         await executeCommand(
           sandbox,
-          `rm -rf ${projectDir}/.next 2>/dev/null || true`,
+          `rm -rf "${projectDir}/.next" 2>/dev/null || true`,
           { timeoutMs: 5000 }
         )
         await new Promise(resolve => setTimeout(resolve, 500))

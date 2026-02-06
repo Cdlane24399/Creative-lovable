@@ -8,6 +8,7 @@
 
 import type { Sandbox } from "e2b"
 import { createHash } from "crypto"
+import { getProjectDir } from "./project-dir"
 
 // =============================================================================
 // Types
@@ -62,7 +63,7 @@ export type FileChangeCallback = (changes: FileChange[]) => void | Promise<void>
 
 const DEFAULT_CONFIG: Required<FileWatcherConfig> = {
   pollInterval: 5000, // 5 seconds
-  watchPaths: ["/home/user/project"],
+  watchPaths: [getProjectDir()],
   ignorePaths: [
     "**/node_modules/**",
     "**/.next/**",
@@ -96,7 +97,7 @@ export class SandboxFileWatcher {
 
   constructor(
     sandbox: Sandbox,
-    projectDir: string = "/home/user/project",
+    projectDir: string = getProjectDir(),
     config: FileWatcherConfig = {}
   ) {
     this.sandbox = sandbox
@@ -186,7 +187,7 @@ export class SandboxFileWatcher {
     try {
       // Use find to get all files (more reliable than ls -R)
       const result = await this.sandbox.commands.run(
-        `find ${this.projectDir} -type f -printf '%p\\t%s\\t%T@\\n' 2>/dev/null || true`,
+        `find "${this.projectDir}" -type f -printf '%p\\t%s\\t%T@\\n' 2>/dev/null || true`,
         { timeoutMs: 30000 }
       )
 

@@ -16,10 +16,11 @@ import {
   executeCommand,
   writeFile as writeFileToSandbox,
 } from "@/lib/e2b/sandbox";
+import { getProjectDir } from "@/lib/e2b/project-dir";
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
 import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager";
 
-const projectDir = "/home/user/project";
+const projectDir = getProjectDir();
 
 // Schema for a single file in a batch operation
 const batchFileSchema = z.object({

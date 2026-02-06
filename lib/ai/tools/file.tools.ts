@@ -21,6 +21,7 @@ import {
   readFile as readFileFromSandbox,
   fileExists,
 } from "@/lib/e2b/sandbox";
+import { getProjectDir } from "@/lib/e2b/project-dir";
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
 import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager";
 import { createErrorResult } from "../utils";
@@ -51,7 +52,7 @@ export function createFileTools(projectId: string) {
       execute: async ({ path: filePath, content }) => {
         const startTime = new Date();
         const context = ctx();
-        const projectDir = "/home/user/project";
+        const projectDir = getProjectDir();
         const fullPath = `${projectDir}/${filePath}`;
 
         try {
@@ -147,7 +148,7 @@ export function createFileTools(projectId: string) {
       execute: async ({ path: filePath }) => {
         const startTime = new Date();
         const context = ctx();
-        const projectDir = "/home/user/project";
+        const projectDir = getProjectDir();
         const fullPath = `${projectDir}/${filePath}`;
 
         try {
@@ -240,7 +241,7 @@ export function createFileTools(projectId: string) {
       execute: async ({ path: filePath, search, replace }) => {
         const startTime = new Date();
         const context = ctx();
-        const projectDir = "/home/user/project";
+        const projectDir = getProjectDir();
         const fullPath = `${projectDir}/${filePath}`;
 
         try {

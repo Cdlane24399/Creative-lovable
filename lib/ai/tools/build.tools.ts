@@ -12,6 +12,7 @@ import {
   killBackgroundProcess,
   startBackgroundProcess,
 } from "@/lib/e2b/sandbox";
+import { getProjectDir } from "@/lib/e2b/project-dir";
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
 import { createErrorResult, formatDuration } from "../utils";
 
@@ -54,7 +55,7 @@ export function createBuildTools(projectId: string) {
       }),
       execute: async ({ command, cwd, timeout }) => {
         const startTime = new Date();
-        const projectDir = "/home/user/project";
+        const projectDir = getProjectDir();
         const workDir = cwd ? `/home/user/${cwd}` : projectDir;
         const fullCommand = `cd "${workDir}" && ${command}`;
 
@@ -142,7 +143,7 @@ export function createBuildTools(projectId: string) {
       }),
       execute: async ({ packages, dev }) => {
         const startTime = new Date();
-        const projectDir = "/home/user/project";
+        const projectDir = getProjectDir();
         const pnpmFlag = dev ? "-D" : "";
 
         try {
@@ -346,7 +347,7 @@ export function createBuildTools(projectId: string) {
         // Just update context - the frontend handles server management
         setProjectInfo(projectId, {
           projectName,
-          projectDir: `/home/user/${projectName}`,
+          projectDir: getProjectDir(),
         });
 
         return {

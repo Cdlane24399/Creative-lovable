@@ -10,11 +10,12 @@ import { z } from "zod";
 import { projectNameSchema } from "../schemas/tool-schemas";
 import { setProjectInfo, recordToolExecution } from "../agent-context";
 import { directoryExists, executeCommand } from "@/lib/e2b/sandbox";
+import { getProjectDir } from "@/lib/e2b/project-dir";
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
 import { scaffoldNextProject } from "../helpers";
 import { SandboxError } from "../errors/web-builder-errors";
 
-const projectDir = "/home/user/project";
+const projectDir = getProjectDir();
 
 /**
  * Creates project initialization tools.

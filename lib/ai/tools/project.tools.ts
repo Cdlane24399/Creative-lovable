@@ -19,6 +19,7 @@ import {
   executeCommand,
   readFile as readFileFromSandbox,
 } from "@/lib/e2b/sandbox";
+import { getProjectDir } from "@/lib/e2b/project-dir";
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
 import { createErrorResult } from "../utils";
 import { categorizeFiles } from "../helpers";
@@ -52,7 +53,7 @@ export function createProjectTools(projectId: string) {
         const startTime = new Date();
         const context = ctx();
         const projectName = context.projectName || "project";
-        const projectDir = "/home/user/project";
+        const projectDir = getProjectDir();
 
         try {
           // Get sandbox from infrastructure context

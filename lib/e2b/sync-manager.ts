@@ -28,6 +28,7 @@ import {
   emitCacheEventAsync,
   createFilesChangedEvent,
 } from "@/lib/events/cache-events"
+import { getProjectDir } from "./project-dir"
 
 // =============================================================================
 // Types
@@ -95,7 +96,7 @@ export type SyncEvent =
 
 const DEFAULT_CONFIG: Required<SyncManagerConfig> = {
   projectId: "",
-  projectDir: "/home/user/project",
+  projectDir: getProjectDir(),
   autoSync: false,
   syncInterval: 30000, // 30 seconds
   direction: "bidirectional",
@@ -419,7 +420,7 @@ export class SyncManager {
       // Get list of files, excluding large directories and binary files at the find level
       // This prevents scanning 41k+ files when only ~100 source files are needed
       const result = await this.sandbox.commands.run(
-        `find ${this.config.projectDir} -type f -size -${this.config.maxFileSize}c ` +
+        `find "${this.config.projectDir}" -type f -size -${this.config.maxFileSize}c ` +
         `-not -path '*/node_modules/*' ` +
         `-not -path '*/.next/*' ` +
         `-not -path '*/.git/*' ` +
@@ -623,7 +624,7 @@ export function createSyncManager(
 export async function quickSyncToDatabase(
   sandbox: Sandbox,
   projectId: string,
-  projectDir: string = "/home/user/project"
+  projectDir: string = getProjectDir()
 ): Promise<SyncResult> {
   const manager = new SyncManager(sandbox, {
     projectId,
@@ -651,7 +652,7 @@ export async function quickSyncToDatabase(
 export async function quickSyncToDatabaseWithRetry(
   sandbox: Sandbox,
   projectId: string,
-  projectDir: string = "/home/user/project",
+  projectDir: string = getProjectDir(),
   maxRetries: number = 3
 ): Promise<SyncResult & { retryCount: number }> {
   let lastError: Error | null = null

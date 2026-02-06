@@ -18,6 +18,7 @@ import { z } from "zod"
 import { projectNameSchema, pageSchema, componentSchema, PHASES } from "../schemas/tool-schemas"
 import { getAgentContext, setProjectInfo, recordToolExecution } from "../agent-context"
 import { directoryExists, executeCommand } from "@/lib/e2b/sandbox"
+import { getProjectDir } from "@/lib/e2b/project-dir"
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider"
 import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager"
 import { isRecord } from "../utils"
@@ -139,7 +140,7 @@ export function createWebsiteTools(projectId: string) {
         // Check if using E2B template (pre-built sandbox with dependencies)
         const hasTemplate = !!process.env.E2B_TEMPLATE_ID
         // Always use consistent project directory for hot-reload and sync
-        const projectDir = "/home/user/project"
+        const projectDir = getProjectDir()
 
         console.log(
           `[createWebsite] Starting for project: ${name}, projectId: ${projectId}, projectDir: ${projectDir}`
