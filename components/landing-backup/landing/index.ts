@@ -1,8 +1,5 @@
 export { Header } from "./header"
 export { HeroSection } from "./hero-section"
-export { HeroSectionV1 } from "./hero-section-v1"
-export { HeroSectionV2 } from "./hero-section-v2"
-export { HeroSectionV3 } from "./hero-section-v3"
 export { FeaturesSection } from "./features-section"
 export { HowItWorksSection } from "./how-it-works-section"
 export { ProjectsSection } from "./projects-section"

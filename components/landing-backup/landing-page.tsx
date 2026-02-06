@@ -3,7 +3,7 @@
 import { LandingBackground } from "./landing-background"
 import {
   Header,
-  HeroSectionV3 as HeroSection,
+  HeroSection,
   FeaturesSection,
   HowItWorksSection,
   ProjectsSection,
