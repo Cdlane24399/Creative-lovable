@@ -14,6 +14,7 @@ import {
   fileExists,
 } from "./sandbox";
 import { getProjectDir } from "./project-dir";
+import { hasConfiguredTemplate } from "./template-config";
 import { setProjectInfo } from "../ai/agent-context";
 import { scaffoldNextProject } from "../ai/helpers";
 
@@ -131,7 +132,7 @@ async function ensureProjectInitialized(
   projectId: string,
   projectDir: string,
 ): Promise<void> {
-  const hasTemplate = !!process.env.E2B_TEMPLATE_ID;
+  const hasTemplate = hasConfiguredTemplate();
 
   // Check if project directory exists and has a valid Next.js project shape
   const projectExists = await directoryExists(sandbox, projectDir);

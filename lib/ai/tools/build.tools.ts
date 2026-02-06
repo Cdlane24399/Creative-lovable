@@ -29,12 +29,12 @@ export function createBuildTools(projectId: string) {
   return {
     /**
      * Runs a shell command in the sandbox.
-     * Automatically tracks pnpm installs for dependency awareness.
+     * Automatically tracks bun installs for dependency awareness.
      */
     runCommand: tool({
       description:
-        "Run a shell command in the project environment (e.g., pnpm add, pnpm run build). " +
-        "Use for any command-line operations. Uses pnpm (not npm) for package management.",
+        "Run a shell command in the project environment (e.g., bun add, bun run build). " +
+        "Use for any command-line operations. Uses bun (not npm/pnpm) for package management.",
       inputSchema: z.object({
         command: z
           .string()
@@ -66,14 +66,14 @@ export function createBuildTools(projectId: string) {
             timeoutMs: timeout,
           });
 
-          // Track pnpm add for dependency awareness
+          // Track bun add for dependency awareness
           if (
-            (command.includes("pnpm add") ||
-              command.includes("pnpm install")) &&
+            (command.includes("bun add") ||
+              command.includes("bun install")) &&
             result.exitCode === 0
           ) {
             const packageMatch = command.match(
-              /pnpm (?:add|install)\s+(?:-D\s+)?(.+)$/,
+              /bun (?:add|install)\s+(?:-[dD]\s+)?(.+)$/,
             );
             if (packageMatch) {
               const packages = packageMatch[1]
@@ -144,14 +144,13 @@ export function createBuildTools(projectId: string) {
       execute: async ({ packages, dev }) => {
         const startTime = new Date();
         const projectDir = getProjectDir();
-        const pnpmFlag = dev ? "-D" : "";
+        const devFlag = dev ? "-d" : "";
 
         try {
           // Get sandbox from infrastructure context
           const sandbox = getCurrentSandbox();
 
-          // Stop dev server to release lock on pnpm-lock.yaml
-          // Turbopack holds the lockfile while running, causing pnpm add to fail
+          // Stop dev server to avoid conflicts during package installation
           const wasRunning = await killBackgroundProcess(projectId);
           if (wasRunning) {
             console.log(
@@ -162,7 +161,7 @@ export function createBuildTools(projectId: string) {
           const packageList = packages.join(" ");
           const result = await executeCommand(
             sandbox,
-            `cd "${projectDir}" && pnpm add ${pnpmFlag} ${packageList}`.trim(),
+            `cd "${projectDir}" && bun add ${devFlag} ${packageList}`.trim(),
             { timeoutMs: 120_000 }, // 2 minutes for package install
           );
 
@@ -172,7 +171,7 @@ export function createBuildTools(projectId: string) {
           if (wasRunning) {
             await startBackgroundProcess(
               sandbox,
-              "pnpm run dev > /tmp/server.log 2>&1",
+              "bun run dev > /tmp/server.log 2>&1",
               {
                 workingDir: projectDir,
                 projectId,

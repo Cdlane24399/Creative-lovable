@@ -8,6 +8,8 @@
  * Override by setting E2B_PROJECT_DIR.
  */
 
+import { hasConfiguredTemplate } from "./template-config";
+
 const DEFAULT_PROJECT_DIR = "/home/user/project";
 const TEMPLATE_PROJECT_DIR = "/home/user";
 
@@ -20,7 +22,7 @@ export function getProjectDir(): string {
     return configured.replace(/\/+$/, "") || DEFAULT_PROJECT_DIR;
   }
 
-  return process.env.E2B_TEMPLATE_ID
+  return hasConfiguredTemplate()
     ? TEMPLATE_PROJECT_DIR
     : DEFAULT_PROJECT_DIR;
 }

@@ -1,34 +1,42 @@
-/**
- * Build E2B template using Build System 2.0
- * @see https://e2b.mintlify.app/docs/template/quickstart
- */
-import { config } from "dotenv";
-import { resolve, dirname } from "path";
-import { fileURLToPath } from "url";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
 import { Template, defaultBuildLogger } from "e2b";
-import { template, TEMPLATE_NAME } from "./template";
+import { template as nextJSTemplate, TEMPLATE_NAME } from "./template";
 
-// Load .env.local from project root
-const __dirname = dirname(fileURLToPath(import.meta.url));
-config({ path: resolve(__dirname, "../../../.env.local") });
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-console.log(`Building E2B template: ${TEMPLATE_NAME}`);
+// Load env from project root first, then local cwd fallback
+dotenv.config({ path: path.resolve(__dirname, "../../../.env.local") });
+dotenv.config();
 
-Template.build(template, TEMPLATE_NAME, {
-  cpuCount: 4,
-  memoryMB: 8192,
-  onBuildLogs: defaultBuildLogger(),
-})
-  .then((buildInfo) => {
-    console.log("");
-    console.log("✅ Template built successfully!");
-    console.log(`   Template ID: ${buildInfo.templateId}`);
-    console.log(`   Build ID: ${buildInfo.buildId}`);
-    console.log("");
-    console.log("Add to .env.local:");
-    console.log(`   E2B_TEMPLATE_ID=${buildInfo.templateId}`);
-  })
-  .catch((error) => {
-    console.error("❌ Template build failed:", error);
-    process.exit(1);
+async function main() {
+  if (!process.env.E2B_API_KEY) {
+    throw new Error(
+      "Missing E2B_API_KEY. Set it in .env.local or export it before running build.",
+    );
+  }
+
+  console.log(`Building E2B template: ${TEMPLATE_NAME}`);
+
+  const buildInfo = await Template.build(nextJSTemplate, TEMPLATE_NAME, {
+    cpuCount: 8,
+    memoryMB: 8192,
+    onBuildLogs: defaultBuildLogger(),
   });
+
+  console.log("");
+  console.log("Template built successfully.");
+  console.log(`Template ID: ${buildInfo.templateId}`);
+  console.log(`Build ID: ${buildInfo.buildId}`);
+  console.log("");
+  console.log("Set one of these in .env.local:");
+  console.log(`E2B_TEMPLATE=${buildInfo.templateId}    # preferred`);
+  console.log(`E2B_TEMPLATE_ID=${buildInfo.templateId} # legacy`);
+}
+
+main().catch((error) => {
+  console.error("Template build failed:", error);
+  process.exit(1);
+});

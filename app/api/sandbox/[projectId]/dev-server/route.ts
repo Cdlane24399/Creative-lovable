@@ -356,7 +356,7 @@ export const POST = withAuth(async (
 
       // Start the dev server in background
       console.log("[dev-server POST] Starting background process...")
-      await startBackgroundProcess(sandbox, "pnpm run dev > /tmp/server.log 2>&1", {
+      await startBackgroundProcess(sandbox, "bun run dev > /tmp/server.log 2>&1", {
         workingDir: projectDir,
         projectId,
       })
@@ -427,7 +427,7 @@ export const POST = withAuth(async (
           const elapsed = (i + 1) * pollInterval / 1000
           console.log(`[dev-server POST] Still waiting... ${elapsed}s elapsed`)
 
-          // Check for errors in logs
+          // Check for fatal errors in logs that indicate server won't recover
           const errorCheck = await executeCommand(
             sandbox,
             `tail -n 15 /tmp/server.log 2>/dev/null | grep -iE "error|failed|EADDRINUSE" || echo ""`,
@@ -435,6 +435,18 @@ export const POST = withAuth(async (
           )
           if (errorCheck.stdout.trim()) {
             console.warn(`[dev-server POST] Potential issues in logs:`, errorCheck.stdout.trim())
+
+            // Check for fatal compilation errors that won't self-resolve
+            const fatalCheck = await executeCommand(
+              sandbox,
+              `tail -n 30 /tmp/server.log 2>/dev/null | grep -c "EADDRINUSE\\|Cannot find module\\|SyntaxError\\|FATAL" || echo "0"`,
+              { timeoutMs: 3000 }
+            )
+            const fatalCount = parseInt(fatalCheck.stdout.trim())
+            if (fatalCount > 0 && elapsed >= 30) {
+              console.error(`[dev-server POST] Fatal errors detected after ${elapsed}s, stopping wait`)
+              break
+            }
           }
         }
       }

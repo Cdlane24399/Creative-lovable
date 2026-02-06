@@ -105,11 +105,20 @@ const DEFAULT_CONFIG: Required<SyncManagerConfig> = {
     "node_modules/**",
     ".next/**",
     ".git/**",
+    ".bun/**",
+    ".cache/**",
+    ".npm/**",
+    ".local/**",
+    ".pnpm-store/**",
+    ".yarn/**",
+    ".vercel/**",
     "dist/**",
     "build/**",
     "*.log",
     "package-lock.json",
     "pnpm-lock.yaml",
+    "bun.lockb",
+    "bun.lock",
     "yarn.lock",
   ],
   maxFileSize: 5 * 1024 * 1024, // 5MB
@@ -424,6 +433,13 @@ export class SyncManager {
         `-not -path '*/node_modules/*' ` +
         `-not -path '*/.next/*' ` +
         `-not -path '*/.git/*' ` +
+        `-not -path '*/.bun/*' ` +
+        `-not -path '*/.cache/*' ` +
+        `-not -path '*/.npm/*' ` +
+        `-not -path '*/.local/*' ` +
+        `-not -path '*/.pnpm-store/*' ` +
+        `-not -path '*/.yarn/*' ` +
+        `-not -path '*/.vercel/*' ` +
         `-not -path '*/dist/*' ` +
         `-not -path '*/build/*' ` +
         `-not -name '*.ico' ` +
@@ -439,6 +455,8 @@ export class SyncManager {
         `-not -name '*.svg' ` +
         `-not -name 'package-lock.json' ` +
         `-not -name 'pnpm-lock.yaml' ` +
+        `-not -name 'bun.lockb' ` +
+        `-not -name 'bun.lock' ` +
         `-not -name 'yarn.lock' ` +
         `2>/dev/null || true`,
         { timeoutMs: 30000 }

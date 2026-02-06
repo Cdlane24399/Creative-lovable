@@ -265,6 +265,41 @@ export class ProjectRepository extends BaseRepository<Project> {
   }
 
   /**
+   * Save a single file to the project's files_snapshot (incremental update).
+   * Reads the existing snapshot, merges the new file, and writes back.
+   * Much more efficient than full project sync for individual file writes.
+   */
+  async saveSingleFile(
+    id: string,
+    filePath: string,
+    content: string
+  ): Promise<void> {
+    try {
+      const client = await this.getClient()
+      // Read existing snapshot
+      const { data, error: readError } = await client
+        .from(this.tableName)
+        .select('files_snapshot')
+        .eq('id', id)
+        .single()
+
+      if (readError) throw readError
+
+      const existingSnapshot: Record<string, string> = data?.files_snapshot || {}
+      existingSnapshot[filePath] = content
+
+      const { error: updateError } = await client
+        .from(this.tableName)
+        .update({ files_snapshot: existingSnapshot, updated_at: new Date().toISOString() })
+        .eq('id', id)
+
+      if (updateError) throw updateError
+    } catch (error) {
+      this.handleError(error, "saveSingleFile")
+    }
+  }
+
+  /**
    * Update last opened timestamp
    */
   async updateLastOpened(id: string): Promise<void> {

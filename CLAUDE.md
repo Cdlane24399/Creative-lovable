@@ -110,7 +110,8 @@ Creative-lovable/
 | `DATABASE_URL` | PostgreSQL connection string. | Yes |
 | `NEXT_PUBLIC_SUPABASE_URL` | Public URL for your Supabase project. | Yes |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon key for your Supabase project. | Yes |
-| `E2B_TEMPLATE_ID` | Custom E2B template ID for faster startup. | Recommended |
+| `E2B_TEMPLATE` | Custom E2B template ID/name for faster startup. | Recommended |
+| `E2B_TEMPLATE_ID` | Legacy alias for `E2B_TEMPLATE`. | Fallback |
 | `UPSTASH_REDIS_REST_URL` | Upstash Redis REST endpoint for caching/rate limiting. | Recommended |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST authentication token. | Recommended |
 | `REDIS_URL` | Alternative name for Redis endpoint. | Fallback |

@@ -1,8 +1,8 @@
 {
-  "name": "nextjs-shadcn-3d",
+  "name": "nextjs-app-bun-template",
   "version": "1.0.0",
   "type": "module",
-  "description": "E2B template for Next.js + shadcn/ui + Tailwind v4 + Three.js",
+  "description": "E2B template build scripts for a simple Bun-based Next.js + shadcn setup",
   "scripts": {
     "build": "tsx build.ts"
   },

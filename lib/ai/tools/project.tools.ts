@@ -65,7 +65,7 @@ export function createProjectTools(projectId: string) {
           // Get file tree - exclude node_modules and .next
           const treeResult = await executeCommand(
             sandbox,
-            `cd "${projectDir}" && find . -type f \\( -name "*.tsx" -o -name "*.ts" -o -name "*.jsx" -o -name "*.js" -o -name "*.css" -o -name "*.json" \\) ! -path "*/node_modules/*" ! -path "*/.next/*" 2>/dev/null | sort | head -${MAX_PROJECT_FILES}`,
+            `cd "${projectDir}" && find . -type f \\( -name "*.tsx" -o -name "*.ts" -o -name "*.jsx" -o -name "*.js" -o -name "*.css" -o -name "*.json" \\) ! -path "*/node_modules/*" ! -path "*/.next/*" ! -path "*/.git/*" ! -path "*/.bun/*" ! -path "*/.cache/*" ! -path "*/.npm/*" ! -path "*/.local/*" ! -path "*/.pnpm-store/*" ! -path "*/.yarn/*" ! -path "*/.vercel/*" 2>/dev/null | sort | head -${MAX_PROJECT_FILES}`,
           );
 
           const files = treeResult.stdout

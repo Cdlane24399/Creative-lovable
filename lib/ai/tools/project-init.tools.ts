@@ -12,6 +12,7 @@ import { setProjectInfo, recordToolExecution } from "../agent-context";
 import { directoryExists, executeCommand } from "@/lib/e2b/sandbox";
 import { getProjectDir } from "@/lib/e2b/project-dir";
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
+import { hasConfiguredTemplate } from "@/lib/e2b/template-config";
 import { scaffoldNextProject } from "../helpers";
 import { SandboxError } from "../errors/web-builder-errors";
 
@@ -52,7 +53,7 @@ export function createProjectInitTools(projectId: string) {
 
       execute: async ({ name, description, useTemplate }) => {
         const startTime = new Date();
-        const hasTemplate = useTemplate && !!process.env.E2B_TEMPLATE_ID;
+        const hasTemplate = useTemplate && hasConfiguredTemplate();
 
         console.log(
           `[initializeProject] Starting: ${name}, template: ${hasTemplate}`,
@@ -122,7 +123,7 @@ export function createProjectInitTools(projectId: string) {
             isNewProject: true,
             usedTemplate: hasTemplate,
             setupTimeMs: totalTime,
-            filesReady: true, // Signal that project structure is ready
+            filesReady: false, // Don't signal filesReady here — wait for batchWriteFiles/syncProject
             message: hasTemplate
               ? `Project initialized from template in ${(totalTime / 1000).toFixed(1)}s`
               : `Project scaffolded in ${(totalTime / 1000).toFixed(1)}s`,

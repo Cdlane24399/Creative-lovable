@@ -202,6 +202,7 @@ export function ChatPanel({ ref }: ChatPanelProps) {
 
   // Track which tool outputs we've already processed
   const processedToolOutputsRef = useRef<Set<string>>(new Set());
+  const filesReadyTriggeredRef = useRef(false);
 
   // Extract tool outputs -- notify EditorContext via actions (no callback props)
   useEffect(() => {
@@ -222,6 +223,7 @@ export function ChatPanel({ ref }: ChatPanelProps) {
         "sandboxId:",
         filesReadyInfo.sandboxId,
       );
+      filesReadyTriggeredRef.current = true;
       actions.handleFilesReady(
         filesReadyInfo.projectName,
         filesReadyInfo.sandboxId,
@@ -240,6 +242,49 @@ export function ChatPanel({ ref }: ChatPanelProps) {
       wasWorkingRef.current = true;
     } else if (wasWorkingRef.current) {
       wasWorkingRef.current = false;
+
+      // If filesReady was never triggered during chat (e.g. agent used writeFile
+      // instead of batchWriteFiles), check if files were written and trigger
+      // dev server start as a fallback
+      if (!filesReadyTriggeredRef.current) {
+        const { filesReadyInfo } = parseToolOutputs(messages, new Set());
+        // Also check if any writeFile/editFile tool results exist
+        const hasFileWrites = messages.some(
+          (m) =>
+            m.role === "assistant" &&
+            m.parts?.some(
+              (p: any) =>
+                (p.type === "tool-writeFile" ||
+                  p.type === "tool-editFile" ||
+                  p.type === "tool-batchWriteFiles" ||
+                  p.type === "tool-initializeProject") &&
+                p.state === "output-available",
+            ),
+        );
+
+        if (hasFileWrites && !filesReadyInfo) {
+          console.log(
+            "[ChatPanel] Chat completed with file writes but no filesReady signal, triggering fallback dev server start",
+          );
+          // Extract project name from any tool output
+          const projectName =
+            messages
+              .flatMap((m) =>
+                (m.parts || [])
+                  .filter(
+                    (p: any) =>
+                      p.type?.startsWith("tool-") &&
+                      p.state === "output-available" &&
+                      p.output?.projectName,
+                  )
+                  .map((p: any) => p.output?.projectName),
+              )
+              .filter(Boolean)
+              .pop() || "project";
+          actions.handleFilesReady(projectName);
+        }
+      }
+
       // Chat just completed — poll project data until files_snapshot is populated.
       // This prevents the Code tab from staying empty when sync finishes slightly later.
       const pollForFiles = async () => {

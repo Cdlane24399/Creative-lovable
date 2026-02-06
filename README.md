@@ -92,7 +92,9 @@ E2B_API_KEY=your_e2b_api_key
 
 # Optional but HIGHLY RECOMMENDED: Custom E2B Template
 # This provides 60x faster startup (see Custom Template Setup below)
-E2B_TEMPLATE_ID=nextjs-shadcn-v1
+E2B_TEMPLATE=nextjs-app-bun
+# Backward-compatible alias also supported:
+# E2B_TEMPLATE_ID=nextjs-app-bun
 
 # Required: AI Gateway (recommended) OR at least one direct provider
 AI_GATEWAY_URL=https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}
@@ -125,29 +127,17 @@ API_KEY=your_api_key
 
 For **60x faster startup**, build a custom E2B template with all dependencies pre-installed:
 
-### Step 1: Install E2B CLI
+### Step 1: Build the Template
 \`\`\`bash
-npm install -g @e2b/cli
+pnpm template:build
 \`\`\`
 
-### Step 2: Login to E2B
-\`\`\`bash
-e2b auth login
-\`\`\`
+This uses `lib/e2b/templates/build.ts` and prints the new template ID at the end.
 
-### Step 3: Build the Template
-\`\`\`bash
-e2b template build \
-  --path ./lib/e2b/templates/nextjs-shadcn.e2b.Dockerfile \
-  --name "nextjs-shadcn-v1"
-\`\`\`
-
-This takes 5-10 minutes the first time but is a one-time cost.
-
-### Step 4: Update Environment
-Add the template ID to your `.env.local`:
+### Step 2: Update Environment
+Add the generated template ID (or template name) to your `.env.local`:
 \`\`\`env
-E2B_TEMPLATE_ID=nextjs-shadcn-v1
+E2B_TEMPLATE=your-template-id
 \`\`\`
 
 ### Performance Impact

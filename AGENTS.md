@@ -333,7 +333,8 @@ const myTool = tool({
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key | Yes |
 | `UPSTASH_REDIS_REST_URL` | Upstash Redis URL for caching | Recommended |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis token | Recommended |
-| `E2B_TEMPLATE_ID` | Custom E2B template for faster startup | Recommended |
+| `E2B_TEMPLATE` | Custom E2B template ID/name for faster startup | Recommended |
+| `E2B_TEMPLATE_ID` | Legacy alias for `E2B_TEMPLATE` | Fallback |
 
 ---
 
@@ -357,8 +358,8 @@ const myTool = tool({
 | `pnpm test:e2e:webkit` | Playwright WebKit only |
 | `pnpm test:e2e:mobile` | Playwright mobile viewports |
 | `pnpm test:e2e:report` | Show Playwright HTML report |
-| `pnpm template:build` | Build E2B sandbox template (production) |
-| `pnpm template:build:dev` | Build E2B sandbox template (dev) |
+| `pnpm template:build` | Build E2B sandbox template |
+| `pnpm template:build:dev` | Alias for `pnpm template:build` |
 | `pnpm sandbox` | Create a sandbox manually (`tsx scripts/create-sandbox.ts`) |
 | `pnpm db:up` | Start local Supabase via Docker Compose |
 | `pnpm db:down` | Stop local Supabase |

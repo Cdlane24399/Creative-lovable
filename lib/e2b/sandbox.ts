@@ -2,6 +2,7 @@ import { Sandbox } from "e2b"
 import { getSandboxStateMachine } from "./sandbox-state-machine"
 import { getProjectDir } from "./project-dir"
 import { buildSandboxMetadata } from "./sandbox-metadata"
+import { getConfiguredTemplate } from "./template-config"
 
 // Type alias for CodeInterpreter sandbox
 type CodeInterpreterSandbox = import("@e2b/code-interpreter").Sandbox
@@ -41,9 +42,6 @@ const CLEANUP_INTERVAL_MS = 5 * 60 * 1000
 
 // Track last activity for each sandbox
 const sandboxLastActivity = new Map<string, number>()
-
-// Get custom template ID from environment (optional)
-const CUSTOM_TEMPLATE_ID = process.env.E2B_TEMPLATE_ID
 
 // Get state machine instance
 const stateMachine = getSandboxStateMachine()
@@ -300,13 +298,13 @@ async function restoreFilesFromSnapshot(
 
     if (hasDependencies && hasPackageJson) {
       console.log("[Sandbox] Installing dependencies...")
-      const installResult = await executeCommand(sandbox, "pnpm install", {
+      const installResult = await executeCommand(sandbox, "bun install", {
         cwd: projectDir,
-        timeoutMs: 600_000, // 10 minutes for pnpm install
+        timeoutMs: 600_000, // 10 minutes for bun install
       })
       result.dependenciesInstalled = installResult.exitCode === 0
       if (!result.dependenciesInstalled) {
-        console.warn("[Sandbox] pnpm install failed:", installResult.stderr)
+        console.warn("[Sandbox] bun install failed:", installResult.stderr)
       }
     }
 
@@ -492,7 +490,7 @@ async function resolveSandbox(
     preferAutoPause = false,
   } = options
 
-  const template = templateId || CUSTOM_TEMPLATE_ID
+  const template = templateId || getConfiguredTemplate()
 
   // 1. Check if sandbox already exists in memory for this project
   const existing = activeSandboxes.get(projectId)
@@ -578,7 +576,7 @@ export interface SandboxState {
  * 3. Create a new sandbox, restore files from snapshot, and persist to database
  *
  * @param projectId - Unique identifier for the project
- * @param templateId - Optional custom template ID (overrides E2B_TEMPLATE_ID env var)
+ * @param templateId - Optional custom template ID/name (overrides E2B_TEMPLATE/E2B_TEMPLATE_ID env vars)
  * @param options - Optional configuration for sandbox creation
  * @param options.restoreFromSnapshot - Whether to restore files from snapshot (default: true)
  */
@@ -951,11 +949,11 @@ export async function executeCommand(
 
   try {
     // Dynamic timeout based on command type
-    // npm install commands get longer timeout
-    const isNpmInstall = command.includes("npm install")
-    const isBuild = command.includes("npm run build") || command.includes("next build")
-    const effectiveTimeout = isNpmInstall
-      ? 600_000 // 10 minutes for npm install
+    // Package install commands get longer timeout
+    const isInstall = command.includes("bun install") || command.includes("npm install")
+    const isBuild = command.includes("bun run build") || command.includes("npm run build") || command.includes("next build")
+    const effectiveTimeout = isInstall
+      ? 600_000 // 10 minutes for package install
       : isBuild
         ? 300_000 // 5 minutes for builds
         : options.timeoutMs || 300_000
@@ -975,7 +973,7 @@ export async function executeCommand(
         stdoutLines.push(data)
         options.onStdout?.(data)
         // Report progress for long-running commands
-        if (isNpmInstall || isBuild) {
+        if (isInstall || isBuild) {
           onProgress?.("output", data.trim().slice(0, 80))
         }
       },
@@ -1019,13 +1017,13 @@ export async function executeCommand(
       console.debug(`[E2B] Expected non-zero exit: "${command.slice(0, 60)}..."`, { durationMs })
     } else {
       // For package manager commands, log more details including actual stderr
-      const isPkgManager = command.includes("pnpm") || command.includes("npm")
+      const isPkgManager = command.includes("bun") || command.includes("npm")
       console.error(`[E2B] Command failed: "${command.slice(0, 100)}..."`, {
         error: errorMessage,
         stderr: actualStderr.slice(0, 500) || undefined,
         commandLength: command.length,
         durationMs,
-        ...(isPkgManager && !actualStderr && { hint: "Check if lock files are conflicting (pnpm-lock.yaml vs package-lock.json)" }),
+        ...(isPkgManager && !actualStderr && { hint: "Check if lock files are conflicting or package manager is available" }),
       })
     }
 

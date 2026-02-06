@@ -23,7 +23,6 @@ import {
 } from "@/lib/e2b/sandbox";
 import { getProjectDir } from "@/lib/e2b/project-dir";
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
-import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager";
 import { createErrorResult } from "../utils";
 
 /**
@@ -74,34 +73,35 @@ export function createFileTools(projectId: string) {
             isNew ? "created" : "updated",
           );
 
-          // Sync to database to persist the file
+          // Persist just this file to the database (incremental, not full sync)
+          // Full project sync is deferred to syncProject/batchWriteFiles for efficiency
           console.log(
-            `[writeFile] Syncing file ${filePath} to database for project ${projectId}`,
+            `[writeFile] Persisting file ${filePath} to database for project ${projectId}`,
           );
           try {
-            const syncResult = await quickSyncToDatabaseWithRetry(
-              sandbox,
-              projectId,
-              projectDir,
-            );
+            const { getProjectRepository } = await import("@/lib/db/repositories");
+            const repo = getProjectRepository();
+            await repo.saveSingleFile(projectId, filePath, content);
             console.log(
-              `[writeFile] Sync completed: ${syncResult.filesWritten} files synced, success: ${syncResult.success}`,
+              `[writeFile] File persisted: ${filePath}`,
             );
           } catch (syncError) {
-            console.warn("[writeFile] Failed to sync to database:", syncError);
-            // Don't fail the tool execution if sync fails - the file is still written to sandbox
+            console.warn("[writeFile] Failed to persist file to database:", syncError);
+            // Don't fail the tool execution if persistence fails - the file is still written to sandbox
           }
 
           // Get project name from context for frontend parser
           const projectName =
             getAgentContext(projectId).projectName || "project";
 
+          // NOTE: filesReady is false here — only batchWriteFiles/syncProject
+          // should signal filesReady to prevent premature dev server start
           const result = {
             success: true as const,
             path: filePath,
             action: isNew ? ("created" as const) : ("updated" as const),
             bytes: content.length,
-            filesReady: true,
+            filesReady: false,
             projectName,
             message: `File ${isNew ? "created" : "updated"}: ${filePath}`,
           };
@@ -310,22 +310,20 @@ export function createFileTools(projectId: string) {
           // Update context
           updateFileInContext(projectId, filePath, newContent, "updated");
 
-          // Sync to database to persist the edit
+          // Persist just this file to the database (incremental, not full sync)
           console.log(
-            `[editFile] Syncing file ${filePath} to database for project ${projectId}`,
+            `[editFile] Persisting file ${filePath} to database for project ${projectId}`,
           );
           try {
-            const syncResult = await quickSyncToDatabaseWithRetry(
-              sandbox,
-              projectId,
-              projectDir,
-            );
+            const { getProjectRepository } = await import("@/lib/db/repositories");
+            const repo = getProjectRepository();
+            await repo.saveSingleFile(projectId, filePath, newContent);
             console.log(
-              `[editFile] Sync completed: ${syncResult.filesWritten} files synced, success: ${syncResult.success}`,
+              `[editFile] File persisted: ${filePath}`,
             );
           } catch (syncError) {
-            console.warn("[editFile] Failed to sync to database:", syncError);
-            // Don't fail the tool execution if sync fails - the file is still written to sandbox
+            console.warn("[editFile] Failed to persist file to database:", syncError);
+            // Don't fail the tool execution if persistence fails - the file is still written to sandbox
           }
 
           // Get project name from context for frontend parser
@@ -339,7 +337,7 @@ export function createFileTools(projectId: string) {
               Math.abs(
                 search.split("\n").length - replace.split("\n").length,
               ) || 1,
-            filesReady: true,
+            filesReady: false,
             projectName,
             message: `Successfully edited ${filePath}`,
           };

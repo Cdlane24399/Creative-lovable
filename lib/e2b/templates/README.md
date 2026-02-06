@@ -1,127 +1,54 @@
 # E2B Custom Template
 
-This directory contains the custom E2B template for the Creative-lovable sandbox environment. Using a custom template significantly reduces sandbox startup time from ~30 seconds to ~5 seconds.
+This directory contains the E2B template definition used by the app sandbox runtime.
 
-## Build System 2.0
+## What This Template Builds
 
-This template uses E2B's Build System 2.0 with the programmatic Template API. The template definition is in `template.ts` and uses method chaining for clean, readable configuration.
+The template is intentionally simple and Bun-based:
 
-## Why Use a Custom Template?
+- Base image: Bun `1.3`
+- Scaffolds a Next.js app (`create-next-app` with TypeScript, App Router, Tailwind, Turbopack)
+- Initializes `shadcn/ui` and adds all components
+- Starts the dev server on `http://localhost:3000`
 
-The default E2B sandbox starts with a minimal environment. Every time a sandbox is created, it needs to:
-1. Install Node.js dependencies (next, react, react-dom, etc.)
-2. Install shadcn/ui components
-3. Set up the project structure
+Template definition: `template.ts`  
+Build script: `build.ts`
 
-A custom template pre-installs all these dependencies, making sandbox creation nearly instantaneous.
+## Build
 
-## Template Contents
+From the project root:
 
-This template includes:
-
-- **Node.js 22** with pnpm package manager
-- **Pre-installed dependencies:**
-  - Next.js (latest) with App Router
-  - React & react-dom
-  - TypeScript
-  - Tailwind CSS v4
-  - @radix-ui primitives
-  - shadcn/ui base components
-  - framer-motion
-  - lucide-react
-  - Three.js + React Three Fiber
-  - class-variance-authority
-  - clsx & tailwind-merge
-  - And many more (see template.ts)
-- **Screenshot support:**
-  - Playwright + Chromium (pre-installed)
-  - ImageMagick (for image processing)
-  - System dependencies for headless browser
-
-## Building the Template
-
-### Prerequisites
-
-1. Install dependencies:
 ```bash
-cd lib/e2b/templates
-pnpm install
+pnpm template:build
 ```
 
-2. Ensure E2B API key is set in `.env.local`:
+Or from this directory:
+
 ```bash
-E2B_API_KEY=your_api_key
+pnpm build
 ```
 
-### Build Steps
+On success, the script prints:
 
-#### Development Build (for testing)
-```bash
-pnpm run build:dev
+- `Template ID`
+- `Build ID`
+- env lines to copy into `.env.local`
+
+## Environment Variable
+
+Use one of these in `.env.local`:
+
+```env
+E2B_TEMPLATE=your-template-id
+# legacy alias also supported:
+# E2B_TEMPLATE_ID=your-template-id
 ```
 
-#### Production Build
-```bash
-pnpm run build:prod
-# or simply
-pnpm run build
-```
-
-After successful build, you'll see output with the Template ID. Add it to your `.env.local`:
-```bash
-E2B_TEMPLATE_ID=your-template-id
-```
-
-## Template Files
-
-### `template.ts`
-The template definition using Build System 2.0 programmatic API. Defines:
-- Base image (Node.js 22)
-- System packages (apt)
-- npm dependencies
-- shadcn/ui initialization
-- Environment variables
-
-### `build.dev.ts` / `build.prod.ts`
-TypeScript scripts for building the template in development and production modes.
-
-### `package.json`
-Local package.json for the build scripts with e2b SDK dependency.
-
-## Troubleshooting
-
-### Template Not Found
-If you get "template not found" errors:
-1. Verify the template was built successfully
-2. Check that `E2B_TEMPLATE_ID` is set correctly in `.env.local`
-3. Ensure you're using the correct template ID format
-
-### Slow Sandbox Creation Even with Template
-1. Verify `E2B_TEMPLATE_ID` is actually set in your environment
-2. Check the application logs to confirm the template is being used
-3. The first sandbox creation with a new template may still be slow
+`E2B_TEMPLATE` is preferred.
 
 ## Updating the Template
 
-If you need to add new dependencies or change the template:
-
-1. Modify `template.ts` (add packages, commands, etc.)
-2. Rebuild the template: `pnpm run build:prod`
-3. Update `E2B_TEMPLATE_ID` with the new template ID
-4. Restart the development server
-
-## Performance Impact
-
-Without custom template:
-- First request: ~30-45 seconds (dependency installation)
-- Subsequent requests: ~5-10 seconds
-
-With custom template:
-- First request: ~5-10 seconds
-- Subsequent requests: ~2-5 seconds
-
-The template provides a **6-9x speedup** for the initial request.
-
-## API Reference
-
-See [E2B Template Documentation](https://e2b.mintlify.app/docs/template/quickstart) for the full Build System 2.0 API.
+1. Edit `template.ts`
+2. Rebuild: `pnpm template:build`
+3. Update `.env.local` with the newly printed template ID
+4. Restart your dev server

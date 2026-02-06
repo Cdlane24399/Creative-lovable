@@ -20,6 +20,7 @@ import { getAgentContext, setProjectInfo, recordToolExecution } from "../agent-c
 import { directoryExists, executeCommand } from "@/lib/e2b/sandbox"
 import { getProjectDir } from "@/lib/e2b/project-dir"
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider"
+import { hasConfiguredTemplate } from "@/lib/e2b/template-config"
 import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager"
 import { isRecord } from "../utils"
 import { scaffoldNextProject, writePages, writeComponents } from "../helpers"
@@ -138,7 +139,7 @@ export function createWebsiteTools(projectId: string) {
         console.warn("[DEPRECATED] createWebsite is deprecated. Use initializeProject + batchWriteFiles + syncProject instead.")
         const startTime = new Date()
         // Check if using E2B template (pre-built sandbox with dependencies)
-        const hasTemplate = !!process.env.E2B_TEMPLATE_ID
+        const hasTemplate = hasConfiguredTemplate()
         // Always use consistent project directory for hot-reload and sync
         const projectDir = getProjectDir()
 
@@ -214,12 +215,12 @@ export function createWebsiteTools(projectId: string) {
               progress: 50,
             }
 
-            const installResult = await executeCommand(sandbox, `cd "${projectDir}" && pnpm install`, {
-              timeoutMs: 300000, // 5 minutes for pnpm install
+            const installResult = await executeCommand(sandbox, `cd "${projectDir}" && bun install`, {
+              timeoutMs: 300000, // 5 minutes for bun install
             })
 
             if (installResult.exitCode !== 0) {
-              throw new SandboxError(`pnpm install failed: ${installResult.stderr}`)
+              throw new SandboxError(`bun install failed: ${installResult.stderr}`)
             }
 
             yield {
