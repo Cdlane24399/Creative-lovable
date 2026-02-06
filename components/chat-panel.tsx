@@ -69,6 +69,13 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     setLastError(error)
   }, [])
 
+  const { messages, sendMessage, isWorking, isCallingTools, getThinkingTime, stop } = useChatWithTools({
+    projectId,
+    model: selectedModel,
+    initialMessages: savedMessages,
+    onError: handleChatError,
+  })
+
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     if (!isChatEnabled) return
@@ -144,13 +151,6 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
       localStorage.setItem(`project-model-${projectId}`, selectedModel)
     }
   }, [projectId, selectedModel])
-
-  const { messages, sendMessage, isWorking, isCallingTools, getThinkingTime, stop } = useChatWithTools({
-    projectId,
-    model: selectedModel,
-    initialMessages: savedMessages,
-    onError: handleChatError,
-  })
 
   // Expose sendMessage via ref for programmatic control (e.g., auto-fix)
   useImperativeHandle(ref, () => ({
