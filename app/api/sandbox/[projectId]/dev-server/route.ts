@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import {
   createSandbox,
+  connectSandboxById,
   getSandbox,
   executeCommand,
   getHostUrl,
@@ -246,9 +247,11 @@ export const POST = withAuth(async (
       let sandbox
       if (providedSandboxId) {
         try {
-          const { Sandbox } = await import("e2b")
           console.log("[dev-server POST] Connecting to provided sandbox:", providedSandboxId)
-          sandbox = await Sandbox.connect(providedSandboxId, { timeoutMs: 10 * 60 * 1000 })
+          sandbox = await connectSandboxById(projectId, providedSandboxId, {
+            timeoutMs: 10 * 60 * 1000,
+            clearDatabaseOnFailure: false,
+          })
           console.log("[dev-server POST] Successfully connected to sandbox:", sandbox.sandboxId)
         } catch (err) {
           console.warn("[dev-server POST] Failed to connect to provided sandbox, falling back to createSandbox:", err)

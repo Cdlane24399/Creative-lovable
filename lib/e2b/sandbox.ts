@@ -1,6 +1,7 @@
 import { Sandbox } from "e2b"
 import { getSandboxStateMachine } from "./sandbox-state-machine"
 import { getProjectDir } from "./project-dir"
+import { buildSandboxMetadata } from "./sandbox-metadata"
 
 // Type alias for CodeInterpreter sandbox
 type CodeInterpreterSandbox = import("@e2b/code-interpreter").Sandbox
@@ -318,11 +319,27 @@ async function restoreFilesFromSnapshot(
   }
 }
 
+interface ConnectSandboxByIdOptions {
+  timeoutMs?: number
+  clearDatabaseOnFailure?: boolean
+  persistDatabaseMappingOnSuccess?: boolean
+}
+
 /**
- * Try to reconnect to an existing sandbox by ID with retry logic.
- * Returns the sandbox if successful, undefined otherwise.
+ * Connect to an existing sandbox with retry/throttle guards and tracking updates.
+ * Returns undefined on failure unless callers choose to throw.
  */
-async function tryReconnectSandbox(sandboxId: string, projectId: string): Promise<Sandbox | undefined> {
+async function tryReconnectSandbox(
+  sandboxId: string,
+  projectId: string,
+  options: ConnectSandboxByIdOptions = {}
+): Promise<Sandbox | undefined> {
+  const {
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    clearDatabaseOnFailure = true,
+    persistDatabaseMappingOnSuccess = false,
+  } = options
+
   // Check if we've exceeded retry attempts
   const attempts = connectionAttempts.get(sandboxId)
   if (attempts) {
@@ -349,11 +366,11 @@ async function tryReconnectSandbox(sandboxId: string, projectId: string): Promis
     console.log(`[Sandbox] Attempting to reconnect to sandbox ${sandboxId} for project ${projectId}`)
 
     const sandbox = await Sandbox.connect(sandboxId, {
-      timeoutMs: DEFAULT_TIMEOUT_MS,
+      timeoutMs,
     })
 
     // Test connection by extending timeout
-    await sandbox.setTimeout(DEFAULT_TIMEOUT_MS)
+    await sandbox.setTimeout(timeoutMs)
 
     activeSandboxes.set(projectId, sandbox)
 
@@ -363,13 +380,19 @@ async function tryReconnectSandbox(sandboxId: string, projectId: string): Promis
     // Update activity timestamp
     updateSandboxActivity(projectId)
 
+    if (persistDatabaseMappingOnSuccess) {
+      await saveSandboxIdToDatabase(projectId, sandbox.sandboxId)
+    }
+
     console.log(`[Sandbox] Successfully reconnected to sandbox ${sandboxId} for project ${projectId}`)
     return sandbox
   } catch (error) {
     console.warn(`[Sandbox] Failed to reconnect to sandbox ${sandboxId}:`, error)
 
-    // Clear from database if reconnection fails
-    await clearSandboxIdFromDatabase(projectId)
+    if (clearDatabaseOnFailure) {
+      // Clear stale mapping when reconnecting via persisted ID
+      await clearSandboxIdFromDatabase(projectId)
+    }
 
     return undefined
   }
@@ -378,12 +401,160 @@ async function tryReconnectSandbox(sandboxId: string, projectId: string): Promis
 // Supported languages for code execution
 export type CodeLanguage = "python" | "javascript" | "typescript" | "js" | "ts"
 
-// Sandbox metadata for tracking and debugging
-export interface SandboxMetadata {
-  projectId: string
-  createdAt: Date
-  template?: string
-  purpose: "website" | "code-execution" | "general"
+interface ResolveSandboxOptions {
+  templateId?: string
+  restoreFromSnapshot?: boolean
+  preferAutoPause?: boolean
+}
+
+/**
+ * Connect to a sandbox by ID and register the connection in project tracking.
+ * Used by routes that receive explicit sandbox IDs from clients.
+ */
+export async function connectSandboxById(
+  projectId: string,
+  sandboxId: string,
+  options: Omit<ConnectSandboxByIdOptions, "persistDatabaseMappingOnSuccess"> = {}
+): Promise<Sandbox> {
+  const connected = await tryReconnectSandbox(sandboxId, projectId, {
+    ...options,
+    clearDatabaseOnFailure: options.clearDatabaseOnFailure ?? false,
+    persistDatabaseMappingOnSuccess: true,
+  })
+
+  if (!connected) {
+    throw new Error(`Failed to connect to sandbox ${sandboxId} for project ${projectId}`)
+  }
+
+  return connected
+}
+
+async function createNewSandbox(
+  projectId: string,
+  template: string | undefined,
+  preferAutoPause: boolean
+): Promise<Sandbox> {
+  const metadata = buildSandboxMetadata({
+    projectId,
+    template,
+    purpose: "website",
+  })
+
+  if (preferAutoPause && typeof Sandbox.betaCreate === "function") {
+    try {
+      return template
+        ? Sandbox.betaCreate(template, {
+          timeoutMs: DEFAULT_TIMEOUT_MS,
+          autoPause: true,
+          metadata,
+        })
+        : Sandbox.betaCreate({
+          timeoutMs: DEFAULT_TIMEOUT_MS,
+          autoPause: true,
+          metadata,
+        })
+    } catch (error) {
+      console.warn("[Sandbox] betaCreate failed, falling back to Sandbox.create:", error)
+    }
+  }
+
+  return template
+    ? Sandbox.create(template, {
+      timeoutMs: DEFAULT_TIMEOUT_MS,
+      metadata,
+    })
+    : Sandbox.create({
+      timeoutMs: DEFAULT_TIMEOUT_MS,
+      metadata,
+    })
+}
+
+async function restoreSnapshotIfPresent(projectId: string, sandbox: Sandbox): Promise<void> {
+  const snapshot = await getProjectSnapshot(projectId)
+  if (!snapshot || Object.keys(snapshot.files_snapshot).length === 0) {
+    return
+  }
+
+  console.log(`[Sandbox] Restoring project files from snapshot for ${projectId}...`)
+  const restoreResult = await restoreFilesFromSnapshot(sandbox, snapshot)
+  console.log(
+    `[Sandbox] Restore complete: ${restoreResult.filesRestored} files, deps installed: ${restoreResult.dependenciesInstalled}`
+  )
+}
+
+async function resolveSandbox(
+  projectId: string,
+  options: ResolveSandboxOptions = {}
+): Promise<Sandbox> {
+  const {
+    templateId,
+    restoreFromSnapshot = true,
+    preferAutoPause = false,
+  } = options
+
+  const template = templateId || CUSTOM_TEMPLATE_ID
+
+  // 1. Check if sandbox already exists in memory for this project
+  const existing = activeSandboxes.get(projectId)
+  if (existing) {
+    try {
+      await existing.setTimeout(DEFAULT_TIMEOUT_MS)
+      console.log(`[Sandbox] Reusing existing sandbox: ${existing.sandboxId}`)
+      return existing
+    } catch (error) {
+      console.log(`[Sandbox] Existing sandbox expired or unreachable, removing from cache:`, error)
+      activeSandboxes.delete(projectId)
+    }
+  }
+
+  // 2. Try to reconnect using sandbox ID from database
+  const dbSandboxId = await getSandboxIdFromDatabase(projectId)
+  let needsRestore = false
+
+  if (dbSandboxId) {
+    const reconnected = await tryReconnectSandbox(dbSandboxId, projectId, {
+      clearDatabaseOnFailure: true,
+      persistDatabaseMappingOnSuccess: false,
+    })
+
+    if (reconnected) {
+      console.log(`[Sandbox] Successfully reconnected to sandbox: ${dbSandboxId}`)
+      if (restoreFromSnapshot) {
+        await restoreSnapshotIfPresent(projectId, reconnected)
+      }
+      return reconnected
+    }
+
+    console.log(`[Sandbox] Failed to reconnect, will create new sandbox and restore files`)
+    needsRestore = restoreFromSnapshot
+  }
+
+  // 3. Create new sandbox if reconnect path did not succeed
+  try {
+    console.log(
+      `[Sandbox] Creating new sandbox for project ${projectId}${template ? ` with template: ${template}` : ""}${preferAutoPause ? " (auto-pause preferred)" : ""}`
+    )
+
+    const sandbox = await createNewSandbox(projectId, template, preferAutoPause)
+
+    activeSandboxes.set(projectId, sandbox)
+    await saveSandboxIdToDatabase(projectId, sandbox.sandboxId)
+    connectionAttempts.delete(sandbox.sandboxId)
+    updateSandboxActivity(projectId)
+
+    if (template) {
+      await cleanupTemplateArtifacts(sandbox)
+    }
+
+    if (needsRestore) {
+      await restoreSnapshotIfPresent(projectId, sandbox)
+    }
+
+    return sandbox
+  } catch (error) {
+    console.error(`[Sandbox] Failed to create E2B sandbox for project ${projectId}:`, error)
+    throw new Error(`Sandbox creation failed: ${error instanceof Error ? error.message : "Unknown error"}`)
+  }
 }
 
 // Progress callback for streaming operations
@@ -418,110 +589,11 @@ export async function createSandbox(
 ): Promise<Sandbox> {
   const { restoreFromSnapshot = true } = options || {}
   console.log(`[Sandbox] createSandbox called for projectId: ${projectId}`)
-
-  // 1. Check if sandbox already exists in memory for this project
-  const existing = activeSandboxes.get(projectId)
-  if (existing) {
-    try {
-      // Verify sandbox is still alive by extending timeout
-      await existing.setTimeout(DEFAULT_TIMEOUT_MS)
-      console.log(`[Sandbox] Reusing existing sandbox: ${existing.sandboxId}`)
-      return existing
-    } catch (error) {
-      // Sandbox expired or errored, remove from cache
-      console.log(`[Sandbox] Existing sandbox expired or unreachable, removing from cache:`, error)
-      activeSandboxes.delete(projectId)
-    }
-  }
-
-  // 2. Try to reconnect using sandbox ID from database
-  // This handles the case where the sandbox was created in a different API route invocation
-  const dbSandboxId = await getSandboxIdFromDatabase(projectId)
-  console.log(`[Sandbox] Database sandbox ID for ${projectId}: ${dbSandboxId || 'none'}`)
-
-  // Track if we need to restore (reconnection failed but we had a previous sandbox)
-  let needsRestore = false
-
-  if (dbSandboxId) {
-    const reconnected = await tryReconnectSandbox(dbSandboxId, projectId)
-    if (reconnected) {
-      console.log(`[Sandbox] Successfully reconnected to sandbox: ${dbSandboxId}`)
-      // Even if reconnection succeeds, we should restore files if requested
-      // This handles the case where the sandbox exists but files were lost (e.g., template reset)
-      if (restoreFromSnapshot) {
-        const snapshot = await getProjectSnapshot(projectId)
-        if (snapshot && Object.keys(snapshot.files_snapshot).length > 0) {
-          console.log(`[Sandbox] Restoring files to reconnected sandbox to ensure content is current...`)
-          const restoreResult = await restoreFilesFromSnapshot(reconnected, snapshot)
-          console.log(`[Sandbox] Restore to reconnected sandbox complete: ${restoreResult.filesRestored} files`)
-        }
-      }
-      return reconnected
-    }
-    console.log(`[Sandbox] Failed to reconnect, will create new sandbox and restore files`)
-    needsRestore = restoreFromSnapshot // Only restore if reconnection failed (sandbox expired)
-  }
-
-  // 3. Create a new sandbox
-  // Use provided template ID, or fall back to env var, or use default
-  const template = templateId || CUSTOM_TEMPLATE_ID
-
-  try {
-    // Create new sandbox with configured timeout, optional template, and metadata
-    // E2B SDK v2 best practice: Use Sandbox.create() with metadata for tracking
-    const metadata: SandboxMetadata = {
-      projectId,
-      createdAt: new Date(),
-      template,
-      purpose: "website",
-    }
-
-    console.log(`[Sandbox] Creating new sandbox for project ${projectId}${template ? ` with template: ${template}` : ''}`)
-
-    const sandbox = template
-      ? await Sandbox.create(template, {
-        timeoutMs: DEFAULT_TIMEOUT_MS,
-        metadata: metadata as any, // E2B accepts Record<string, string>
-      })
-      : await Sandbox.create({
-        timeoutMs: DEFAULT_TIMEOUT_MS,
-        metadata: metadata as any,
-      })
-
-    activeSandboxes.set(projectId, sandbox)
-
-    // Persist sandbox ID to database for cross-route reconnection
-    await saveSandboxIdToDatabase(projectId, sandbox.sandboxId)
-
-    // Reset connection attempts for this sandbox
-    connectionAttempts.delete(sandbox.sandboxId)
-
-    // Update activity timestamp
-    updateSandboxActivity(projectId)
-
-    // Log template usage for debugging
-    console.log(`[Sandbox] Created NEW sandbox ${sandbox.sandboxId} for project ${projectId}${template ? ` using template: ${template}` : ''}`)
-
-    // Clean up template artifacts that might interfere with package installation
-    if (template) {
-      await cleanupTemplateArtifacts(sandbox)
-    }
-
-    // 4. Restore files from snapshot if this is a replacement for an expired sandbox
-    if (needsRestore) {
-      const snapshot = await getProjectSnapshot(projectId)
-      if (snapshot && Object.keys(snapshot.files_snapshot).length > 0) {
-        console.log(`[Sandbox] Restoring project files from snapshot...`)
-        const restoreResult = await restoreFilesFromSnapshot(sandbox, snapshot)
-        console.log(`[Sandbox] Restore complete: ${restoreResult.filesRestored} files, deps installed: ${restoreResult.dependenciesInstalled}`)
-      }
-    }
-
-    return sandbox
-  } catch (error) {
-    console.error(`[Sandbox] Failed to create E2B sandbox for project ${projectId}:`, error)
-    throw new Error(`Sandbox creation failed: ${error instanceof Error ? error.message : "Unknown error"}`)
-  }
+  return resolveSandbox(projectId, {
+    templateId,
+    restoreFromSnapshot,
+    preferAutoPause: false,
+  })
 }
 
 /**
@@ -548,7 +620,9 @@ export async function getSandbox(projectId: string): Promise<Sandbox | undefined
   // 2. Try to reconnect using sandbox ID from database
   const dbSandboxId = await getSandboxIdFromDatabase(projectId)
   if (dbSandboxId) {
-    const reconnected = await tryReconnectSandbox(dbSandboxId, projectId)
+    const reconnected = await tryReconnectSandbox(dbSandboxId, projectId, {
+      clearDatabaseOnFailure: false,
+    })
     if (reconnected) {
       // Update activity timestamp
       updateSandboxActivity(projectId)
@@ -647,13 +721,11 @@ export async function resumeSandbox(projectId: string): Promise<Sandbox | undefi
   }
 
   try {
-    // Connect to the paused sandbox (auto-resumes)
-    const sandbox = await Sandbox.connect(pausedInfo.sandboxId, {
+    const sandbox = await connectSandboxById(projectId, pausedInfo.sandboxId, {
       timeoutMs: DEFAULT_TIMEOUT_MS,
+      clearDatabaseOnFailure: true,
     })
 
-    // Update tracking
-    activeSandboxes.set(projectId, sandbox)
     pausedSandboxes.delete(projectId)
 
     console.log(`Sandbox resumed for project ${projectId}: ${sandbox.sandboxId}`)
@@ -671,65 +743,22 @@ export async function resumeSandbox(projectId: string): Promise<Sandbox | undefi
  * If the sandbox times out, it will automatically pause instead of being killed.
  *
  * @param projectId - Project ID
- * @param autoPause - Enable auto-pause on timeout (default: false)
+ * @param autoPause - Enable auto-pause on timeout (default: true)
  */
 export async function createSandboxWithAutoPause(
   projectId: string,
   autoPause: boolean = true
 ): Promise<Sandbox> {
-  // Check if we have a paused sandbox to resume
+  // Resume explicitly tracked paused sandbox first
   if (pausedSandboxes.has(projectId)) {
     const resumed = await resumeSandbox(projectId)
     if (resumed) return resumed
   }
 
-  // Check for existing active sandbox
-  const existing = activeSandboxes.get(projectId)
-  if (existing) {
-    try {
-      await existing.setTimeout(DEFAULT_TIMEOUT_MS)
-      return existing
-    } catch {
-      activeSandboxes.delete(projectId)
-    }
-  }
-
-  const template = CUSTOM_TEMPLATE_ID
-  const metadata: SandboxMetadata = {
-    projectId,
-    createdAt: new Date(),
-    template,
-    purpose: "website",
-  }
-
-  try {
-    // Try to use beta create with auto-pause
-    if (autoPause && typeof Sandbox.betaCreate === "function") {
-      const sandbox = template
-        ? await Sandbox.betaCreate(template, {
-          timeoutMs: DEFAULT_TIMEOUT_MS,
-          autoPause: true,
-          metadata: metadata as any,
-        })
-        : await Sandbox.betaCreate({
-          timeoutMs: DEFAULT_TIMEOUT_MS,
-          autoPause: true,
-          metadata: metadata as any,
-        })
-
-      activeSandboxes.set(projectId, sandbox)
-      // Persist sandbox ID to database for cross-route reconnection
-      await saveSandboxIdToDatabase(projectId, sandbox.sandboxId)
-      console.log(`Created sandbox with auto-pause for project ${projectId}`)
-      return sandbox
-    }
-
-    // Fall back to regular create
-    return createSandbox(projectId)
-  } catch (error) {
-    console.warn("Failed to create sandbox with auto-pause, falling back:", error)
-    return createSandbox(projectId)
-  }
+  return resolveSandbox(projectId, {
+    restoreFromSnapshot: true,
+    preferAutoPause: autoPause,
+  })
 }
 
 /**
@@ -771,15 +800,14 @@ export async function getCodeInterpreterSandbox(projectId: string): Promise<Code
   }
 
   // Create new code interpreter sandbox
-  const metadata: SandboxMetadata = {
+  const metadata = buildSandboxMetadata({
     projectId,
-    createdAt: new Date(),
     purpose: "code-execution",
-  }
+  })
 
   const sandbox = await CodeInterpreter.create({
     timeoutMs: DEFAULT_TIMEOUT_MS,
-    metadata: metadata as any,
+    metadata,
   }) as CodeInterpreterSandbox
 
   codeInterpreterSandboxes.set(projectId, sandbox)
