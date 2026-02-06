@@ -1,11 +1,11 @@
 import { z } from "zod"
 import type { UIMessage } from "ai"
+import { normalizeSandboxPreviewUrl } from "@/lib/utils/url"
 
 // Zod schemas for tool outputs
 const ToolOutputSchema = z.object({
   success: z.boolean().optional(),
   previewUrl: z.string().optional(),
-  url: z.string().optional(),
   projectName: z.string().optional(),
   sandboxId: z.string().optional(),
   filesReady: z.boolean().optional(),
@@ -75,10 +75,12 @@ export function parseToolOutputs(
       // Mark as processed
       processedIds.add(toolCallId)
 
-      // Extract preview URL (prefer previewUrl over url)
-      const previewUrl = output.previewUrl || output.url
-      if (previewUrl) {
-        latestPreviewUrl = previewUrl
+      // Extract preview URL only from explicit previewUrl field
+      if (output.previewUrl) {
+        const normalizedPreviewUrl = normalizeSandboxPreviewUrl(output.previewUrl)
+        if (normalizedPreviewUrl) {
+          latestPreviewUrl = normalizedPreviewUrl
+        }
       }
 
       // Extract files ready info

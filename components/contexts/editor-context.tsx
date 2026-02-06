@@ -12,6 +12,7 @@ import {
 import { useProject } from "@/hooks/use-projects";
 import { useDevServer } from "@/hooks/use-dev-server";
 import { generatePlaceholderImage } from "@/lib/utils/screenshot";
+import { normalizeSandboxPreviewUrl } from "@/lib/utils/url";
 import { type ModelProvider } from "@/lib/ai/agent";
 import type { EditorView } from "@/components/editor-header";
 import type { ChatPanelHandle } from "@/components/chat-panel";
@@ -127,6 +128,7 @@ export function EditorProvider({
   const devServerStartedRef = useRef<string | null>(null);
   const validatingSandboxRef = useRef(false);
   const restorationAttemptedRef = useRef(false);
+  const invalidUrlCleanupRef = useRef<Set<string>>(new Set());
 
   // ---- Debounced URL updater ----
   const updateSandboxUrlDebounced = useCallback(
@@ -159,8 +161,14 @@ export function EditorProvider({
 
   const handleDevServerReady = useCallback(
     (url: string) => {
-      console.log("[EditorProvider] onReady callback triggered with url:", url);
-      updateSandboxUrlDebounced(url, { stopPolling: true });
+      const normalizedUrl = normalizeSandboxPreviewUrl(url);
+      if (!normalizedUrl) return;
+
+      console.log(
+        "[EditorProvider] onReady callback triggered with url:",
+        normalizedUrl,
+      );
+      updateSandboxUrlDebounced(normalizedUrl, { stopPolling: true });
     },
     [updateSandboxUrlDebounced],
   );
@@ -173,12 +181,16 @@ export function EditorProvider({
 
   const handleDevServerStatusChange = useCallback(
     (status: { url: string | null }) => {
-      if (!status.url || status.url === sandboxUrlRef.current) return;
+      if (!status.url) return;
+
+      const normalizedUrl = normalizeSandboxPreviewUrl(status.url);
+      if (!normalizedUrl || normalizedUrl === sandboxUrlRef.current) return;
+
       console.log(
         "[EditorProvider] Syncing sandbox URL from status:",
-        status.url,
+        normalizedUrl,
       );
-      updateSandboxUrlDebounced(status.url, { stopPolling: true });
+      updateSandboxUrlDebounced(normalizedUrl, { stopPolling: true });
     },
     [updateSandboxUrlDebounced],
   );
@@ -236,25 +248,76 @@ export function EditorProvider({
         titleGeneratedRef.current = true;
       }
       if (project.sandbox_url && !validatingSandboxRef.current) {
-        lastSavedUrlRef.current = project.sandbox_url;
+        const normalizedSavedUrl = normalizeSandboxPreviewUrl(
+          project.sandbox_url,
+        );
+        if (!normalizedSavedUrl && !invalidUrlCleanupRef.current.has(project.id)) {
+          invalidUrlCleanupRef.current.add(project.id);
+          console.warn(
+            "[EditorProvider] Clearing invalid saved sandbox URL:",
+            project.sandbox_url,
+          );
+          fetch(`/api/projects/${project.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sandbox_url: null }),
+          }).catch((error) => {
+            console.warn(
+              "[EditorProvider] Failed to clear invalid sandbox URL:",
+              error,
+            );
+          });
+        }
+        if (normalizedSavedUrl) {
+          lastSavedUrlRef.current = normalizedSavedUrl;
+        }
+
         console.log(
           "[EditorProvider] Validating saved sandbox URL:",
-          project.sandbox_url,
+          normalizedSavedUrl || project.sandbox_url,
         );
         validatingSandboxRef.current = true;
 
-        fetch(`/api/projects/${project.id}/restore`)
-          .then((res) => res.json())
-          .then((data) => {
-            if (data.canRestore && data.fileCount > 0) {
+        Promise.all([
+          fetch(`/api/projects/${project.id}/restore`).then((res) => res.json()),
+          fetch(`/api/sandbox/${project.id}/dev-server`, {
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-cache, no-store, must-revalidate",
+              Pragma: "no-cache",
+            },
+          })
+            .then((res) => (res.ok ? res.json() : null))
+            .catch(() => null),
+        ])
+          .then(([restoreData, serverStatus]) => {
+            const runningUrl =
+              serverStatus?.isRunning && serverStatus?.url
+                ? normalizeSandboxPreviewUrl(serverStatus.url)
+                : null;
+
+            if (runningUrl) {
               console.log(
-                "[EditorProvider] Project has saved files, triggering restoration...",
+                "[EditorProvider] Using active dev-server URL from status:",
+                runningUrl,
               );
+              setSandboxUrl(runningUrl);
+              validatingSandboxRef.current = false;
+              return;
+            }
+
+            if (restoreData?.canRestore && restoreData?.fileCount > 0) {
+              console.log(
+                "[EditorProvider] Saved URL is stale; restoring sandbox from snapshot...",
+              );
+              setSandboxUrl(null);
             } else {
               console.log(
                 "[EditorProvider] No files to restore, using saved sandbox URL",
               );
-              setSandboxUrl(project.sandbox_url);
+              if (normalizedSavedUrl) {
+                setSandboxUrl(normalizedSavedUrl);
+              }
             }
             validatingSandboxRef.current = false;
           })
@@ -262,12 +325,14 @@ export function EditorProvider({
             console.log(
               "[EditorProvider] Validation failed, using saved sandbox URL",
             );
-            setSandboxUrl(project.sandbox_url);
+            if (normalizedSavedUrl) {
+              setSandboxUrl(normalizedSavedUrl);
+            }
             validatingSandboxRef.current = false;
           });
       }
     }
-  }, [project]);
+  }, [project, updateProject]);
 
   // Restore sandbox when opening an existing project without a working preview
   const restoreSandbox = useCallback(async () => {
@@ -687,10 +752,15 @@ export function EditorProvider({
 
   const handleSandboxUrlUpdate = useCallback(
     (url: string | null) => {
-      console.log("[EditorProvider] Sandbox URL update requested:", url);
-      updateSandboxUrlDebounced(url, { stopPolling: !!url });
+      const normalizedUrl = url ? normalizeSandboxPreviewUrl(url) : null;
 
-      if (!url) return;
+      console.log(
+        "[EditorProvider] Sandbox URL update requested:",
+        normalizedUrl || url,
+      );
+      updateSandboxUrlDebounced(normalizedUrl, { stopPolling: !!normalizedUrl });
+
+      if (!normalizedUrl) return;
 
       setProjectName((prevProjectName) => {
         if (!prevProjectName.includes("Untitled")) return prevProjectName;

@@ -16,8 +16,6 @@ import { hasConfiguredTemplate } from "@/lib/e2b/template-config";
 import { scaffoldNextProject } from "../helpers";
 import { SandboxError } from "../errors/web-builder-errors";
 
-const projectDir = getProjectDir();
-
 /**
  * Creates project initialization tools.
  *
@@ -53,6 +51,7 @@ export function createProjectInitTools(projectId: string) {
 
       execute: async ({ name, description, useTemplate }) => {
         const startTime = new Date();
+        const projectDir = getProjectDir();
         const hasTemplate = useTemplate && hasConfiguredTemplate();
 
         console.log(

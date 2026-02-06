@@ -171,7 +171,7 @@ export function createBuildTools(projectId: string) {
           if (wasRunning) {
             await startBackgroundProcess(
               sandbox,
-              "bun run dev > /tmp/server.log 2>&1",
+              "bun run dev --hostname 0.0.0.0 > /tmp/server.log 2>&1",
               {
                 workingDir: projectDir,
                 projectId,

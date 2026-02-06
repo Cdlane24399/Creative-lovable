@@ -68,7 +68,7 @@ describe("parseToolOutputs", () => {
             toolCallId: "t1",
             state: "output-available",
             output: JSON.stringify({
-              previewUrl: "https://example.test",
+              previewUrl: "https://3000-sandboxid.e2b.app",
             }),
           },
         ],
@@ -76,6 +76,98 @@ describe("parseToolOutputs", () => {
     ] as any
 
     const result = parseToolOutputs(messages, processedIds)
-    expect(result.latestPreviewUrl).toBe("https://example.test")
+    expect(result.latestPreviewUrl).toBe("https://3000-sandboxid.e2b.app")
+  })
+
+  it("normalizes host-only preview URLs to https", () => {
+    const processedIds = new Set<string>()
+    const messages = [
+      {
+        id: "m1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-runCommand",
+            toolCallId: "t1",
+            state: "output-available",
+            output: {
+              previewUrl: "3000-sandboxid.e2b.app",
+            },
+          },
+        ],
+      },
+    ] as any
+
+    const result = parseToolOutputs(messages, processedIds)
+    expect(result.latestPreviewUrl).toBe("https://3000-sandboxid.e2b.app")
+  })
+
+  it("normalizes localhost preview URLs to http", () => {
+    const processedIds = new Set<string>()
+    const messages = [
+      {
+        id: "m1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-runCommand",
+            toolCallId: "t1",
+            state: "output-available",
+            output: {
+              previewUrl: "localhost:3000",
+            },
+          },
+        ],
+      },
+    ] as any
+
+    const result = parseToolOutputs(messages, processedIds)
+    expect(result.latestPreviewUrl).toBe("http://localhost:3000")
+  })
+
+  it("ignores invalid preview URLs", () => {
+    const processedIds = new Set<string>()
+    const messages = [
+      {
+        id: "m1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-runCommand",
+            toolCallId: "t1",
+            state: "output-available",
+            output: {
+              previewUrl: "https://hello-world-test.lovable.app",
+            },
+          },
+        ],
+      },
+    ] as any
+
+    const result = parseToolOutputs(messages, processedIds)
+    expect(result.latestPreviewUrl).toBeNull()
+  })
+
+  it("ignores generic url field even when present", () => {
+    const processedIds = new Set<string>()
+    const messages = [
+      {
+        id: "m1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-runCommand",
+            toolCallId: "t1",
+            state: "output-available",
+            output: {
+              url: "https://3000-sandboxid.e2b.app",
+            },
+          },
+        ],
+      },
+    ] as any
+
+    const result = parseToolOutputs(messages, processedIds)
+    expect(result.latestPreviewUrl).toBeNull()
   })
 })

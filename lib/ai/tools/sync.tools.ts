@@ -12,8 +12,6 @@ import { getProjectDir } from "@/lib/e2b/project-dir"
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider"
 import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager"
 
-const projectDir = getProjectDir()
-
 /**
  * Creates sync tools for database persistence.
  *
@@ -43,6 +41,7 @@ export function createSyncTools(projectId: string) {
 
       execute: async ({ retryAttempts }) => {
         const startTime = new Date()
+        const projectDir = getProjectDir()
         const ctx = getAgentContext(projectId)
         const projectName = ctx.projectName || "project"
 

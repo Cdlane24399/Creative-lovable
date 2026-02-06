@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { ArrowRight, Clock, Star, Folder, Grid3X3, Plus, Loader2, Trash2, ExternalLink } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useProjects } from "@/hooks/use-projects"
+import { normalizeSandboxPreviewUrl } from "@/lib/utils/url"
 import type { ProjectCardData } from "@/lib/db/types"
 
 // Template data (static)
@@ -88,6 +89,50 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
   const handleToggleStar = async (e: React.MouseEvent, projectId: string) => {
     e.stopPropagation()
     await toggleStarred(projectId)
+  }
+
+  const handleOpenPreview = async (
+    e: React.MouseEvent,
+    projectId: string,
+    fallbackUrl: string | null,
+  ) => {
+    e.stopPropagation()
+
+    try {
+      const res = await fetch(`/api/sandbox/${projectId}/dev-server`, {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          Pragma: "no-cache",
+        },
+      })
+
+      if (res.ok) {
+        const status = await res.json()
+        const runningUrl =
+          status?.isRunning && status?.url
+            ? normalizeSandboxPreviewUrl(status.url)
+            : null
+
+        if (runningUrl) {
+          window.open(runningUrl, "_blank")
+          return
+        }
+      }
+    } catch {
+      // Fall through to fallback behavior
+    }
+
+    const normalizedFallback = fallbackUrl
+      ? normalizeSandboxPreviewUrl(fallbackUrl)
+      : null
+    if (normalizedFallback) {
+      window.open(normalizedFallback, "_blank")
+      return
+    }
+
+    // If no active preview is available, open editor so it can restore/start server.
+    onNavigateToEditor(projectId)
   }
 
   return (
@@ -269,16 +314,19 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                               />
                             </button>
                             {project.sandboxUrl ? (
-                              <a
-                                href={project.sandboxUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
+                              <button
+                                onClick={(e) =>
+                                  handleOpenPreview(
+                                    e,
+                                    project.id,
+                                    project.sandboxUrl,
+                                  )
+                                }
                                 className="p-2 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 transition-colors"
                                 title="Open preview"
                               >
                                 <ExternalLink className="w-4 h-4 text-zinc-300" />
-                              </a>
+                              </button>
                             ) : null}
                             <button
                               onClick={(e) => handleDeleteProject(e, project.id)}

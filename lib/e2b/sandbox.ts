@@ -3,6 +3,7 @@ import { getSandboxStateMachine } from "./sandbox-state-machine"
 import { getProjectDir } from "./project-dir"
 import { buildSandboxMetadata } from "./sandbox-metadata"
 import { getConfiguredTemplate } from "./template-config"
+import { normalizeSandboxPreviewUrl } from "../utils/url"
 
 // Type alias for CodeInterpreter sandbox
 type CodeInterpreterSandbox = import("@e2b/code-interpreter").Sandbox
@@ -1270,8 +1271,13 @@ export async function listFiles(sandbox: Sandbox, path: string = "/home/user") {
  */
 export function getHostUrl(sandbox: Sandbox, port: number = 3000): string {
   const host = sandbox.getHost(port)
-  // E2B returns just the hostname, we need to add the protocol
-  return `https://${host}`
+  const normalized = normalizeSandboxPreviewUrl(host)
+
+  if (!normalized) {
+    throw new Error(`Invalid sandbox host returned by E2B for port ${port}: ${host}`)
+  }
+
+  return normalized
 }
 
 /**
@@ -1319,6 +1325,48 @@ export async function waitForDevServer(
 }
 
 /**
+ * Verify that an HTTP server on a port actually responds.
+ * A listening socket alone is not sufficient: stale/hung processes can bind
+ * the port while never serving requests.
+ */
+export async function checkDevServerHttp(
+  sandbox: Sandbox | CodeInterpreterSandbox,
+  port: number,
+): Promise<{ ok: boolean; httpCode: string }> {
+  const normalizeHttpCode = (raw: string): string => {
+    const trimmed = raw.trim()
+    const match = trimmed.match(/(\d{3})(?!.*\d)/)
+    return match ? match[1] : "000"
+  }
+
+  // Prefer curl when available because it's lightweight and reliable.
+  try {
+    const curlCheck = await sandbox.commands.run(
+      `code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:${port} 2>/dev/null || true)"; printf '%s' "$code"`,
+      { timeoutMs: 7000 },
+    )
+    const httpCode = normalizeHttpCode(curlCheck.stdout)
+    if (httpCode !== "000") {
+      return { ok: true, httpCode }
+    }
+  } catch {
+    // Fall through to bun/node fallback
+  }
+
+  // Fallback when curl is unavailable: try bun fetch.
+  try {
+    const bunCheck = await sandbox.commands.run(
+      `bun -e "try{const r=await fetch('http://127.0.0.1:${port}');console.log(String(r.status))}catch{console.log('000')}"`,
+      { timeoutMs: 7000 },
+    )
+    const httpCode = normalizeHttpCode(bunCheck.stdout)
+    return { ok: httpCode !== "000", httpCode }
+  } catch {
+    return { ok: false, httpCode: "000" }
+  }
+}
+
+/**
  * Check if a dev server is running and listening on any of the common ports.
  * Uses `ss -tln` for fast, reliable port-listening detection.
  * This works in any sandbox environment without depending on curl or bun fetch.
@@ -1339,7 +1387,10 @@ export async function checkDevServerStatus(
     )
     const detectedPort = parseInt(result.stdout.trim(), 10)
     if (detectedPort > 0) {
-      return { isRunning: true, port: detectedPort, httpCode: "listening" }
+      const httpCheck = await checkDevServerHttp(sandbox, detectedPort)
+      if (httpCheck.ok) {
+        return { isRunning: true, port: detectedPort, httpCode: httpCheck.httpCode }
+      }
     }
   } catch {
     // ss might not be available, try /dev/tcp fallback
@@ -1350,7 +1401,10 @@ export async function checkDevServerStatus(
           { timeoutMs: 2000 }
         )
         if (result.stdout.trim() === "open") {
-          return { isRunning: true, port, httpCode: "listening" }
+          const httpCheck = await checkDevServerHttp(sandbox, port)
+          if (httpCheck.ok) {
+            return { isRunning: true, port, httpCode: httpCheck.httpCode }
+          }
         }
       } catch {
         continue

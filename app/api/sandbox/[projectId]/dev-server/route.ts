@@ -15,6 +15,7 @@ import {
   startBackgroundProcess,
   killBackgroundProcess,
   checkDevServerStatus,
+  checkDevServerHttp,
 } from "@/lib/e2b/sandbox"
 import { getProjectDir } from "@/lib/e2b/project-dir"
 import { withAuth } from "@/lib/auth"
@@ -356,7 +357,7 @@ export const POST = withAuth(async (
 
       // Start the dev server in background
       console.log("[dev-server POST] Starting background process...")
-      await startBackgroundProcess(sandbox, "bun run dev > /tmp/server.log 2>&1", {
+      await startBackgroundProcess(sandbox, "bun run dev --hostname 0.0.0.0 > /tmp/server.log 2>&1", {
         workingDir: projectDir,
         projectId,
       })
@@ -397,10 +398,14 @@ export const POST = withAuth(async (
             { timeoutMs: 2000 }
           )
           if (portCheck.stdout.trim() === "listening") {
-            console.log(`[dev-server POST] Server ready on port ${logPort} (Next.js Ready + port listening)`)
-            serverReady = true
-            actualPort = logPort
-            break
+            // Critical: ensure HTTP is responsive, not just socket-listening.
+            const httpCheck = await checkDevServerHttp(sandbox, logPort)
+            if (httpCheck.ok) {
+              console.log(`[dev-server POST] Server ready on port ${logPort} (HTTP ${httpCheck.httpCode})`)
+              serverReady = true
+              actualPort = logPort
+              break
+            }
           }
         }
 

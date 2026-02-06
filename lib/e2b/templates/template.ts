@@ -15,6 +15,6 @@ export const template = Template()
   )
   .setWorkdir("/home/user")
   .setStartCmd(
-    "bun --bun run dev --turbo",
+    "bun --bun run dev --turbo --hostname 0.0.0.0",
     waitForURL("http://localhost:3000"),
   );

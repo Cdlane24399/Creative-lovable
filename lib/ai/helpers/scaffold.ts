@@ -25,7 +25,7 @@ export async function scaffoldNextProject(
     version: "0.1.0",
     private: true,
     scripts: {
-      dev: "next dev -p 3000",
+      dev: "next dev -p 3000 --hostname 0.0.0.0",
       build: "next build",
       start: "next start",
       lint: "next lint",
