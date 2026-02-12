@@ -82,9 +82,9 @@ import {
  * Creates context-aware tools for the web builder agent.
  * Each tool automatically tracks execution in the AgentContext.
  *
- * Note: initializeProject and syncProject are NOT exposed to the agent.
+ * Note: initializeProject is NOT exposed to the agent.
  * Project initialization happens automatically in withSandbox (sandbox-provider.ts).
- * File sync happens automatically after writes and at session end.
+ * syncProject remains available for explicit persistence when needed.
  *
  * @param projectId - Unique identifier for the project/session
  * @returns Object containing all available tools

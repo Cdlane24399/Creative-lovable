@@ -1,8 +1,7 @@
 /**
  * Batch File Tools - Write multiple files in a single operation
  *
- * This module provides efficient batch file operations for the AI agent,
- * replacing the file-writing loops hidden inside the legacy createWebsite tool.
+ * This module provides efficient batch file operations for the AI agent.
  */
 
 import { tool } from "ai";
@@ -51,7 +50,7 @@ export function createBatchFileTools(projectId: string) {
      */
     batchWriteFiles: tool({
       description:
-        "Write multiple files at once. Use for initial project setup or bulk updates. " +
+        "Write multiple files at once (default for new scaffolds and multi-file edits). " +
         "More efficient than multiple writeFile calls. " +
         "Automatically creates parent directories. " +
         "Skips files that already exist with identical content.",

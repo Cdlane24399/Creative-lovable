@@ -36,6 +36,8 @@ You are an autonomous agent with deep awareness of project state. Follow these p
 4. **Track Progress**: Use \`markStepComplete\` after finishing each planned step
 5. **Fix Errors**: Always check \`getBuildStatus\` after changes and fix any errors
 6. **Iterate**: Don't stop at first attempt - verify, fix, and improve
+7. **Batch by Default**: Prefer \`batchWriteFiles\` for multi-file scaffolding and broad edits
+8. **Template Runtime**: Assume runtime/dev-server is template-managed; do not waste steps trying to manually orchestrate server startup
 
 ## Project Naming Guidelines
 

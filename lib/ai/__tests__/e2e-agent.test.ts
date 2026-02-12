@@ -53,14 +53,15 @@ function generateUUID(): string {
   })
 }
 
-const TEST_PROMPT = `Use the createWebsite tool right now to build a counter app called "counter-app" with:
+const TEST_PROMPT = `Build a counter app called "counter-app" with:
 - A large number display showing the current count
 - Increment and decrement buttons
 - A reset button
 - Dark theme styling
 - Smooth animations
 
-Do not explain - immediately use the createWebsite tool.`
+Use the modern tool flow: initializeProject if needed, then write files with batchWriteFiles or writeFile, and sync project changes.
+Do not explain - immediately perform the tool calls.`
 
 // Parse AI SDK SSE stream
 async function parseStreamResponse(response: Response): Promise<{
@@ -263,17 +264,46 @@ async function testModel(
     console.log(`🔧 Tool calls made: ${toolCalls.length}`)
 
     // Check what tools were called
-    const createWebsiteCalls = toolCalls.filter(t => t.name === "createWebsite")
+    const initializeProjectCalls = toolCalls.filter(t => t.name === "initializeProject")
+    const batchWriteFilesCalls = toolCalls.filter(t => t.name === "batchWriteFiles")
     const writeFileCalls = toolCalls.filter(t => t.name === "writeFile")
 
-    if (createWebsiteCalls.length > 0) {
-      console.log(`  ✅ createWebsite called ${createWebsiteCalls.length} time(s)`)
-      result.sandboxCreated = true
+    if (initializeProjectCalls.length > 0) {
+      console.log(`  ✅ initializeProject called ${initializeProjectCalls.length} time(s)`)
     }
+
+    if (batchWriteFilesCalls.length > 0) {
+      console.log(`  ✅ batchWriteFiles called ${batchWriteFilesCalls.length} time(s)`)
+    }
+
+    const batchWritePaths: string[] = []
+    for (const call of batchWriteFilesCalls) {
+      const files = call.args.files
+      if (!Array.isArray(files)) continue
+      for (const file of files) {
+        if (
+          typeof file === "object" &&
+          file !== null &&
+          "path" in file &&
+          typeof (file as { path: unknown }).path === "string"
+        ) {
+          batchWritePaths.push((file as { path: string }).path)
+        }
+      }
+    }
+
+    const writeFilePaths = writeFileCalls
+      .map((t) => t.args.path)
+      .filter((path): path is string => typeof path === "string")
+
+    result.filesCreated = [...new Set([...batchWritePaths, ...writeFilePaths])]
+    result.sandboxCreated =
+      initializeProjectCalls.length > 0 ||
+      batchWriteFilesCalls.length > 0 ||
+      writeFileCalls.length > 0
 
     if (writeFileCalls.length > 0) {
       console.log(`  ✅ writeFile called ${writeFileCalls.length} time(s)`)
-      result.filesCreated = writeFileCalls.map(t => t.args.path as string)
     }
 
     // Step 2: Wait for dev server to start
@@ -349,7 +379,7 @@ async function runE2ETests() {
   const tableRows = results.map(r => ({
     Model: r.model,
     Success: r.success ? "✅" : "❌",
-    Sandbox: r.sandboxCreated ? "✅" : "❌",
+    "Project Tools": r.sandboxCreated ? "✅" : "❌",
     "Dev Server": r.devServerRunning ? "✅" : "❌",
     Duration: `${(r.duration / 1000).toFixed(1)}s`,
     "Preview URL": r.previewUrl || "N/A",

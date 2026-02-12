@@ -1,23 +1,23 @@
 /**
  * E2B template environment configuration.
  *
- * Supports both variable names for backward compatibility:
- * - E2B_TEMPLATE (preferred)
- * - E2B_TEMPLATE_ID (legacy)
+ * Fragments-style approach: a single template env var (`E2B_TEMPLATE`) with a
+ * legacy fallback (`E2B_TEMPLATE_ID`) for compatibility.
  */
 
-const TEMPLATE_ENV_KEYS = ["E2B_TEMPLATE", "E2B_TEMPLATE_ID"] as const;
+const TEMPLATE_ENV_KEY = "E2B_TEMPLATE";
+const LEGACY_TEMPLATE_ENV_KEY = "E2B_TEMPLATE_ID";
 
 /**
  * Returns the configured E2B template identifier/name, if any.
  */
 export function getConfiguredTemplate(): string | undefined {
-  for (const key of TEMPLATE_ENV_KEYS) {
-    const value = process.env[key]?.trim();
-    if (value) {
-      return value;
-    }
-  }
+  const preferred = process.env[TEMPLATE_ENV_KEY]?.trim();
+  if (preferred) return preferred;
+
+  const legacy = process.env[LEGACY_TEMPLATE_ENV_KEY]?.trim();
+  if (legacy) return legacy;
+
   return undefined;
 }
 
@@ -28,4 +28,4 @@ export function hasConfiguredTemplate(): boolean {
   return !!getConfiguredTemplate();
 }
 
-export { TEMPLATE_ENV_KEYS };
+export { TEMPLATE_ENV_KEY, LEGACY_TEMPLATE_ENV_KEY };

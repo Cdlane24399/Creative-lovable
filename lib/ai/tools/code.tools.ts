@@ -17,7 +17,7 @@ import {
   executeCode as executeCodeInSandbox,
   type CodeLanguage,
 } from "@/lib/e2b/sandbox";
-import { getSandboxLazy } from "@/lib/e2b/sandbox-provider";
+import { getCurrentSandboxForProject } from "@/lib/e2b/sandbox-provider";
 import { createErrorResult, formatDuration } from "../utils";
 
 /**
@@ -60,11 +60,12 @@ export function createCodeTools(projectId: string) {
 
         try {
           // Use Code Interpreter for Python if available and enabled
-          // For non-Python or when CodeInterpreter is disabled, use the shared sandbox context
+          // For non-Python or when Code Interpreter is disabled, use the
+          // context-bound sandbox for this project (deterministic access).
           const sandbox =
             useCodeInterpreter && language === "python"
               ? await getCodeInterpreterSandbox(projectId)
-              : await getSandboxLazy(projectId);
+              : getCurrentSandboxForProject(projectId);
 
           const result = await executeCodeInSandbox(
             sandbox,

@@ -49,13 +49,6 @@ export const uiMessageRoleSchema = z.enum(['user', 'assistant', 'system'])
 // =============================================================================
 
 /**
- * Base part schema - all parts have a type
- */
-const basePartSchema = z.object({
-  type: z.string(),
-})
-
-/**
  * Text part schema - { type: 'text', text: string }
  */
 export const textPartSchema = z.object({
@@ -140,7 +133,7 @@ export const flexibleMessageSchema = z.union([
   uiMessageSchema,
   // Legacy format (for backward compatibility)
   chatMessageSchema.transform((message) => ({
-    id: message.id || '',
+    id: message.id || `legacy-${Math.random().toString(36).slice(2, 10)}`,
     ...message,
     parts: [{ type: 'text' as const, text: message.content }],
   })),

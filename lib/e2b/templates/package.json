@@ -1,8 +1,8 @@
 {
-  "name": "nextjs-app-bun-template",
+  "name": "nextjs-developer-template",
   "version": "1.0.0",
   "type": "module",
-  "description": "E2B template build scripts for a simple Bun-based Next.js + shadcn setup",
+  "description": "E2B template build scripts for the nextjs-developer Node/npm Next.js + shadcn runtime",
   "scripts": {
     "build": "tsx build.ts"
   },

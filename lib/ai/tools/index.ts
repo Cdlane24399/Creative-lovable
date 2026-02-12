@@ -14,7 +14,6 @@
  * - ProjectInit: Tools for initializing new projects
  * - Sync: Tools for database persistence
  * - Build: Tools for building and bundling applications
- * - Website: Tools for website scaffolding (DEPRECATED - use ProjectInit + BatchFile)
  * - Code: Tools for code analysis and transformation
  */
 
@@ -26,7 +25,5 @@ export { createProjectTools } from "./project.tools";
 export { createProjectInitTools } from "./project-init.tools";
 export { createSyncTools } from "./sync.tools";
 export { createBuildTools } from "./build.tools";
-/** @deprecated Use createProjectInitTools + createBatchFileTools instead */
-export { createWebsiteTools } from "./website.tools";
 export { createCodeTools } from "./code.tools";
 export { createSuggestionTools } from "./suggestion.tools";

@@ -1,8 +1,7 @@
 /**
  * Project Initialization Tools - Scaffold new projects from templates
  *
- * This module provides focused tools for initializing new projects
- * without the complexity of the legacy createWebsite god tool.
+ * This module provides focused tools for initializing new projects.
  */
 
 import { tool } from "ai";

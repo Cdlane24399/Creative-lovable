@@ -1,15 +1,15 @@
-# E2B Custom Template
+# E2B Next.js Developer Template
 
 This directory contains the E2B template definition used by the app sandbox runtime.
 
 ## What This Template Builds
 
-The template is intentionally simple and Bun-based:
+The template builds the `nextjs-developer` runtime image:
 
-- Base image: Bun `1.3`
-- Scaffolds a Next.js app (`create-next-app` with TypeScript, App Router, Tailwind, Turbopack)
-- Initializes `shadcn/ui` and adds all components
-- Starts the dev server on `http://localhost:3000`
+- Base image: Node `24-slim`
+- Scaffolds with `create-next-app@latest` (TypeScript + App Router + Tailwind, npm)
+- Initializes `shadcn/ui` defaults
+- Starts the dev server on `http://localhost:3000` via `npx next dev --turbo`
 
 Template definition: `template.ts`  
 Build script: `build.ts`
@@ -50,5 +50,7 @@ E2B_TEMPLATE=your-template-id
 
 1. Edit `template.ts`
 2. Rebuild: `pnpm template:build`
-3. Update `.env.local` with the newly printed template ID
+3. Update `.env.local` with the printed template ID (if it changed)
 4. Restart your dev server
+
+Important: Template changes take effect only after a rebuild. For the same template name, E2B typically keeps the same template ID and creates a new build revision; update `E2B_TEMPLATE` only if the build output prints a different ID.

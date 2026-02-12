@@ -2,6 +2,8 @@ import {
   convertToModelMessages,
   streamText,
   stepCountIs,
+  pruneMessages,
+  validateUIMessages,
   NoSuchToolError,
   InvalidToolInputError,
   type UIMessage,
@@ -83,6 +85,19 @@ const DEFAULT_ACTIVE_TOOLS: ToolName[] = [
   ...SUGGESTION_TOOLS,
 ];
 
+// New-system bootstrap: keep first step focused on planning + project scan + batch writes.
+const BOOTSTRAP_ACTIVE_TOOLS: ToolName[] = [
+  "analyzeProjectState",
+  "planChanges",
+  "getProjectStructure",
+  "readFile",
+  "batchWriteFiles",
+  "installPackage",
+  "getBuildStatus",
+  "syncProject",
+  "generateSuggestions",
+];
+
 // Export type for the chat messages
 export type ChatMessage = UIMessage;
 
@@ -130,14 +145,14 @@ export const POST = withAuth(async (req: Request) => {
       throw error;
     }
 
-    const messages = validatedRequest.messages as UIMessage[];
+    const rawMessages = validatedRequest.messages;
     const projectId = validatedRequest.projectId || DEFAULT_PROJECT_ID;
     const model = validatedRequest.model;
 
     log.info("Chat request received", {
       projectId,
       model,
-      messageCount: messages.length,
+      messageCount: rawMessages.length,
     });
 
     // Get services
@@ -153,8 +168,27 @@ export const POST = withAuth(async (req: Request) => {
     const modelKey = validModel as ModelKey; // All ModelProvider values are valid ModelKey values
     const modelSettings = MODEL_SETTINGS[validModel];
 
+    // Create context-aware tools for this project
+    const tools = createContextAwareTools(projectId);
+
+    let messages: UIMessage[];
+    try {
+      messages = await validateUIMessages<UIMessage>({
+        messages: rawMessages,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Invalid UI message format";
+      return createValidationErrorResponse(
+        new ValidationError(`Invalid UI messages: ${message}`, []),
+      );
+    }
+
     // Start independent async work early to reduce route-level waterfalls
-    const modelMessagesPromise = convertToModelMessages(messages);
+    const modelMessagesPromise = convertToModelMessages(
+      messages.map(({ id: _id, ...message }) => message),
+      { tools },
+    );
     const ensureProjectExistsPromise: Promise<void> =
       projectId && projectId !== DEFAULT_PROJECT_ID
         ? projectService
@@ -167,9 +201,6 @@ export const POST = withAuth(async (req: Request) => {
 
     // Convert messages for the model
     const modelMessages = await modelMessagesPromise;
-
-    // Create context-aware tools for this project
-    const tools = createContextAwareTools(projectId);
 
     // Generate enhanced system prompt with context awareness
     const systemPrompt = generateAgenticSystemPrompt(projectId, SYSTEM_PROMPT);
@@ -282,59 +313,25 @@ export const POST = withAuth(async (req: Request) => {
             // For longer agentic loops, compress conversation history
             // CRITICAL: Must preserve tool_use/tool_result pairs to avoid API errors
             if (stepMessages.length > compressionThreshold) {
-              console.log(
-                `[Step ${stepNumber}] Compressing conversation history (threshold: ${compressionThreshold}, model: ${validModel})`,
-              );
+              const keepWindow =
+                `before-last-${keepCount}-messages` as `before-last-${number}-messages`;
 
-              // Find a safe cut point that doesn't split tool pairs
-              let startIndex = stepMessages.length - keepCount;
+              const prunedMessages = pruneMessages({
+                messages: stepMessages,
+                toolCalls: keepWindow,
+                reasoning: "before-last-message",
+                emptyMessages: "remove",
+              });
 
-              // Check if the message at startIndex contains tool_results without their tool_use
-              // Tool results reference tool_use IDs from the previous assistant message
-              // We need to ensure we don't orphan tool_results from their tool_use
-              const firstKeptMessage = stepMessages[startIndex];
-
-              // If first kept message has tool results, we need to include the assistant message before it
-              if (
-                firstKeptMessage?.role === "tool" ||
-                (firstKeptMessage?.content &&
-                  Array.isArray(firstKeptMessage.content) &&
-                  firstKeptMessage.content.some(
-                    (c: any) =>
-                      c.type === "tool-result" || c.type === "tool_result",
-                  ))
-              ) {
-                // Walk backwards to find the assistant message with the tool_use
-                for (let i = startIndex - 1; i > 0; i--) {
-                  const msg = stepMessages[i];
-                  if (msg?.role === "assistant") {
-                    startIndex = i;
-                    break;
-                  }
-                }
-              }
-
-              // Also check for orphaned tool_use at the end (assistant called tool but no result yet)
-              // This shouldn't happen in prepareStep, but be safe
-              const lastMessage = stepMessages[stepMessages.length - 1];
-              if (
-                lastMessage?.role === "assistant" &&
-                lastMessage?.content &&
-                Array.isArray(lastMessage.content) &&
-                lastMessage.content.some(
-                  (c: any) => c.type === "tool-use" || c.type === "tool_use",
-                )
-              ) {
-                // Keep this as-is, the result will come in the next message
-              }
-
-              config.messages = [
-                stepMessages[0], // system message
-                ...stepMessages.slice(startIndex),
-              ];
+              // Preserve system context if pruning removes the leading system message.
+              config.messages =
+                stepMessages[0]?.role === "system" &&
+                !prunedMessages.includes(stepMessages[0])
+                  ? [stepMessages[0], ...prunedMessages]
+                  : prunedMessages;
 
               console.log(
-                `[Step ${stepNumber}] Compressed from ${stepMessages.length} to ${config.messages.length} messages (safe cut at index ${startIndex})`,
+                `[Step ${stepNumber}] Pruned from ${stepMessages.length} to ${config.messages.length} messages (window: ${keepWindow}, model: ${validModel})`,
               );
             }
 
@@ -343,7 +340,11 @@ export const POST = withAuth(async (req: Request) => {
             // SUGGESTION_TOOLS always included for contextual follow-up suggestions
             if (stepNumber === 0) {
               // First step: keep scope tight for reliable bootstrap behavior.
-              config.activeTools = DEFAULT_ACTIVE_TOOLS;
+              // Prioritize batch writes to reduce tool-call count and latency.
+              config.activeTools = BOOTSTRAP_ACTIVE_TOOLS;
+              console.log(
+                `[Step ${stepNumber}] Bootstrap tool set active (batch-first)`,
+              );
             } else if (context.buildStatus?.hasErrors) {
               // Build errors: Focus on debugging and file operations
               config.activeTools = [

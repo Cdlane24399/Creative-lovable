@@ -2,7 +2,7 @@
  * Sync Tools - Database persistence for project files
  *
  * This module provides explicit sync operations to persist sandbox files
- * to the database, replacing the hidden sync logic in createWebsite.
+ * to the database.
  */
 
 import { tool } from "ai"

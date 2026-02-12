@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { withAuth } from "@/lib/auth"
-import { captureSandboxScreenshot } from "@/lib/e2b/sandbox"
+import {
+  captureSandboxScreenshot,
+  createSandbox,
+  getHostUrl,
+  getSandbox,
+} from "@/lib/e2b/sandbox"
 
 /**
  * POST /api/screenshot
@@ -18,35 +23,66 @@ export const POST = withAuth(async (req: NextRequest) => {
     // Try to capture screenshot using E2B if projectId is provided
     if (projectId) {
       try {
-        console.log(`[Screenshot] Capturing via E2B for project ${projectId}:`, url)
+        let captureUrl: string | null = null
 
-        const screenshot = await captureSandboxScreenshot(projectId, {
-          sandboxUrl: url,
-          width,
-          height,
-          waitForLoad: 3000, // Increased wait time for better reliability
-        })
+        // Fragments-style source of truth: derive preview URL from the live sandbox host.
+        // This avoids stale/mismatched client URLs and keeps screenshot capture deterministic.
+        try {
+          const sandbox = (await getSandbox(projectId)) || (await createSandbox(projectId))
+          const requestedPort = inferPreviewPort(url)
+          const resolvedUrl = getHostUrl(sandbox, requestedPort)
+          captureUrl = resolvedUrl
+          if (resolvedUrl !== url) {
+            console.log(`[Screenshot] Canonicalized preview URL from ${url} to ${captureUrl}`)
+          }
+        } catch (urlResolveError) {
+          console.warn("[Screenshot] Failed to canonicalize preview URL, skipping direct capture:", urlResolveError)
+        }
 
-        if (screenshot) {
-          // Validate the screenshot data
-          if (screenshot.startsWith('data:image/png;base64,')) {
-            const base64Data = screenshot.split(',')[1]
-            const sizeEstimate = (base64Data.length * 3) / 4 // Rough estimate of decoded size
+        if (!captureUrl) {
+          console.warn("[Screenshot] No canonical sandbox URL available, skipping E2B and host fallbacks")
+        } else {
+          console.log(`[Screenshot] Capturing via E2B for project ${projectId}:`, captureUrl)
 
-            if (sizeEstimate < 100) {
-              console.warn("[Screenshot] Screenshot data too small, using placeholder")
+          const screenshot = await captureSandboxScreenshot(projectId, {
+            sandboxUrl: captureUrl,
+            width,
+            height,
+            waitForLoad: 3000, // Increased wait time for better reliability
+          })
+
+          if (screenshot) {
+            // Validate the screenshot data
+            if (screenshot.startsWith('data:image/png;base64,')) {
+              const base64Data = screenshot.split(',')[1]
+              const sizeEstimate = (base64Data.length * 3) / 4 // Rough estimate of decoded size
+
+              if (sizeEstimate < 100) {
+                console.warn("[Screenshot] Screenshot data too small, using placeholder")
+              } else {
+                console.log(`[Screenshot] Successfully captured screenshot (approx ${Math.round(sizeEstimate)} bytes)`)
+                return NextResponse.json({
+                  screenshot_base64: screenshot,
+                  source: "e2b",
+                })
+              }
             } else {
-              console.log(`[Screenshot] Successfully captured screenshot (approx ${Math.round(sizeEstimate)} bytes)`)
-              return NextResponse.json({
-                screenshot_base64: screenshot,
-                source: "e2b",
-              })
+              console.warn("[Screenshot] Invalid screenshot format, expected PNG base64")
             }
           } else {
-            console.warn("[Screenshot] Invalid screenshot format, expected PNG base64")
+            console.warn("[Screenshot] E2B returned null, falling back to placeholder")
           }
-        } else {
-          console.warn("[Screenshot] E2B returned null, falling back to placeholder")
+
+          // Fallback path: capture from API host using Playwright.
+          // Only permitted for canonical sandbox URLs to avoid user-controlled host access.
+          const hostScreenshot = await captureViaHostPlaywright(captureUrl, width, height)
+          if (hostScreenshot) {
+            console.log("[Screenshot] Captured via host Playwright fallback")
+            return NextResponse.json({
+              screenshot_base64: hostScreenshot,
+              source: "host-playwright",
+            })
+          }
         }
       } catch (e2bError) {
         console.warn("[Screenshot] E2B screenshot failed, falling back to placeholder:", e2bError)
@@ -152,6 +188,76 @@ function generateWebsitePreviewSVG(
     <rect x="${width - 130}" y="${height - 80}" width="70" height="24" rx="4" fill="url(#accent)" opacity="0.9"/>
     <text x="${width - 95}" y="${height - 63}" font-family="system-ui, sans-serif" font-size="11" font-weight="500" fill="white" text-anchor="middle">Live</text>
   </svg>`
+}
+
+function inferPreviewPort(rawUrl: string): number {
+  try {
+    const parsed = new URL(rawUrl)
+    if (parsed.port) {
+      const value = parseInt(parsed.port, 10)
+      if (!Number.isNaN(value) && value > 0) return value
+    }
+
+    const hostPrefix = parsed.hostname.match(/^(\d{2,5})-/)
+    if (hostPrefix?.[1]) {
+      const value = parseInt(hostPrefix[1], 10)
+      if (!Number.isNaN(value) && value > 0) return value
+    }
+  } catch {
+    // Ignore and use default below.
+  }
+
+  return 3000
+}
+
+async function captureViaHostPlaywright(
+  targetUrl: string,
+  width: number,
+  height: number,
+): Promise<string | null> {
+  try {
+    const { chromium } = await import("@playwright/test")
+
+    // Try system Chrome channel first (no bundled browser download needed),
+    // then fallback to default Chromium if available.
+    const launchOptions: Array<{ channel?: "chrome"; headless: boolean }> = [
+      { channel: "chrome", headless: true },
+      { headless: true },
+    ]
+
+    for (const options of launchOptions) {
+      try {
+        const browser = await chromium.launch(options)
+        try {
+          const page = await browser.newPage({
+            viewport: { width, height },
+          })
+          await page.goto(targetUrl, {
+            waitUntil: "domcontentloaded",
+            timeout: 30000,
+          })
+          try {
+            await page.waitForLoadState("networkidle", { timeout: 10000 })
+          } catch {
+            // Ignore networkidle timeout on pages with persistent connections.
+          }
+          const imageBuffer = await page.screenshot({
+            type: "png",
+            fullPage: false,
+          })
+          return `data:image/png;base64,${imageBuffer.toString("base64")}`
+        } finally {
+          await browser.close().catch(() => {})
+        }
+      } catch {
+        continue
+      }
+    }
+  } catch (error) {
+    console.warn("[Screenshot] Host Playwright fallback unavailable:", error)
+  }
+
+  return null
 }
 
 function escapeXml(text: string): string {

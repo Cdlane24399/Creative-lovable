@@ -1,5 +1,4 @@
 import { Sandbox } from "e2b"
-import { getSandboxStateMachine } from "./sandbox-state-machine"
 import { getProjectDir } from "./project-dir"
 import { buildSandboxMetadata } from "./sandbox-metadata"
 import { getConfiguredTemplate } from "./template-config"
@@ -43,9 +42,6 @@ const CLEANUP_INTERVAL_MS = 5 * 60 * 1000
 
 // Track last activity for each sandbox
 const sandboxLastActivity = new Map<string, number>()
-
-// Get state machine instance
-const stateMachine = getSandboxStateMachine()
 
 /**
  * Update last activity timestamp for a sandbox
@@ -119,8 +115,6 @@ async function cleanupExpiredSandboxes(): Promise<void> {
         }
       }
 
-      // Mark as expired in state machine
-      stateMachine.markExpired(projectId)
       await closeSandbox(projectId)
       sandboxLastActivity.delete(projectId)
     } catch (error) {
@@ -298,14 +292,31 @@ async function restoreFilesFromSnapshot(
     const hasPackageJson = fileEntries.some(([path]) => path.endsWith("package.json"))
 
     if (hasDependencies && hasPackageJson) {
-      console.log("[Sandbox] Installing dependencies...")
-      const installResult = await executeCommand(sandbox, "bun install", {
+      const installCommandCheck = await sandbox.commands.run(
+        `if [ -f "${projectDir}/bun.lockb" ] || [ -f "${projectDir}/bun.lock" ]; then
+  if command -v bun >/dev/null 2>&1; then
+    echo "bun install"
+    exit 0
+  fi
+fi
+if command -v npm >/dev/null 2>&1; then
+  echo "npm install --no-fund --no-audit"
+elif command -v bun >/dev/null 2>&1; then
+  echo "bun install"
+else
+  echo "npm install"
+fi`,
+        { timeoutMs: 5000 }
+      )
+      const installCommand = installCommandCheck.stdout.trim() || "npm install --no-fund --no-audit"
+      console.log(`[Sandbox] Installing dependencies with: ${installCommand}`)
+      const installResult = await executeCommand(sandbox, installCommand, {
         cwd: projectDir,
-        timeoutMs: 600_000, // 10 minutes for bun install
+        timeoutMs: 600_000, // 10 minutes for dependency install
       })
       result.dependenciesInstalled = installResult.exitCode === 0
       if (!result.dependenciesInstalled) {
-        console.warn("[Sandbox] bun install failed:", installResult.stderr)
+        console.warn(`[Sandbox] ${installCommand} failed:`, installResult.stderr)
       }
     }
 
@@ -1012,7 +1023,14 @@ export async function executeCommand(
     // (e.g., `test -d` returns 1 when directory doesn't exist)
     // Use debug level unless it's a "real" command failure
     const isTestCommand = command.startsWith("test ") || command.includes("&& test ")
-    const isExpectedFailure = errorMessage.includes("exit status 1") && isTestCommand
+    const allowsNonZeroExit = command.includes("|| true")
+    const isProcessCleanupCommand = /\bpkill\b|\bkill\s+-9\b|\bxargs\s+kill\b/.test(command)
+    const isTerminationSignal =
+      errorMessage.includes("signal: terminated") || errorMessage.includes("signal: killed")
+    const isExpectedFailure =
+      (errorMessage.includes("exit status 1") && isTestCommand) ||
+      allowsNonZeroExit ||
+      (isProcessCleanupCommand && isTerminationSignal)
 
     if (isExpectedFailure) {
       console.debug(`[E2B] Expected non-zero exit: "${command.slice(0, 60)}..."`, { durationMs })
@@ -1380,35 +1398,61 @@ export async function checkDevServerStatus(
   ports: number[] = [3000, 3001, 3002, 3003, 3004, 3005]
 ): Promise<{ isRunning: boolean; port: number | null; httpCode?: string }> {
   try {
-    // Single command to check all ports at once - much faster than parallel bun processes
+    // Single command to check all ports at once - much faster than per-port probing.
+    // Keep the command exit code 0 on "no match" to avoid unnecessary fallback delays.
     const result = await sandbox.commands.run(
-      `ss -tln 2>/dev/null | grep -oE ':(${ports.join('|')}) ' | grep -oE '[0-9]+' | head -1`,
+      `if command -v ss >/dev/null 2>&1; then ss -tln 2>/dev/null | grep -oE ':(${ports.join('|')}) ' | grep -oE '[0-9]+' | head -1 || true; else echo "__NO_SS__"; fi`,
       { timeoutMs: 3000 }
     )
-    const detectedPort = parseInt(result.stdout.trim(), 10)
-    if (detectedPort > 0) {
-      const httpCheck = await checkDevServerHttp(sandbox, detectedPort)
+
+    const output = result.stdout.trim()
+    if (output !== "__NO_SS__") {
+      const detectedPort = parseInt(output.split(/\s+/)[0] || "", 10)
+      if (detectedPort > 0) {
+        const httpCheck = await checkDevServerHttp(sandbox, detectedPort)
+        if (httpCheck.ok) {
+          return { isRunning: true, port: detectedPort, httpCode: httpCheck.httpCode }
+        }
+      }
+      // `ss` is available but did not yield a healthy port.
+      // Continue into fallbacks (lsof, /dev/tcp) before reporting false.
+    }
+  } catch {
+    // Ignore and try fallback below.
+  }
+
+  // Fast fallback when `ss` is unavailable: try `lsof` once.
+  try {
+    const lsofResult = await sandbox.commands.run(
+      `if command -v lsof >/dev/null 2>&1; then lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | grep -oE ':(${ports.join('|')})\\b' | head -1 | tr -d ':' || true; fi`,
+      { timeoutMs: 3000 }
+    )
+    const lsofPort = parseInt(lsofResult.stdout.trim(), 10)
+    if (lsofPort > 0) {
+      const httpCheck = await checkDevServerHttp(sandbox, lsofPort)
       if (httpCheck.ok) {
-        return { isRunning: true, port: detectedPort, httpCode: httpCheck.httpCode }
+        return { isRunning: true, port: lsofPort, httpCode: httpCheck.httpCode }
       }
     }
   } catch {
-    // ss might not be available, try /dev/tcp fallback
-    for (const port of ports) {
-      try {
-        const result = await sandbox.commands.run(
-          `(echo > /dev/tcp/localhost/${port}) 2>/dev/null && echo "open" || echo "closed"`,
-          { timeoutMs: 2000 }
-        )
-        if (result.stdout.trim() === "open") {
-          const httpCheck = await checkDevServerHttp(sandbox, port)
-          if (httpCheck.ok) {
-            return { isRunning: true, port, httpCode: httpCheck.httpCode }
-          }
+    // Ignore and continue.
+  }
+
+  // Last-resort fallback: /dev/tcp probe.
+  for (const port of ports) {
+    try {
+      const result = await sandbox.commands.run(
+        `(echo > /dev/tcp/localhost/${port}) 2>/dev/null && echo "open" || echo "closed"`,
+        { timeoutMs: 750 }
+      )
+      if (result.stdout.trim() === "open") {
+        const httpCheck = await checkDevServerHttp(sandbox, port)
+        if (httpCheck.ok) {
+          return { isRunning: true, port, httpCode: httpCheck.httpCode }
         }
-      } catch {
-        continue
       }
+    } catch {
+      continue
     }
   }
 
@@ -1604,13 +1648,55 @@ export function listAllSandboxes(): Array<{
 /**
  * Capture a screenshot of a running web server using Playwright.
  * Playwright and Chromium are pre-installed in the E2B template.
- * 
+ *
  * Falls back to ImageMagick or Python PIL if Playwright fails.
  *
  * @param projectId - Project ID
  * @param options - Screenshot options
  * @returns Base64 encoded screenshot or null if failed
  */
+function resolveInternalSandboxUrl(previewUrl: string): { internalUrl: string; port: number } {
+  try {
+    const parsed = new URL(previewUrl)
+    const hostPortMatch = parsed.hostname.match(/^(\d{2,5})-/)
+    const explicitPort = parsed.port ? parseInt(parsed.port, 10) : NaN
+    const hostPrefixPort = hostPortMatch ? parseInt(hostPortMatch[1], 10) : NaN
+    const port = Number.isFinite(explicitPort)
+      ? explicitPort
+      : Number.isFinite(hostPrefixPort)
+        ? hostPrefixPort
+        : 3000
+
+    return {
+      internalUrl: `http://127.0.0.1:${port}${parsed.pathname}${parsed.search}${parsed.hash}`,
+      port,
+    }
+  } catch {
+    return {
+      internalUrl: "http://127.0.0.1:3000",
+      port: 3000,
+    }
+  }
+}
+
+function looksLikeMissingChromium(output: string): boolean {
+  const lowered = output.toLowerCase()
+  return (
+    lowered.includes("executable doesn't exist") ||
+    lowered.includes("please run the following command") ||
+    lowered.includes("playwright install")
+  )
+}
+
+function looksLikeMissingSystemLibs(output: string): boolean {
+  const lowered = output.toLowerCase()
+  return (
+    lowered.includes("error while loading shared libraries") ||
+    lowered.includes("cannot open shared object file") ||
+    lowered.includes("libglib-2.0.so.0")
+  )
+}
+
 export async function captureSandboxScreenshot(
   projectId: string,
   options: {
@@ -1632,100 +1718,154 @@ export async function captureSandboxScreenshot(
     // Get the regular sandbox (not Desktop) - this is where the dev server runs
     sandbox = await getSandbox(projectId) || await createSandbox(projectId)
 
-    console.log(`[Screenshot] Capturing ${sandboxUrl} in sandbox ${sandbox.sandboxId}`)
+    const { internalUrl } = resolveInternalSandboxUrl(sandboxUrl)
+    console.log(
+      `[Screenshot] Capturing ${sandboxUrl} (internal: ${internalUrl}) in sandbox ${sandbox.sandboxId}`
+    )
 
     const screenshotPath = "/tmp/screenshot.png"
+    const screenshotScriptPath = "/tmp/screenshot.mjs"
 
-    // First, check if playwright is already installed globally in the template
-    const globalCheck = await executeCommand(sandbox, "which playwright || echo 'not found'", { timeoutMs: 5000 })
+    const runtimeCheck = await executeCommand(
+      sandbox,
+      `if command -v bun >/dev/null 2>&1; then echo "bun"; elif command -v node >/dev/null 2>&1; then echo "node"; else echo "none"; fi`,
+      { timeoutMs: 5000 }
+    )
+    const runtime = runtimeCheck.stdout.trim()
+    const useBun = runtime === "bun"
+    const useNode = runtime === "node"
 
-    // If not found globally, install locally in /tmp
-    if (globalCheck.stdout?.includes('not found')) {
-      console.log("[Screenshot] Playwright not found globally, installing in /tmp...")
+    if (!useBun && !useNode) {
+      console.warn("[Screenshot] No supported runtime (bun/node) in sandbox")
+      return null
+    }
 
-      // Check if already installed in /tmp
-      const localCheck = await executeCommand(sandbox, "test -d /tmp/node_modules/playwright && echo 'installed' || echo 'not installed'", { timeoutMs: 5000 })
+    await executeCommand(
+      sandbox,
+      `cd /tmp && [ -f package.json ] || echo '{}' > package.json`,
+      { timeoutMs: 5000 }
+    )
 
-      if (!localCheck.stdout?.includes('installed')) {
-        // Create package.json if it doesn't exist
-        await executeCommand(sandbox, "cd /tmp && [ ! -f package.json ] && echo '{}' > package.json || true", { timeoutMs: 5000 })
-
-        // Install playwright - try with npm as it's more reliable in E2B
-        const installResult = await executeCommand(sandbox, "cd /tmp && npm install playwright 2>&1 || bun add playwright 2>&1", { timeoutMs: 120000 })
-        if (installResult.exitCode !== 0) {
-          console.warn("[Screenshot] Failed to install playwright:", installResult.stderr)
-          throw new Error("Failed to install playwright")
-        }
-        console.log("[Screenshot] Playwright installed successfully")
+    // Ensure Playwright package is available from /tmp.
+    const playwrightCheckCommand = useBun
+      ? `cd /tmp && bun -e "import('playwright').then(() => console.log('installed')).catch(() => console.log('missing'))"`
+      : `cd /tmp && node -e "import('playwright').then(() => console.log('installed')).catch(() => console.log('missing'))"`
+    const playwrightCheck = await executeCommand(
+      sandbox,
+      playwrightCheckCommand,
+      { timeoutMs: 10000 }
+    )
+    if (!playwrightCheck.stdout.includes("installed")) {
+      console.log("[Screenshot] Playwright not found in /tmp, installing...")
+      const installCommand = useBun
+        ? `cd /tmp && bun add playwright`
+        : `cd /tmp && npm install --no-fund --no-audit playwright`
+      const installResult = await executeCommand(sandbox, installCommand, {
+        timeoutMs: 180000,
+      })
+      if (installResult.exitCode !== 0) {
+        console.warn(
+          "[Screenshot] Failed to install Playwright:",
+          installResult.stderr || installResult.stdout
+        )
+        return null
       }
     }
 
-    // Create a Playwright screenshot script that's more robust
+    // Create a Playwright screenshot script.
     const screenshotScript = `
-const { chromium } = require('playwright');
+import { chromium } from "playwright";
 
-(async () => {
+async function run() {
   let browser;
   try {
-    console.log('Launching browser...');
+    console.log("Launching browser...");
     browser = await chromium.launch({
       headless: true,
       args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu'
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-accelerated-2d-canvas",
+        "--disable-gpu"
       ]
     });
 
-    console.log('Creating page...');
+    console.log("Creating page...");
     const page = await browser.newPage({
       viewport: { width: ${width}, height: ${height} }
     });
 
-    console.log('Navigating to ${sandboxUrl}...');
-    await page.goto('${sandboxUrl}', {
-      waitUntil: 'networkidle',
-      timeout: 30000
+    console.log("Navigating to ${internalUrl}...");
+    await page.goto(${JSON.stringify(internalUrl)}, {
+      waitUntil: "domcontentloaded",
+      timeout: 45000
     });
 
-    console.log('Waiting for page to settle...');
-    await page.waitForTimeout(${waitForLoad});
+    try {
+      await page.waitForLoadState("networkidle", { timeout: 10000 });
+    } catch {
+      // Ignore networkidle timeout for pages with long-lived connections.
+    }
 
-    console.log('Taking screenshot...');
+    if (${waitForLoad} > 0) {
+      await page.waitForTimeout(${waitForLoad});
+    }
+
+    console.log("Taking screenshot...");
     await page.screenshot({
-      path: '${screenshotPath}',
+      path: ${JSON.stringify(screenshotPath)},
       fullPage: false,
-      type: 'png'
+      type: "png"
     });
 
-    await browser.close();
-    console.log('Screenshot captured successfully');
+    console.log("Screenshot captured successfully");
     process.exit(0);
   } catch (err) {
-    console.error('Screenshot failed:', err.message);
+    const message = err instanceof Error ? (err.stack || err.message) : String(err);
+    console.error("Screenshot failed:", message);
+    process.exit(1);
+  } finally {
     if (browser) {
       await browser.close().catch(() => {});
     }
-    process.exit(1);
   }
-})();
-`
-    await writeFile(sandbox, "/tmp/screenshot.js", screenshotScript)
+}
 
-    // Run the screenshot script - try with node first, then bun
+await run();
+`
+    await writeFile(sandbox, screenshotScriptPath, screenshotScript)
+    await executeCommand(sandbox, `rm -f ${screenshotPath}`, { timeoutMs: 3000 })
+
     console.log("[Screenshot] Running screenshot script...")
-    let result = await executeCommand(sandbox, "cd /tmp && node screenshot.js 2>&1", { timeoutMs: 60000 })
+    const runScriptCommand = useBun
+      ? `cd /tmp && bun ${screenshotScriptPath}`
+      : `cd /tmp && node ${screenshotScriptPath}`
+    let result = await executeCommand(sandbox, runScriptCommand, { timeoutMs: 90000 })
 
     if (result.exitCode !== 0) {
-      console.log("[Screenshot] Node failed, trying with bun...")
-      result = await executeCommand(sandbox, "cd /tmp && bun screenshot.js 2>&1", { timeoutMs: 60000 })
-
-      if (result.exitCode !== 0) {
-        console.warn("[Screenshot] Playwright failed:", result.stderr || result.stdout)
-        throw new Error("Playwright screenshot failed, trying fallback")
+      const combinedOutput = `${result.stdout || ""}\n${result.stderr || ""}`
+      if (
+        looksLikeMissingChromium(combinedOutput) ||
+        looksLikeMissingSystemLibs(combinedOutput)
+      ) {
+        console.log("[Screenshot] Playwright runtime missing dependencies, attempting install...")
+        const browserInstall = await executeCommand(
+          sandbox,
+          useBun
+            ? `cd /tmp && bunx playwright install --with-deps chromium || bunx playwright install chromium`
+            : `cd /tmp && npx playwright install --with-deps chromium || npx playwright install chromium`,
+          { timeoutMs: 300000 }
+        )
+        if (browserInstall.exitCode === 0) {
+          result = await executeCommand(sandbox, runScriptCommand, { timeoutMs: 90000 })
+        }
       }
+    }
+
+    if (result.exitCode !== 0) {
+      console.warn("[Screenshot] Playwright failed:", result.stderr || result.stdout)
+      throw new Error("Playwright screenshot failed, trying fallback")
     }
 
     // Read and validate the screenshot file
@@ -1749,15 +1889,16 @@ const { chromium } = require('playwright');
   } catch (error) {
     console.warn("[Screenshot] Primary method failed:", error instanceof Error ? error.message : error)
 
-    // Fallback: Try simple HTTP check to verify URL is accessible
+    // Fallback: Check if the internal dev server endpoint is reachable.
     if (sandbox) {
       try {
+        const { port } = resolveInternalSandboxUrl(sandboxUrl)
         console.log("[Screenshot] Verifying URL is accessible...")
-        const httpCheck = await executeCommand(sandbox, `bun -e "try{const r=await fetch('${sandboxUrl}');console.log(r.status)}catch(e){console.log('failed: '+e.message)}"`, { timeoutMs: 10000 })
-        console.log(`[Screenshot] URL check result: ${httpCheck.stdout}`)
+        const httpCheck = await checkDevServerHttp(sandbox, port)
+        console.log(`[Screenshot] URL check result: ${httpCheck.httpCode}`)
 
-        if (!httpCheck.stdout?.includes('200')) {
-          console.warn("[Screenshot] URL not accessible, got status:", httpCheck.stdout)
+        if (!httpCheck.ok) {
+          console.warn("[Screenshot] URL not accessible, got status:", httpCheck.httpCode)
         }
       } catch (checkError) {
         console.warn("[Screenshot] URL check failed:", checkError)

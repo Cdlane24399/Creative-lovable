@@ -42,8 +42,8 @@ export function createFileTools(projectId: string) {
      */
     writeFile: tool({
       description:
-        "Write content to a file in the project. Creates parent directories " +
-        "if they don't exist. Use for creating new files or completely replacing existing ones.",
+        "Write content to a single file in the project. Creates parent directories " +
+        "if they don't exist. Prefer batchWriteFiles when changing multiple files.",
       inputSchema: z.object({
         path: filePathSchema,
         content: z.string().describe("Complete file content to write"),

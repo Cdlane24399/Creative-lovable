@@ -12,8 +12,8 @@ async function main() {
       messages: [{
         id: "msg-1",
         role: "user",
-        content: "Use createWebsite to make a simple counter app called 'quick-counter' with a big number display, + and - buttons, and a reset button. Use a dark theme with purple accents. Do it immediately - no explanation needed.",
-        parts: [{ type: "text", text: "Use createWebsite to make a simple counter app called 'quick-counter' with a big number display, + and - buttons, and a reset button. Use a dark theme with purple accents. Do it immediately - no explanation needed." }],
+        content: "Build a simple counter app called 'quick-counter' with a big number display, + and - buttons, and a reset button. Use initializeProject if needed, then write files with batchWriteFiles or writeFile. Do it immediately - no explanation needed.",
+        parts: [{ type: "text", text: "Build a simple counter app called 'quick-counter' with a big number display, + and - buttons, and a reset button. Use initializeProject if needed, then write files with batchWriteFiles or writeFile. Do it immediately - no explanation needed." }],
         createdAt: new Date().toISOString()
       }],
       projectId,

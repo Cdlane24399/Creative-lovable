@@ -1,10 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 import {
-  getAgentContext,
   addDependency,
   updateBuildStatus,
-  setProjectInfo,
   recordToolExecution,
 } from "../agent-context";
 import {
@@ -24,7 +22,48 @@ import { createErrorResult, formatDuration } from "../utils";
  * @returns Object containing build and server tools
  */
 export function createBuildTools(projectId: string) {
-  const ctx = () => getAgentContext(projectId);
+  type PackageManager = "bun" | "pnpm" | "npm";
+
+  async function detectPackageManager(
+    sandbox: ReturnType<typeof getCurrentSandbox>,
+    projectDir: string,
+  ): Promise<PackageManager> {
+    const result = await executeCommand(
+      sandbox,
+      `cd "${projectDir}" && if [ -f bun.lock ] || [ -f bun.lockb ]; then echo "bun"; elif [ -f pnpm-lock.yaml ]; then echo "pnpm"; elif [ -f package-lock.json ]; then echo "npm"; elif command -v bun >/dev/null 2>&1; then echo "bun"; elif command -v pnpm >/dev/null 2>&1; then echo "pnpm"; else echo "npm"; fi`,
+      { timeoutMs: 5000 },
+    );
+    const detected = result.stdout.trim();
+    if (detected === "bun" || detected === "pnpm" || detected === "npm") {
+      return detected;
+    }
+    return "npm";
+  }
+
+  function getInstallCommand(
+    pm: PackageManager,
+    packages: string[],
+    dev: boolean,
+  ): string {
+    const list = packages.join(" ");
+    if (pm === "bun") {
+      return `bun add ${dev ? "-d " : ""}${list}`.trim();
+    }
+    if (pm === "pnpm") {
+      return `pnpm add ${dev ? "-D " : ""}${list}`.trim();
+    }
+    return `npm install ${dev ? "--save-dev " : ""}${list}`.trim();
+  }
+
+  function getDevServerCommand(pm: PackageManager): string {
+    if (pm === "bun") {
+      return "bun run dev --hostname 0.0.0.0 > /tmp/server.log 2>&1";
+    }
+    if (pm === "pnpm") {
+      return "pnpm dev -- --hostname 0.0.0.0 > /tmp/server.log 2>&1";
+    }
+    return "npm run dev -- --hostname 0.0.0.0 > /tmp/server.log 2>&1";
+  }
 
   return {
     /**
@@ -33,8 +72,8 @@ export function createBuildTools(projectId: string) {
      */
     runCommand: tool({
       description:
-        "Run a shell command in the project environment (e.g., bun add, bun run build). " +
-        "Use for any command-line operations. Uses bun (not npm/pnpm) for package management.",
+        "Run a shell command in the project environment (e.g., npm install, pnpm add, bun add, npm run build). " +
+        "Use for command-line operations with the package manager already used by the project.",
       inputSchema: z.object({
         command: z
           .string()
@@ -66,19 +105,22 @@ export function createBuildTools(projectId: string) {
             timeoutMs: timeout,
           });
 
-          // Track bun add for dependency awareness
+          // Track dependency installs for context awareness.
           if (
             (command.includes("bun add") ||
-              command.includes("bun install")) &&
+              command.includes("bun install") ||
+              command.includes("pnpm add") ||
+              command.includes("npm install")) &&
             result.exitCode === 0
           ) {
             const packageMatch = command.match(
-              /bun (?:add|install)\s+(?:-[dD]\s+)?(.+)$/,
+              /(?:bun (?:add|install)|pnpm add|npm install)\s+(.+)$/,
             );
-            if (packageMatch) {
+            if (packageMatch?.[1]) {
               const packages = packageMatch[1]
                 .split(/\s+/)
-                .filter((pkg) => pkg && !pkg.startsWith("-"));
+                .filter((pkg) => pkg && !pkg.startsWith("-"))
+                .filter((pkg) => !pkg.startsWith("&&"));
               packages.forEach((pkg) =>
                 addDependency(projectId, pkg, "latest"),
               );
@@ -123,12 +165,12 @@ export function createBuildTools(projectId: string) {
     }),
 
     /**
-     * Installs npm packages in the current project.
+     * Installs packages in the current project using the detected package manager.
      * Tracks installed packages in context.
      */
     installPackage: tool({
       description:
-        "Install npm packages in the current project. Automatically tracks " +
+        "Install packages in the current project using bun/pnpm/npm as detected. Automatically tracks " +
         "installed packages for context awareness.",
       inputSchema: z.object({
         packages: z
@@ -144,7 +186,6 @@ export function createBuildTools(projectId: string) {
       execute: async ({ packages, dev }) => {
         const startTime = new Date();
         const projectDir = getProjectDir();
-        const devFlag = dev ? "-d" : "";
 
         try {
           // Get sandbox from infrastructure context
@@ -158,10 +199,15 @@ export function createBuildTools(projectId: string) {
             );
           }
 
-          const packageList = packages.join(" ");
+          const packageManager = await detectPackageManager(sandbox, projectDir);
+          const installCommand = getInstallCommand(
+            packageManager,
+            packages,
+            !!dev,
+          );
           const result = await executeCommand(
             sandbox,
-            `cd "${projectDir}" && bun add ${devFlag} ${packageList}`.trim(),
+            `cd "${projectDir}" && ${installCommand}`.trim(),
             { timeoutMs: 120_000 }, // 2 minutes for package install
           );
 
@@ -171,7 +217,7 @@ export function createBuildTools(projectId: string) {
           if (wasRunning) {
             await startBackgroundProcess(
               sandbox,
-              "bun run dev --hostname 0.0.0.0 > /tmp/server.log 2>&1",
+              getDevServerCommand(packageManager),
               {
                 workingDir: projectDir,
                 projectId,
@@ -325,39 +371,5 @@ export function createBuildTools(projectId: string) {
       },
     }),
 
-    /**
-     * @deprecated Dev server is now managed automatically by the frontend.
-     * Kept for backward compatibility but should not be called.
-     */
-    startDevServer: tool({
-      description:
-        "DEPRECATED: Do not use this tool. The dev server is started automatically " +
-        "by the application. Use createWebsite to write files instead.",
-      inputSchema: z.object({
-        port: z
-          .number()
-          .optional()
-          .describe("Port number (ignored - server managed automatically)"),
-      }),
-      execute: async () => {
-        const context = ctx();
-        const projectName = context.projectName || "project";
-
-        // Just update context - the frontend handles server management
-        setProjectInfo(projectId, {
-          projectName,
-          projectDir: getProjectDir(),
-        });
-
-        return {
-          success: true,
-          message:
-            "Dev server is managed automatically by the application. " +
-            "Files are ready - the preview will appear shortly.",
-          deprecated: true,
-          note: "This tool is deprecated. Use createWebsite to write files instead.",
-        };
-      },
-    }),
   };
 }

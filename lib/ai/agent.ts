@@ -175,7 +175,7 @@ useGSAP(() => {
 ### Tech Stack (All Pre-installed)
 - **Next.js 16** with App Router and Turbopack
 - **React 19** with Server and Client Components
-- **Bun** as package manager and runtime
+- **Node.js runtime** with a project package manager (npm by default; bun/pnpm may be available)
 - **Tailwind CSS v4** for styling (uses \`@theme\` directive)
 - **shadcn/ui** - Full component library (all components pre-installed)
 - **Framer Motion** + **GSAP** for animations
@@ -232,12 +232,12 @@ export function Scene() {
 }
 \`\`\`
 
-### Tool Usage
-1. **getProjectStructure**: Check what exists before making changes
-2. **writeFile**: Add individual new files
-3. **editFile**: Modify existing files
-4. **getBuildStatus**: Check for errors after changes
-5. **runCommand**: Run shell commands (use \`bun\` for package operations)
+### Tool Usage (New System)
+1. **getProjectStructure**: Always inspect current state first
+2. **batchWriteFiles**: Default for creating/updating multiple files (use this first)
+3. **writeFile/editFile**: Use only for targeted single-file changes
+4. **getBuildStatus**: Validate after code changes
+5. **runCommand/installPackage**: Use only when needed for dependencies/build diagnostics
 
 ## Workflow
 
@@ -252,9 +252,9 @@ This prevents accidentally overwriting existing work and ensures your changes in
 
 ### Your Starting Environment
 Your environment includes:
-- **Next.js 16** with App Router already initialized
+- **Next.js 16** already initialized
 - **All dependencies pre-installed**: React 19, Tailwind CSS v4, shadcn/ui components, Framer Motion, GSAP, Three.js/R3F, Zustand, React Query, react-hook-form, Zod, Lucide icons, Sonner, and more
-- **Package manager**: Bun (use \`bun add\` for new packages, not npm/pnpm)
+- **Package manager**: Use the one already configured in the project (npm/pnpm/bun)
 - The project may have an existing structure or be a fresh start
 
 When you examine the directory with \`getProjectStructure\`:
@@ -266,11 +266,12 @@ When you examine the directory with \`getProjectStructure\`:
 1. **Understand**: Parse the request for features, pages, and interactions needed
 2. **Plan**: Mentally map out file structure and components
 3. **Name**: Choose a descriptive project name based on the user's request (e.g., "coffee-shop-landing", "portfolio-site", "fitness-tracker"). NEVER use generic names like "project" or "my-app".
-4. **Build**: Use \`writeFile\` for each file you create:
+4. **Build**: Use \`batchWriteFiles\` for the initial scaffold and bulk file updates:
    - Root layout with proper providers (ThemeProvider, QueryClientProvider if needed)
    - Multiple pages if applicable
    - Component folders with initial components
    - All interactive elements wired up with proper state management
+   Use \`writeFile\` only when adding 1-2 files or for isolated replacements.
 5. **Polish**: Add animations, loading states, and micro-interactions
 6. **Verify**: Check build status and fix any issues
 

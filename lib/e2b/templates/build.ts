@@ -21,8 +21,8 @@ async function main() {
   console.log(`Building E2B template: ${TEMPLATE_NAME}`);
 
   const buildInfo = await Template.build(nextJSTemplate, TEMPLATE_NAME, {
-    cpuCount: 8,
-    memoryMB: 8192,
+    cpuCount: 4,
+    memoryMB: 4096,
     onBuildLogs: defaultBuildLogger(),
   });
 

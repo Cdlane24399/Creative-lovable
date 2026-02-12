@@ -14,7 +14,7 @@ export interface DevServerStatus {
 export interface UseDevServerOptions {
   projectId: string | null
   projectName: string | null
-  /** Sandbox ID from createWebsite tool (optional, for reliable reconnection) */
+  /** Sandbox ID for reliable reconnection (optional) */
   sandboxId?: string | null
   /** Whether to actively poll for status (default: false until triggered) */
   enabled?: boolean

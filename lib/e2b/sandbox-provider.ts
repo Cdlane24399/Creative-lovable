@@ -34,6 +34,10 @@ const sandboxStorage = new AsyncLocalStorage<SandboxContext>();
 // Keyed by projectId so concurrent requests don't collide.
 const activeSandboxContexts = new Map<string, SandboxContext>();
 
+function getActiveProjectIds(): string[] {
+  return Array.from(activeSandboxContexts.keys());
+}
+
 /**
  * Get the current sandbox from the request context.
  * First checks AsyncLocalStorage; falls back to the module-level map
@@ -55,16 +59,9 @@ export function getCurrentSandbox(): Sandbox {
   }
 
   if (activeSandboxContexts.size > 1) {
-    // Multiple concurrent contexts — pick the most recent one and warn
-    console.warn(
-      `[SandboxProvider] AsyncLocalStorage context lost with ${activeSandboxContexts.size} active contexts. Using most recent.`,
+    throw new Error(
+      `[SandboxProvider] Ambiguous sandbox context: AsyncLocalStorage context is unavailable and multiple project sandboxes are active (${getActiveProjectIds().join(", ")}). Use getCurrentSandboxForProject(projectId).`,
     );
-    // Return the last entry (most recently added)
-    let last: SandboxContext | undefined;
-    for (const ctx of activeSandboxContexts.values()) {
-      last = ctx;
-    }
-    return last!.sandbox;
   }
 
   throw new Error("No sandbox context available. Call withSandbox() first.");
@@ -103,6 +100,12 @@ export function getCurrentProjectId(): string {
     return activeSandboxContexts.values().next().value!.projectId;
   }
 
+  if (activeSandboxContexts.size > 1) {
+    throw new Error(
+      `[SandboxProvider] Ambiguous project context: AsyncLocalStorage context is unavailable and multiple project sandboxes are active (${getActiveProjectIds().join(", ")}).`,
+    );
+  }
+
   throw new Error("No sandbox context available. Call withSandbox() first.");
 }
 
@@ -117,6 +120,12 @@ export function getCurrentProjectDir(): string {
 
   if (activeSandboxContexts.size === 1) {
     return activeSandboxContexts.values().next().value!.projectDir;
+  }
+
+  if (activeSandboxContexts.size > 1) {
+    throw new Error(
+      `[SandboxProvider] Ambiguous project context: AsyncLocalStorage context is unavailable and multiple project sandboxes are active (${getActiveProjectIds().join(", ")}).`,
+    );
   }
 
   throw new Error("No sandbox context available. Call withSandbox() first.");
@@ -143,7 +152,12 @@ async function ensureProjectInitialized(
     ? (await directoryExists(sandbox, `${projectDir}/app`)) ||
       (await directoryExists(sandbox, `${projectDir}/src/app`))
     : false;
-  const projectReady = projectExists && hasPackageJson && hasAppDir;
+  const hasPagesDir = projectExists
+    ? (await directoryExists(sandbox, `${projectDir}/pages`)) ||
+      (await directoryExists(sandbox, `${projectDir}/src/pages`))
+    : false;
+  const projectReady =
+    projectExists && hasPackageJson && (hasAppDir || hasPagesDir);
 
   if (projectReady) {
     // Project already exists (restored from snapshot or template), just set context
@@ -159,7 +173,7 @@ async function ensureProjectInitialized(
     // Template is set but project is missing/incomplete.
     // Attempt a lightweight scaffold fallback to keep the agent unblocked.
     console.warn(
-      `[SandboxProvider] Template active but project is incomplete at ${projectDir} (exists=${projectExists}, package.json=${hasPackageJson}, appDir=${hasAppDir}) — scaffolding fallback project`,
+      `[SandboxProvider] Template active but project is incomplete at ${projectDir} (exists=${projectExists}, package.json=${hasPackageJson}, appDir=${hasAppDir}, pagesDir=${hasPagesDir}) — scaffolding fallback project`,
     );
     await scaffoldNextProject(sandbox, projectDir, projectId, "");
   }
@@ -227,7 +241,11 @@ export async function withSandbox<T>(
     // cover the full streaming duration (maxDuration=300s).
     setTimeout(
       () => {
-        activeSandboxContexts.delete(projectId);
+        const activeContext = activeSandboxContexts.get(projectId);
+        // Do not remove a newer context for the same project.
+        if (activeContext === context) {
+          activeSandboxContexts.delete(projectId);
+        }
       },
       5 * 60 * 1000,
     ); // 5 minutes — matches maxDuration
@@ -241,21 +259,4 @@ export function hasSandboxContext(): boolean {
   return (
     sandboxStorage.getStore() !== undefined || activeSandboxContexts.size > 0
   );
-}
-
-/**
- * Lazy sandbox getter for tools that need to support both modes.
- * Prefers context sandbox, falls back to creating one.
- * @deprecated Use getCurrentSandbox() within withSandbox() instead
- */
-export async function getSandboxLazy(projectId: string): Promise<Sandbox> {
-  const context = sandboxStorage.getStore();
-  if (context) {
-    return context.sandbox;
-  }
-  // Fallback for backward compatibility
-  console.warn(
-    "[SandboxProvider] No sandbox context, creating ad-hoc sandbox. Use withSandbox() for proper lifecycle management.",
-  );
-  return createSandboxWithAutoPause(projectId);
 }
