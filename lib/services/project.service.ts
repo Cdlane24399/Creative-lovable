@@ -87,24 +87,30 @@ export class ProjectService {
    * If a project has an active sandbox but no persisted files snapshot,
    * attempt a best-effort sync from sandbox -> database so Code view can load.
    */
-  private async hydrateFilesSnapshotIfNeeded(project: Project): Promise<Project> {
+  private async hydrateFilesSnapshotIfNeeded(
+    project: Project,
+  ): Promise<Project> {
     const fileCount = Object.keys(project.files_snapshot || {}).length;
     if (fileCount > 0 || !project.sandbox_id) {
       return project;
     }
 
     try {
-      const [{ getSandbox }, { quickSyncToDatabaseWithRetry }] = await Promise.all([
-        import("@/lib/e2b/sandbox"),
-        import("@/lib/e2b/sync-manager"),
-      ]);
+      const [{ getSandbox }, { quickSyncToDatabaseWithRetry }] =
+        await Promise.all([
+          import("@/lib/e2b/sandbox"),
+          import("@/lib/e2b/sync-manager"),
+        ]);
 
       const sandbox = await getSandbox(project.id);
       if (!sandbox) {
         return project;
       }
 
-      const syncResult = await quickSyncToDatabaseWithRetry(sandbox, project.id);
+      const syncResult = await quickSyncToDatabaseWithRetry(
+        sandbox,
+        project.id,
+      );
       if (!syncResult.success || syncResult.filesWritten <= 0) {
         return project;
       }
@@ -170,7 +176,9 @@ export class ProjectService {
     const cached = await projectCache.get(id);
     const cachedProject = this.getCachedProjectEntry(cached);
     if (cachedProject) {
-      const cachedFileCount = Object.keys(cachedProject.files_snapshot || {}).length;
+      const cachedFileCount = Object.keys(
+        cachedProject.files_snapshot || {},
+      ).length;
       // Avoid serving stale empty snapshots for active sandbox projects.
       if (cachedFileCount > 0 || !cachedProject.sandbox_id) {
         return cachedProject;
@@ -195,35 +203,41 @@ export class ProjectService {
    * Updates last_opened_at timestamp
    */
   async getProjectWithMessages(id: string): Promise<ProjectWithMessagesResult> {
-    const projectPromise = this.projectRepo.findById(id);
-    const cachedMessagesPromise = messagesCache.get(id);
+    // Kick off project + cache lookup in parallel
+    const [foundProject, cachedMessages] = await Promise.all([
+      this.projectRepo.findById(id),
+      messagesCache.get(id),
+    ]);
 
-    // Get project
-    const foundProject = await projectPromise;
     if (!foundProject) {
       throw new NotFoundError("Project");
     }
-    const project = await this.hydrateFilesSnapshotIfNeeded(foundProject);
+
+    // Parallelize hydration with DB message fetch (on cache miss)
+    const hydratePromise = this.hydrateFilesSnapshotIfNeeded(foundProject);
+    const messagesPromise = cachedMessages
+      ? Promise.resolve(cachedMessages as Message[])
+      : this.messageRepo.findByProjectId(id).then((msgs) => {
+          // Cache in background — don't block response
+          Promise.resolve(messagesCache.set(id, msgs)).catch(() => {});
+          return msgs;
+        });
+
+    const [project, messages] = await Promise.all([
+      hydratePromise,
+      messagesPromise,
+    ]);
 
     // Update last opened timestamp (non-blocking)
-    this.projectRepo.updateLastOpened(id).catch((err) =>
-      logger.warn("Failed to update last opened timestamp", { projectId: id }, err)
-    );
-
-    // Try to get messages from cache
-    const cachedMessages = await cachedMessagesPromise;
-    if (cachedMessages) {
-      return {
-        project,
-        messages: cachedMessages as Message[],
-      };
-    }
-
-    // Fetch messages from database
-    const messages = await this.messageRepo.findByProjectId(id);
-
-    // Cache messages
-    await messagesCache.set(id, messages);
+    this.projectRepo
+      .updateLastOpened(id)
+      .catch((err) =>
+        logger.warn(
+          "Failed to update last opened timestamp",
+          { projectId: id },
+          err,
+        ),
+      );
 
     return { project, messages };
   }

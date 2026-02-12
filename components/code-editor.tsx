@@ -201,44 +201,53 @@ export const CodeEditor = React.memo(
     readOnly = true,
     isLoading = false,
   }: CodeEditorProps) {
-    const [activeFile, setActiveFile] = React.useState<FileNode | null>(null);
+    // Store only the selected path — derive content from files to avoid stale data
+    const [selectedPath, setSelectedPath] = React.useState<string | null>(null);
     const filePaths = React.useMemo(() => Object.keys(files), [files]);
     const fileTree = React.useMemo(() => buildFileTree(files), [files]);
     const hasFiles = filePaths.length > 0;
 
-    // Select first file by default if no active file
-    React.useEffect(() => {
-      if (!activeFile && hasFiles) {
-        // Try to find a good default file (e.g., page.tsx, App.tsx, index.js)
-        for (const path of DEFAULT_ACTIVE_FILE_PATHS) {
-          if (files[path]) {
-            setActiveFile({
-              name: path.split("/").pop()!,
-              path,
-              type: "file",
-              content: files[path],
-            });
-            return;
-          }
-        }
-
-        // Fallback to first file found
-        const firstPath = filePaths[0];
-        setActiveFile({
-          name: firstPath.split("/").pop()!,
-          path: firstPath,
+    // Derive active file from selectedPath + files (no effect needed)
+    const activeFile = React.useMemo<FileNode | null>(() => {
+      // If selected path is valid and still exists in files, use it
+      if (selectedPath && files[selectedPath]) {
+        return {
+          name: selectedPath.split("/").pop()!,
+          path: selectedPath,
           type: "file",
-          content: files[firstPath],
-        });
+          content: files[selectedPath],
+        };
       }
-    }, [activeFile, filePaths, files, hasFiles]);
 
-    // Reset active file when files become empty
-    React.useEffect(() => {
-      if (!hasFiles && activeFile) {
-        setActiveFile(null);
+      // No files available
+      if (!hasFiles) return null;
+
+      // Auto-select: try default paths first
+      for (const path of DEFAULT_ACTIVE_FILE_PATHS) {
+        if (files[path]) {
+          return {
+            name: path.split("/").pop()!,
+            path,
+            type: "file",
+            content: files[path],
+          };
+        }
       }
-    }, [hasFiles, activeFile]);
+
+      // Fallback to first file
+      const firstPath = filePaths[0];
+      return {
+        name: firstPath.split("/").pop()!,
+        path: firstPath,
+        type: "file",
+        content: files[firstPath],
+      };
+    }, [selectedPath, files, hasFiles, filePaths]);
+
+    // Wrap setActiveFile to just store the path
+    const handleFileSelect = React.useCallback((node: FileNode) => {
+      setSelectedPath(node.path);
+    }, []);
 
     return (
       <div className="flex h-full w-full overflow-hidden bg-[#1e1e1e] rounded-xl border border-zinc-800">
@@ -255,7 +264,7 @@ export const CodeEditor = React.memo(
                 key={node.path}
                 node={node}
                 activePath={activeFile?.path ?? null}
-                onSelect={setActiveFile}
+                onSelect={handleFileSelect}
               />
             ))}
             {fileTree.length === 0 && (

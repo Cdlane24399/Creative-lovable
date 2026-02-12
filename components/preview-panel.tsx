@@ -202,15 +202,15 @@ export function PreviewPanel({ ref }: PreviewPanelProps) {
         {currentView === "preview" && (
           <div className="relative h-full w-full">
             {/* Loading indicator for iframe or dev server */}
-            {(isLoading || loadTimeout) && (
+            {isLoading || loadTimeout ? (
               <PreviewLoading
                 isTimeout={loadTimeout}
                 isExternalLoading={externalLoading}
               />
-            )}
+            ) : null}
 
             {/* Error display */}
-            {error && !isLoading && (
+            {error && !isLoading ? (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-zinc-900/80">
                 <div className="flex flex-col items-center gap-3 text-center px-4">
                   <div className="h-12 w-12 rounded-full bg-red-500/10 flex items-center justify-center">
@@ -225,10 +225,10 @@ export function PreviewPanel({ ref }: PreviewPanelProps) {
                   </button>
                 </div>
               </div>
-            )}
+            ) : null}
 
             {/* Screenshot capture button */}
-            {sandboxUrl && !isLoading && !error && (
+            {sandboxUrl && !isLoading && !error ? (
               <button
                 onClick={handleManualScreenshot}
                 className="absolute top-3 right-3 z-20 p-2 bg-zinc-800/90 hover:bg-zinc-700 rounded-lg transition-colors group"
@@ -236,7 +236,7 @@ export function PreviewPanel({ ref }: PreviewPanelProps) {
               >
                 <Camera className="h-4 w-4 text-zinc-400 group-hover:text-white" />
               </button>
-            )}
+            ) : null}
 
             {/* Preview content */}
             <div className="flex h-full items-center justify-center overflow-hidden bg-white">

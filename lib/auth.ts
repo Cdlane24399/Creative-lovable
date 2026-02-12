@@ -1,70 +1,103 @@
-import { NextRequest, NextResponse } from "next/server"
-import { checkRateLimit } from "./rate-limit"
-import { AuthenticationError, AuthorizationError, RateLimitError } from "./errors"
-import { createClient } from "@/lib/supabase/server"
+import { NextRequest, NextResponse } from "next/server";
+import { checkRateLimit } from "./rate-limit";
+import {
+  AuthenticationError,
+  AuthorizationError,
+  RateLimitError,
+} from "./errors";
+import { createClient } from "@/lib/supabase/server";
 
 // Track if auth warning has been logged to avoid spam
-let authWarningLogged = false
+let authWarningLogged = false;
 
 // Helper to get current environment values (allows testing)
 function getApiKey(): string | undefined {
-  return process.env.API_KEY
+  return process.env.API_KEY;
 }
 
 function isDevelopment(): boolean {
-  return process.env.NODE_ENV === "development"
+  return process.env.NODE_ENV === "development";
 }
 
 // Authentication middleware
-export async function authenticateRequest(request: NextRequest | Request): Promise<{ isAuthenticated: boolean; error?: NextResponse | Response }> {
-  // 1. Try Supabase Auth (Cookies)
-  try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      return { isAuthenticated: true }
-    }
-  } catch (error) {
-    // Ignore error and try API Key
+export async function authenticateRequest(
+  request: NextRequest | Request,
+): Promise<{ isAuthenticated: boolean; error?: NextResponse | Response }> {
+  // 1. Try API Key first (fast synchronous path — no network calls)
+  const apiKey =
+    request.headers.get("x-api-key") ||
+    request.headers.get("authorization")?.replace("Bearer ", "");
+  const expectedApiKey = getApiKey();
+
+  if (expectedApiKey && apiKey && apiKey === expectedApiKey) {
+    return { isAuthenticated: true };
   }
 
-  // 2. Try API Key
-  const apiKey = request.headers.get("x-api-key") || request.headers.get("authorization")?.replace("Bearer ", "")
-  const expectedApiKey = getApiKey()
+  // 2. Try Supabase Auth (Cookies) — slower path, requires network
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) {
+      return { isAuthenticated: true };
+    }
+  } catch (error) {
+    // Ignore error and fall through
+  }
 
-  // SECURITY: Only use server-side API_KEY, never NEXT_PUBLIC_* for auth
+  // 3. Handle missing API key configuration
   if (!expectedApiKey) {
     // In development, allow requests without API key (with warning)
     if (isDevelopment()) {
       if (!authWarningLogged) {
-        console.warn("[auth] API_KEY not set - authentication disabled in development mode")
-        authWarningLogged = true
+        console.warn(
+          "[auth] API_KEY not set - authentication disabled in development mode",
+        );
+        authWarningLogged = true;
       }
-      return { isAuthenticated: true }
+      return { isAuthenticated: true };
     }
-    
+
     // SECURITY: In production, fail closed - reject all requests
-    console.error("[auth] CRITICAL: API_KEY not configured in production - rejecting request")
-    const error = new AuthenticationError("Server authentication not configured")
-    const errorResponse = createErrorResponse(request, error.message, error.code, 500)
-    return { isAuthenticated: false, error: errorResponse }
+    console.error(
+      "[auth] CRITICAL: API_KEY not configured in production - rejecting request",
+    );
+    const error = new AuthenticationError(
+      "Server authentication not configured",
+    );
+    const errorResponse = createErrorResponse(
+      request,
+      error.message,
+      error.code,
+      500,
+    );
+    return { isAuthenticated: false, error: errorResponse };
   }
 
+  // 4. Authentication failed
   if (!apiKey) {
-    const error = new AuthenticationError()
-    const errorResponse = createErrorResponse(request, error.message, error.code, error.statusCode, {
-      "WWW-Authenticate": "Bearer"
-    })
-    return { isAuthenticated: false, error: errorResponse }
+    const error = new AuthenticationError();
+    const errorResponse = createErrorResponse(
+      request,
+      error.message,
+      error.code,
+      error.statusCode,
+      {
+        "WWW-Authenticate": "Bearer",
+      },
+    );
+    return { isAuthenticated: false, error: errorResponse };
   }
 
-  if (apiKey !== expectedApiKey) {
-    const error = new AuthorizationError("Invalid API key")
-    const errorResponse = createErrorResponse(request, error.message, error.code, error.statusCode)
-    return { isAuthenticated: false, error: errorResponse }
-  }
-
-  return { isAuthenticated: true }
+  const error = new AuthorizationError("Invalid API key");
+  const errorResponse = createErrorResponse(
+    request,
+    error.message,
+    error.code,
+    error.statusCode,
+  );
+  return { isAuthenticated: false, error: errorResponse };
 }
 
 // Helper to create consistent error responses
@@ -73,61 +106,80 @@ function createErrorResponse(
   message: string,
   code: string | undefined,
   status: number,
-  headers?: Record<string, string>
+  headers?: Record<string, string>,
 ): NextResponse | Response {
-  const body = JSON.stringify({ error: message, code })
-  const responseHeaders = { "Content-Type": "application/json", ...headers }
-  
+  const body = JSON.stringify({ error: message, code });
+  const responseHeaders = { "Content-Type": "application/json", ...headers };
+
   if (NextRequest.prototype.isPrototypeOf(request)) {
-    return NextResponse.json({ error: message, code }, { status, headers: responseHeaders })
+    return NextResponse.json(
+      { error: message, code },
+      { status, headers: responseHeaders },
+    );
   }
-  return new Response(body, { status, headers: responseHeaders })
+  return new Response(body, { status, headers: responseHeaders });
 }
 
 // Higher-order function to wrap API route handlers with authentication
 export function withAuth<T extends any[]>(
-  handler: (...args: T) => Promise<NextResponse | Response> | NextResponse | Response
+  handler: (
+    ...args: T
+  ) => Promise<NextResponse | Response> | NextResponse | Response,
+  options?: { skipRateLimit?: boolean },
 ) {
   return async (...args: T): Promise<NextResponse | Response> => {
-    const request = args[0] as NextRequest | Request
+    const request = args[0] as NextRequest | Request;
 
-    // Check rate limit first (only for NextRequest)
-    if (request instanceof Request === false) {
-      const rateLimit = checkRateLimit(request as NextRequest)
-      if (!rateLimit.allowed) {
-        const error = new RateLimitError("Rate limit exceeded", Math.ceil((rateLimit.resetTime - Date.now()) / 1000))
+    // Check rate limit first (only for NextRequest, skip if handler does its own)
+    let rateLimitResult: {
+      allowed: boolean;
+      remaining: number;
+      resetTime: number;
+    } | null = null;
+    if (!options?.skipRateLimit && request instanceof NextRequest) {
+      rateLimitResult = checkRateLimit(request);
+      if (!rateLimitResult.allowed) {
+        const error = new RateLimitError(
+          "Rate limit exceeded",
+          Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000),
+        );
         return NextResponse.json(
           {
             error: error.message,
             code: error.code,
-            retryAfter: error.retryAfter
+            retryAfter: error.retryAfter,
           },
           {
             status: error.statusCode,
             headers: {
               "Retry-After": error.retryAfter.toString(),
-            }
-          }
-        )
+            },
+          },
+        );
       }
     }
 
-    const auth = await authenticateRequest(request)
+    const auth = await authenticateRequest(request);
 
     if (!auth.isAuthenticated) {
-      return auth.error!
+      return auth.error!;
     }
 
-    const response = await handler(...args)
+    const response = await handler(...args);
 
-    // Add rate limit headers to successful responses (only for NextResponse)
-    if (response instanceof NextResponse && request instanceof Request === false) {
-      const rateLimit = checkRateLimit(request as NextRequest)
-      response.headers.set("X-RateLimit-Remaining", rateLimit.remaining.toString())
-      response.headers.set("X-RateLimit-Reset", rateLimit.resetTime.toString())
-      response.headers.set("X-RateLimit-Limit", "100")
+    // Add rate limit headers to successful NextResponse (reuse stored result, no double-count)
+    if (rateLimitResult && response instanceof NextResponse) {
+      response.headers.set(
+        "X-RateLimit-Remaining",
+        rateLimitResult.remaining.toString(),
+      );
+      response.headers.set(
+        "X-RateLimit-Reset",
+        rateLimitResult.resetTime.toString(),
+      );
+      response.headers.set("X-RateLimit-Limit", "100");
     }
 
-    return response
-  }
+    return response;
+  };
 }

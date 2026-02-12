@@ -7,6 +7,7 @@ import {
   useEffect,
   useImperativeHandle,
   useCallback,
+  useMemo,
 } from "react";
 import { useChatWithTools } from "@/hooks/use-chat-with-tools";
 import { type ModelProvider } from "@/lib/ai/agent";
@@ -17,6 +18,7 @@ import {
 } from "@/components/chat/prompt-input";
 import type { MessagePart } from "@/components/chat/message";
 import { parseToolOutputs } from "@/lib/parsers/tool-outputs";
+import { PlanProgress, extractPlanState } from "@/components/chat/plan-progress";
 import { useEditor } from "@/components/contexts/editor-context";
 
 const VALID_MODEL_KEYS = new Set<ModelProvider>([
@@ -340,6 +342,9 @@ export function ChatPanel({ ref }: ChatPanelProps) {
     };
   }, [isWorking, actions]);
 
+  // Extract plan state from messages for the floating checklist
+  const planState = useMemo(() => extractPlanState(messages), [messages])
+
   return (
     <div className="flex h-full flex-col bg-[#111111]">
       {/* Messages Area */}
@@ -362,6 +367,9 @@ export function ChatPanel({ ref }: ChatPanelProps) {
 
       {/* Input Area */}
       <div className="p-4 pt-2">
+        {planState && (
+          <PlanProgress plan={planState} isWorking={isWorking} />
+        )}
         <PromptInput
           inputValue={inputValue}
           setInputValue={setInputValue}

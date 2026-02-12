@@ -23,6 +23,16 @@ Build production-ready, interactive web applications quickly. Prioritize working
 - Use shadcn/ui primitives where appropriate.
 - Ensure responsive behavior and accessible interactions.
 
+## Frontend Aesthetics
+Avoid generic "AI slop" design. Build distinctive frontends that surprise and delight.
+
+- **Typography**: Choose beautiful, distinctive fonts. Avoid overused defaults (Inter, Roboto, Arial, system fonts). Pick typefaces that elevate the design.
+- **Color & Theme**: Commit to a cohesive aesthetic with CSS variables. Use dominant colors with sharp accents — not timid, evenly-distributed palettes. Draw from IDE themes, cultural aesthetics, and bold palettes. Vary between light and dark themes across projects.
+- **Motion**: Use animations for effects and micro-interactions. Prefer CSS-only solutions; use Motion (Framer Motion) for React when needed. Focus on high-impact moments: one well-orchestrated page load with staggered reveals (animation-delay) beats scattered micro-interactions.
+- **Backgrounds**: Create atmosphere and depth — layer CSS gradients, use geometric patterns, or add contextual effects. Never default to flat solid backgrounds.
+- **Avoid**: Clichéd purple-on-white gradients, predictable component layouts, cookie-cutter cards, and any design that lacks context-specific character.
+- **Vary your choices**: Do not converge on the same fonts (e.g. Space Grotesk) or palettes across projects. Think outside the box every time.
+
 ## Quality Bar
 - Strong typing and predictable state handling.
 - Clear loading, empty, and error states.

@@ -25,6 +25,16 @@ import { getProjectDir } from "@/lib/e2b/project-dir";
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
 import { createErrorResult } from "../utils";
 
+// Cached dynamic import for repositories (avoid repeated module resolution)
+let _repoModulePromise: Promise<typeof import("@/lib/db/repositories")> | null =
+  null;
+function getRepoModule() {
+  if (!_repoModulePromise) {
+    _repoModulePromise = import("@/lib/db/repositories");
+  }
+  return _repoModulePromise;
+}
+
 /**
  * Creates file operation tools for managing files in the project.
  * These tools enable reading, writing, and editing files during development.
@@ -79,14 +89,15 @@ export function createFileTools(projectId: string) {
             `[writeFile] Persisting file ${filePath} to database for project ${projectId}`,
           );
           try {
-            const { getProjectRepository } = await import("@/lib/db/repositories");
+            const { getProjectRepository } = await getRepoModule();
             const repo = getProjectRepository();
             await repo.saveSingleFile(projectId, filePath, content);
-            console.log(
-              `[writeFile] File persisted: ${filePath}`,
-            );
+            console.log(`[writeFile] File persisted: ${filePath}`);
           } catch (syncError) {
-            console.warn("[writeFile] Failed to persist file to database:", syncError);
+            console.warn(
+              "[writeFile] Failed to persist file to database:",
+              syncError,
+            );
             // Don't fail the tool execution if persistence fails - the file is still written to sandbox
           }
 
@@ -315,14 +326,15 @@ export function createFileTools(projectId: string) {
             `[editFile] Persisting file ${filePath} to database for project ${projectId}`,
           );
           try {
-            const { getProjectRepository } = await import("@/lib/db/repositories");
+            const { getProjectRepository } = await getRepoModule();
             const repo = getProjectRepository();
             await repo.saveSingleFile(projectId, filePath, newContent);
-            console.log(
-              `[editFile] File persisted: ${filePath}`,
-            );
+            console.log(`[editFile] File persisted: ${filePath}`);
           } catch (syncError) {
-            console.warn("[editFile] Failed to persist file to database:", syncError);
+            console.warn(
+              "[editFile] Failed to persist file to database:",
+              syncError,
+            );
             // Don't fail the tool execution if persistence fails - the file is still written to sandbox
           }
 

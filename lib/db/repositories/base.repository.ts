@@ -1,6 +1,6 @@
-import { createAdminClient } from "@/lib/supabase/admin"
-import { DatabaseError, NotFoundError, ValidationError } from "@/lib/errors"
-import { SupabaseClient } from "@supabase/supabase-js"
+import { createAdminClient } from "@/lib/supabase/admin";
+import { DatabaseError, NotFoundError, ValidationError } from "@/lib/errors";
+import { SupabaseClient } from "@supabase/supabase-js";
 
 // =============================================================================
 // Types
@@ -10,38 +10,38 @@ import { SupabaseClient } from "@supabase/supabase-js"
  * Common database row with timestamps
  */
 export interface BaseEntity {
-  id: string
-  created_at: string
+  id: string;
+  created_at: string;
 }
 
 /**
  * Query options for find operations
  */
 export interface FindOptions {
-  limit?: number
-  offset?: number
-  orderBy?: string
-  orderDir?: "ASC" | "DESC"
+  limit?: number;
+  offset?: number;
+  orderBy?: string;
+  orderDir?: "ASC" | "DESC";
 }
 
 /**
  * Result type for paginated queries
  */
 export interface PaginatedResult<T> {
-  data: T[]
-  total: number
-  limit: number
-  offset: number
-  hasMore: boolean
+  data: T[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
 }
 
 /**
  * Result type for mutations
  */
 export interface MutationResult<T> {
-  success: boolean
-  data?: T
-  error?: string
+  success: boolean;
+  data?: T;
+  error?: string;
 }
 
 // =============================================================================
@@ -53,35 +53,36 @@ export interface MutationResult<T> {
  * Extend this class for specific entity repositories.
  */
 export abstract class BaseRepository<T extends BaseEntity> {
-  protected readonly tableName: string
-  
+  protected readonly tableName: string;
+
   constructor(tableName: string) {
-    this.tableName = tableName
+    this.tableName = tableName;
   }
 
   /**
-   * Get Supabase admin client (bypasses RLS)
+   * Get Supabase admin client (bypasses RLS).
+   * Uses a cached singleton — no new client created per call.
    */
   protected async getClient(): Promise<SupabaseClient> {
-    return createAdminClient()
+    return createAdminClient();
   }
 
   /**
    * Handle database errors
    */
   protected handleError(error: unknown, operationName: string): never {
-    console.error(`[${this.tableName}] ${operationName} failed:`, error)
-    
-    if (error instanceof DatabaseError || 
-        error instanceof NotFoundError || 
-        error instanceof ValidationError) {
-      throw error
+    console.error(`[${this.tableName}] ${operationName} failed:`, error);
+
+    if (
+      error instanceof DatabaseError ||
+      error instanceof NotFoundError ||
+      error instanceof ValidationError
+    ) {
+      throw error;
     }
-    
-    const message = error instanceof Error ? error.message : "Unknown error"
-    throw new DatabaseError(
-      `${operationName} failed: ${message}`
-    )
+
+    const message = error instanceof Error ? error.message : "Unknown error";
+    throw new DatabaseError(`${operationName} failed: ${message}`);
   }
 
   /**
@@ -92,54 +93,54 @@ export abstract class BaseRepository<T extends BaseEntity> {
     operation: () => Promise<R>,
     maxRetries: number = 3,
   ): Promise<R> {
-    const TRANSIENT_CODES = new Set(['PGRST301', '40P01'])
-    let lastError: unknown
+    const TRANSIENT_CODES = new Set(["PGRST301", "40P01"]);
+    let lastError: unknown;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        return await operation()
+        return await operation();
       } catch (err: unknown) {
-        lastError = err
-        const code = (err as { code?: string })?.code
+        lastError = err;
+        const code = (err as { code?: string })?.code;
         if (!code || !TRANSIENT_CODES.has(code) || attempt === maxRetries) {
-          throw err
+          throw err;
         }
-        const delayMs = Math.min(100 * Math.pow(2, attempt), 2000)
-        await new Promise((resolve) => setTimeout(resolve, delayMs))
+        const delayMs = Math.min(100 * Math.pow(2, attempt), 2000);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     }
-    throw lastError
+    throw lastError;
   }
 
   /**
    * Find a single entity by ID
    */
-  abstract findById(id: string): Promise<T | null>
+  abstract findById(id: string): Promise<T | null>;
 
   /**
    * Find a single entity by ID, throw if not found
    */
   async findByIdOrThrow(id: string): Promise<T> {
-    const entity = await this.findById(id)
+    const entity = await this.findById(id);
     if (!entity) {
-      throw new NotFoundError(`${this.tableName} with id ${id}`)
+      throw new NotFoundError(`${this.tableName} with id ${id}`);
     }
-    return entity
+    return entity;
   }
 
   /**
    * Check if an entity exists by ID
    */
-  abstract exists(id: string): Promise<boolean>
+  abstract exists(id: string): Promise<boolean>;
 
   /**
    * Delete an entity by ID
    */
-  abstract delete(id: string): Promise<boolean>
+  abstract delete(id: string): Promise<boolean>;
 
   /**
    * Count total entities
    */
-  abstract count(): Promise<number>
+  abstract count(): Promise<number>;
 }
 
 // =============================================================================
@@ -150,7 +151,7 @@ export abstract class BaseRepository<T extends BaseEntity> {
  * Generate a UUID v4 for new entities
  */
 export function generateId(): string {
-  return crypto.randomUUID()
+  return crypto.randomUUID();
 }
 
 /**
@@ -159,21 +160,21 @@ export function generateId(): string {
 export function parseJsonSafe<T>(value: unknown, fallback: T): T {
   if (typeof value === "string") {
     try {
-      return JSON.parse(value) as T
+      return JSON.parse(value) as T;
     } catch {
-      return fallback
+      return fallback;
     }
   }
   if (typeof value === "object" && value !== null) {
-    return value as T
+    return value as T;
   }
-  return fallback
+  return fallback;
 }
 
 /**
  * Stringify JSON for storage
  */
 export function toJsonString(value: unknown): string {
-  if (typeof value === "string") return value
-  return JSON.stringify(value)
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
 }

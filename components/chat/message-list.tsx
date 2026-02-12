@@ -5,10 +5,7 @@ import { Message, type MessagePart } from "./message";
 import type { UIMessage } from "ai";
 import { ChatEmptyState } from "./chat-error";
 import { ChatError } from "./chat-error";
-import {
-  SuggestionChips,
-  buildHeuristicSuggestions,
-} from "./suggestion-chips";
+import { SuggestionChips, buildHeuristicSuggestions } from "./suggestion-chips";
 
 // Hoisted static JSX — avoids recreating element tree on every render
 const typingIndicator = (
@@ -54,12 +51,17 @@ export const MessageList = React.memo(
     const shouldAutoScrollRef = useRef(true);
 
     const uniqueMessages = useMemo(
-      () => [...new Map(messages.map((message) => [message.id, message])).values()],
+      () => [
+        ...new Map(messages.map((message) => [message.id, message])).values(),
+      ],
       [messages],
     );
 
     const lastAssistantMessage = useMemo(
-      () => [...uniqueMessages].reverse().find((message) => message.role === "assistant"),
+      () =>
+        [...uniqueMessages]
+          .reverse()
+          .find((message) => message.role === "assistant"),
       [uniqueMessages],
     );
 
@@ -78,7 +80,9 @@ export const MessageList = React.memo(
       };
 
       handleScroll();
-      scrollContainer.addEventListener("scroll", handleScroll, { passive: true });
+      scrollContainer.addEventListener("scroll", handleScroll, {
+        passive: true,
+      });
 
       return () => {
         scrollContainer.removeEventListener("scroll", handleScroll);
@@ -87,7 +91,9 @@ export const MessageList = React.memo(
 
     useEffect(() => {
       if (!shouldAutoScrollRef.current) return;
-      messagesEndRef.current?.scrollIntoView({ behavior: isWorking ? "auto" : "smooth" });
+      messagesEndRef.current?.scrollIntoView({
+        behavior: isWorking ? "auto" : "smooth",
+      });
     }, [uniqueMessages, isWorking]);
 
     if (uniqueMessages.length === 0 && !isWorking) {
@@ -118,14 +124,18 @@ export const MessageList = React.memo(
 
         {showSuggestionChips && (
           <SuggestionChips
-            suggestions={buildHeuristicSuggestions(getMessageText(lastAssistantMessage))}
+            suggestions={buildHeuristicSuggestions(
+              getMessageText(lastAssistantMessage),
+            )}
             onSelect={onSelectSuggestion}
           />
         )}
 
-        {isWorking && !isCallingTools && typingIndicator}
+        {isWorking && !isCallingTools ? typingIndicator : null}
 
-        {error && !isWorking && <ChatError error={error} onRetry={onRetry} />}
+        {error && !isWorking ? (
+          <ChatError error={error} onRetry={onRetry} />
+        ) : null}
 
         <div ref={messagesEndRef} className="h-px w-full" />
       </div>

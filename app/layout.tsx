@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Analytics } from "@vercel/analytics/next";
+import { Suspense } from "react";
 import { ThemeProvider } from "@/components/theme-provider";
+import { DeferredAnalytics } from "@/components/shared/deferred-analytics";
 import "./globals.css";
 
 const geist = Geist({
@@ -50,7 +51,9 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           {children}
         </ThemeProvider>
-        <Analytics />
+        <Suspense fallback={null}>
+          <DeferredAnalytics />
+        </Suspense>
       </body>
     </html>
   );

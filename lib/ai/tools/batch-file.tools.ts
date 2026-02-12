@@ -21,7 +21,8 @@ import { getProjectDir } from "@/lib/e2b/project-dir";
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
 import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager";
 
-const projectDir = getProjectDir();
+// NOTE: getProjectDir() is called at runtime inside execute(), not at module load time,
+// to ensure the sandbox context (AsyncLocalStorage) is available.
 const WRITE_CONCURRENCY = 8;
 
 const ROOT_LEVEL_DIRS = new Set([
@@ -112,7 +113,10 @@ async function runWithConcurrency<T>(
   await Promise.all(workers);
 }
 
-function resolveRuntimeRelativePath(path: string, runtimeAppDir: "app" | "src/app"): string {
+function resolveRuntimeRelativePath(
+  path: string,
+  runtimeAppDir: "app" | "src/app",
+): string {
   const normalized = path.replace(/^\/+/, "");
 
   if (runtimeAppDir === "src/app") {
@@ -162,6 +166,7 @@ export function createBatchFileTools(projectId: string) {
       execute: async ({ files, baseDir }) => {
         const startTime = new Date();
         const ctx = getAgentContext(projectId);
+        const projectDir = getProjectDir();
         const results = {
           created: [] as string[],
           updated: [] as string[],
@@ -203,7 +208,10 @@ export function createBatchFileTools(projectId: string) {
             const unresolvedPath = isRootRelative
               ? rawPath
               : `${effectiveBaseDir}/${rawPath}`;
-            const relativePath = resolveRuntimeRelativePath(unresolvedPath, appDir);
+            const relativePath = resolveRuntimeRelativePath(
+              unresolvedPath,
+              appDir,
+            );
 
             return {
               originalPath: file.path,
@@ -227,9 +235,13 @@ export function createBatchFileTools(projectId: string) {
             ),
           );
 
-          await runWithConcurrency(uniqueDirs, WRITE_CONCURRENCY, async (dir) => {
-            await executeCommand(sandbox, `mkdir -p "${dir}"`);
-          });
+          await runWithConcurrency(
+            uniqueDirs,
+            WRITE_CONCURRENCY,
+            async (dir) => {
+              await executeCommand(sandbox, `mkdir -p "${dir}"`);
+            },
+          );
 
           const contextUpdates: Array<{
             path: string;
@@ -243,7 +255,11 @@ export function createBatchFileTools(projectId: string) {
             async (file) => {
               try {
                 if (file.requestedAction === "create") {
-                  await writeFileToSandbox(sandbox, file.fullPath, file.content);
+                  await writeFileToSandbox(
+                    sandbox,
+                    file.fullPath,
+                    file.content,
+                  );
                   results.created.push(file.relativePath);
                   contextUpdates.push({
                     path: file.relativePath,
@@ -255,7 +271,9 @@ export function createBatchFileTools(projectId: string) {
 
                 let action: "created" | "updated" = "updated";
                 try {
-                  const existingContent = await sandbox.files.read(file.fullPath);
+                  const existingContent = await sandbox.files.read(
+                    file.fullPath,
+                  );
                   if (existingContent === file.content) {
                     results.skipped.push(file.relativePath);
                     return;
@@ -280,7 +298,10 @@ export function createBatchFileTools(projectId: string) {
               } catch (error) {
                 const errorMsg =
                   error instanceof Error ? error.message : "Write failed";
-                results.failed.push({ path: file.originalPath, error: errorMsg });
+                results.failed.push({
+                  path: file.originalPath,
+                  error: errorMsg,
+                });
                 console.error(
                   `[batchWriteFiles] Failed to write ${file.originalPath}:`,
                   errorMsg,
@@ -308,7 +329,10 @@ export function createBatchFileTools(projectId: string) {
                 );
               })
               .catch((syncError) => {
-                console.warn("[batchWriteFiles] Background sync failed:", syncError);
+                console.warn(
+                  "[batchWriteFiles] Background sync failed:",
+                  syncError,
+                );
               });
           }
 
@@ -355,8 +379,12 @@ export function createBatchFileTools(projectId: string) {
             startTime,
           );
 
-          const projectName = getAgentContext(projectId).projectName || "project";
-          const safeProjectName = isPlaceholderProjectName(projectName, projectId)
+          const projectName =
+            getAgentContext(projectId).projectName || "project";
+          const safeProjectName = isPlaceholderProjectName(
+            projectName,
+            projectId,
+          )
             ? "project"
             : projectName;
 

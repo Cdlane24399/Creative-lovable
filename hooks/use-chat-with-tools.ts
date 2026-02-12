@@ -77,7 +77,7 @@ export function useChatWithTools({
 
   // Track thinking time for each message
   const [thinkingTimes, setThinkingTimes] = useState<Map<string, number>>(
-    new Map(),
+    () => new Map(),
   );
   const thinkingStartRef = useRef<number | null>(null);
 

@@ -13,6 +13,16 @@ import {
 
 import type { ProgressCallback } from "./sandbox-files";
 
+// Cached dynamic import for repositories (avoids repeated module resolution)
+let _repoModulePromise: Promise<typeof import("@/lib/db/repositories")> | null =
+  null;
+function getRepoModule() {
+  if (!_repoModulePromise) {
+    _repoModulePromise = import("@/lib/db/repositories");
+  }
+  return _repoModulePromise;
+}
+
 // Sandbox manager to track active sandboxes
 export const activeSandboxes = new Map<string, Sandbox>();
 const pausedSandboxes = new Map<
@@ -124,38 +134,40 @@ export async function cleanupExpiredSandboxes(): Promise<void> {
     }
   }
 
-  // Clean up expired sandboxes - sync files first
-  for (const projectId of expiredProjects) {
-    console.log(
-      `[Sandbox TTL] Cleaning up expired sandbox for project ${projectId}`,
-    );
-    try {
-      // Sync files to database before closing (best effort)
-      const sandbox = activeSandboxes.get(projectId);
-      if (sandbox) {
-        try {
-          const { quickSyncToDatabase } = await import("./sync-manager");
-          console.log(
-            `[Sandbox TTL] Syncing files before expiration for ${projectId}`,
-          );
-          await quickSyncToDatabase(sandbox, projectId);
-        } catch (syncError) {
-          console.warn(
-            `[Sandbox TTL] Failed to sync before expiration for ${projectId}:`,
-            syncError,
-          );
-        }
-      }
-
-      await closeSandbox(projectId);
-      sandboxLastActivity.delete(projectId);
-    } catch (error) {
-      console.error(
-        `[Sandbox TTL] Failed to cleanup sandbox for ${projectId}:`,
-        error,
+  // Clean up expired sandboxes in parallel (not sequentially)
+  await Promise.allSettled(
+    expiredProjects.map(async (projectId) => {
+      console.log(
+        `[Sandbox TTL] Cleaning up expired sandbox for project ${projectId}`,
       );
-    }
-  }
+      try {
+        // Sync files to database before closing (best effort)
+        const sandbox = activeSandboxes.get(projectId);
+        if (sandbox) {
+          try {
+            const { quickSyncToDatabase } = await import("./sync-manager");
+            console.log(
+              `[Sandbox TTL] Syncing files before expiration for ${projectId}`,
+            );
+            await quickSyncToDatabase(sandbox, projectId);
+          } catch (syncError) {
+            console.warn(
+              `[Sandbox TTL] Failed to sync before expiration for ${projectId}:`,
+              syncError,
+            );
+          }
+        }
+
+        await closeSandbox(projectId);
+        sandboxLastActivity.delete(projectId);
+      } catch (error) {
+        console.error(
+          `[Sandbox TTL] Failed to cleanup sandbox for ${projectId}:`,
+          error,
+        );
+      }
+    }),
+  );
 
   if (expiredProjects.length > 0) {
     console.log(
@@ -196,7 +208,7 @@ export async function getSandboxIdFromDatabase(
   projectId: string,
 ): Promise<string | null> {
   try {
-    const { getProjectRepository } = await import("@/lib/db/repositories");
+    const { getProjectRepository } = await getRepoModule();
     const projectRepo = getProjectRepository();
     return await projectRepo.getSandboxId(projectId);
   } catch (error) {
@@ -218,7 +230,7 @@ export async function saveSandboxIdToDatabase(
   sandboxId: string,
 ): Promise<void> {
   try {
-    const { getProjectRepository } = await import("@/lib/db/repositories");
+    const { getProjectRepository } = await getRepoModule();
     const projectRepo = getProjectRepository();
     await projectRepo.ensureExists(projectId);
     await projectRepo.updateSandbox(projectId, sandboxId);
@@ -240,7 +252,7 @@ export async function clearSandboxIdFromDatabase(
   projectId: string,
 ): Promise<void> {
   try {
-    const { getProjectRepository } = await import("@/lib/db/repositories");
+    const { getProjectRepository } = await getRepoModule();
     const projectRepo = getProjectRepository();
     await projectRepo.updateSandbox(projectId, null);
   } catch (error) {
@@ -267,7 +279,7 @@ export async function getProjectSnapshot(
   projectId: string,
 ): Promise<ProjectSnapshot | null> {
   try {
-    const { getProjectRepository } = await import("@/lib/db/repositories");
+    const { getProjectRepository } = await getRepoModule();
     const projectRepo = getProjectRepository();
     return await projectRepo.getFilesSnapshot(projectId);
   } catch (error) {
@@ -290,7 +302,7 @@ export async function saveFilesSnapshot(
   dependencies?: Record<string, string>,
 ): Promise<void> {
   try {
-    const { getProjectRepository } = await import("@/lib/db/repositories");
+    const { getProjectRepository } = await getRepoModule();
     const projectRepo = getProjectRepository();
     await projectRepo.saveFilesSnapshot(projectId, files, dependencies);
     await projectCache.invalidate(projectId);

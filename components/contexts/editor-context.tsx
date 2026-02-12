@@ -3,6 +3,7 @@
 import {
   createContext,
   use,
+  useMemo,
   useState,
   useRef,
   useEffect,
@@ -350,9 +351,7 @@ export function EditorProvider({
             }
 
             if (normalizedSavedUrl) {
-              console.log(
-                "[EditorProvider] Falling back to saved sandbox URL",
-              );
+              console.log("[EditorProvider] Falling back to saved sandbox URL");
               setSandboxUrl(normalizedSavedUrl);
             } else {
               setSandboxUrl(null);
@@ -417,7 +416,9 @@ export function EditorProvider({
           devServerStartedRef.current = null;
           forceRestartNextStartRef.current = true;
           setPendingSandboxId(project.sandbox_id);
-          setPendingServerStart(project.name || projectNameRef.current || projectId);
+          setPendingServerStart(
+            project.name || projectNameRef.current || projectId,
+          );
           setIsPollingEnabled(true);
         } else {
           setIsPreviewLoading(false);
@@ -556,13 +557,7 @@ export function EditorProvider({
     } catch (error) {
       console.error("Failed to save project:", error);
     }
-  }, [
-    projectId,
-    sandboxUrl,
-    projectName,
-    initialPrompt,
-    updateProject,
-  ]);
+  }, [projectId, sandboxUrl, projectName, initialPrompt, updateProject]);
   saveProjectRef.current = saveProject;
 
   // Capture screenshot from sandbox URL
@@ -832,9 +827,11 @@ export function EditorProvider({
   }, []);
 
   // ---- Context value (state / actions / meta) ----
+  // Memoize each slice separately so consumers only re-render when their
+  // consumed values actually change (Vercel best practice: rerender-memo)
 
-  const contextValue: EditorContextValue = {
-    state: {
+  const state = useMemo<EditorState>(
+    () => ({
       currentView,
       projectName,
       hasUnsavedChanges,
@@ -842,8 +839,20 @@ export function EditorProvider({
       isPreviewLoading,
       isFilesLoading,
       isDevServerStarting,
-    },
-    actions: {
+    }),
+    [
+      currentView,
+      projectName,
+      hasUnsavedChanges,
+      sandboxUrl,
+      isPreviewLoading,
+      isFilesLoading,
+      isDevServerStarting,
+    ],
+  );
+
+  const actions = useMemo<EditorActions>(
+    () => ({
       setCurrentView,
       handleRefresh,
       saveProject,
@@ -851,8 +860,20 @@ export function EditorProvider({
       handleSandboxUrlUpdate,
       handleFilesReady,
       refetchProjectData,
-    },
-    meta: {
+    }),
+    [
+      setCurrentView,
+      handleRefresh,
+      saveProject,
+      handleManualScreenshot,
+      handleSandboxUrlUpdate,
+      handleFilesReady,
+      refetchProjectData,
+    ],
+  );
+
+  const meta = useMemo<EditorMeta>(
+    () => ({
       projectId,
       project,
       savedMessages,
@@ -862,8 +883,24 @@ export function EditorProvider({
       onNavigateHome,
       previewRef,
       chatRef,
-    },
-  };
+    }),
+    [
+      projectId,
+      project,
+      savedMessages,
+      messagesLoaded,
+      initialPrompt,
+      initialModel,
+      onNavigateHome,
+      previewRef,
+      chatRef,
+    ],
+  );
+
+  const contextValue = useMemo<EditorContextValue>(
+    () => ({ state, actions, meta }),
+    [state, actions, meta],
+  );
 
   return <EditorContext value={contextValue}>{children}</EditorContext>;
 }

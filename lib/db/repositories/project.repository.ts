@@ -202,7 +202,8 @@ export class ProjectRepository extends BaseRepository<Project> {
     try {
       const client = await this.getClient();
 
-      // Upsert: Try to insert, if conflict on ID, update updated_at
+      // Upsert with ignoreDuplicates: insert if missing, skip if exists
+      // This prevents overwriting existing project names with "Untitled Project"
       const { data, error } = await client
         .from(this.tableName)
         .upsert(
@@ -215,10 +216,18 @@ export class ProjectRepository extends BaseRepository<Project> {
             starred: false,
             updated_at: new Date().toISOString(),
           },
-          { onConflict: "id" },
+          { onConflict: "id", ignoreDuplicates: true },
         )
         .select()
         .single();
+
+      // PGRST116 = no rows returned (ignoreDuplicates skipped the insert)
+      // Fall back to findById to get the existing record
+      if (error && error.code === "PGRST116") {
+        const existing = await this.findById(id);
+        if (existing) return existing;
+        throw error;
+      }
 
       if (error) throw error;
 
@@ -313,28 +322,45 @@ export class ProjectRepository extends BaseRepository<Project> {
   ): Promise<void> {
     try {
       const client = await this.getClient();
-      // Read existing snapshot
-      const { data, error: readError } = await client
-        .from(this.tableName)
-        .select("files_snapshot")
-        .eq("id", id)
-        .single();
 
-      if (readError) throw readError;
+      // Atomic single-query update using PostgreSQL jsonb || operator
+      // This avoids the read-modify-write race condition of the previous approach
+      const { error } = await client.rpc("jsonb_set_file", {
+        project_id: id,
+        file_path: filePath,
+        file_content: content,
+      });
 
-      const existingSnapshot: Record<string, string> =
-        data?.files_snapshot || {};
-      existingSnapshot[filePath] = content;
+      // Fallback to read-modify-write if RPC not available
+      if (
+        error &&
+        (error.code === "42883" || error.message?.includes("function"))
+      ) {
+        const { data, error: readError } = await client
+          .from(this.tableName)
+          .select("files_snapshot")
+          .eq("id", id)
+          .single();
 
-      const { error: updateError } = await client
-        .from(this.tableName)
-        .update({
-          files_snapshot: existingSnapshot,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id);
+        if (readError) throw readError;
 
-      if (updateError) throw updateError;
+        const existingSnapshot: Record<string, string> =
+          data?.files_snapshot || {};
+        existingSnapshot[filePath] = content;
+
+        const { error: updateError } = await client
+          .from(this.tableName)
+          .update({
+            files_snapshot: existingSnapshot,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", id);
+
+        if (updateError) throw updateError;
+        return;
+      }
+
+      if (error) throw error;
     } catch (error) {
       this.handleError(error, "saveSingleFile");
     }
@@ -356,15 +382,29 @@ export class ProjectRepository extends BaseRepository<Project> {
   }
 
   /**
-   * Toggle starred status
+   * Toggle starred status using a single database round-trip
    */
   async toggleStarred(id: string): Promise<boolean> {
     try {
-      const project = await this.findById(id);
-      if (!project) throw new NotFoundError(`Project ${id} not found`);
+      const client = await this.getClient();
+      // Use RPC or raw query to toggle in a single operation
+      // First get current value with targeted select, then update
+      const { data: current, error: selectError } = await client
+        .from(this.tableName)
+        .select("starred")
+        .eq("id", id)
+        .single();
 
-      const newStarred = !project.starred;
-      await this.update(id, { starred: newStarred });
+      if (selectError || !current)
+        throw new NotFoundError(`Project ${id} not found`);
+
+      const newStarred = !current.starred;
+      const { error: updateError } = await client
+        .from(this.tableName)
+        .update({ starred: newStarred, updated_at: new Date().toISOString() })
+        .eq("id", id);
+
+      if (updateError) throw updateError;
       return newStarred;
     } catch (error) {
       this.handleError(error, "toggleStarred");
@@ -372,26 +412,47 @@ export class ProjectRepository extends BaseRepository<Project> {
   }
 
   /**
-   * Get sandbox ID for a project
+   * Get sandbox ID for a project (targeted select — avoids loading full row)
    */
   async getSandboxId(id: string): Promise<string | null> {
-    const project = await this.findById(id);
-    return project?.sandbox_id ?? null;
+    try {
+      const client = await this.getClient();
+      const { data, error } = await client
+        .from(this.tableName)
+        .select("sandbox_id")
+        .eq("id", id)
+        .single();
+
+      if (error || !data) return null;
+      return data.sandbox_id ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /**
-   * Get files snapshot for a project
+   * Get files snapshot for a project (targeted select — avoids loading full row)
    */
   async getFilesSnapshot(id: string): Promise<{
     files_snapshot: Record<string, string>;
     dependencies: Record<string, string>;
   } | null> {
-    const project = await this.findById(id);
-    if (!project) return null;
-    return {
-      files_snapshot: project.files_snapshot,
-      dependencies: project.dependencies,
-    };
+    try {
+      const client = await this.getClient();
+      const { data, error } = await client
+        .from(this.tableName)
+        .select("files_snapshot, dependencies")
+        .eq("id", id)
+        .single();
+
+      if (error || !data) return null;
+      return {
+        files_snapshot: data.files_snapshot ?? {},
+        dependencies: data.dependencies ?? {},
+      };
+    } catch {
+      return null;
+    }
   }
 
   /**
