@@ -14,12 +14,57 @@ import {
 import {
   executeCommand,
   writeFile as writeFileToSandbox,
+  directoryExists,
 } from "@/lib/e2b/sandbox";
 import { getProjectDir } from "@/lib/e2b/project-dir";
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
 import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager";
 
 const projectDir = getProjectDir();
+
+const ROOT_LEVEL_DIRS = new Set([
+  "app",
+  "src",
+  "components",
+  "lib",
+  "hooks",
+  "styles",
+  "public",
+  "scripts",
+  "docs",
+  "e2e",
+  "supabase",
+  "types",
+  "tests",
+  "__tests__",
+]);
+
+const ROOT_LEVEL_FILES = new Set([
+  "package.json",
+  "pnpm-lock.yaml",
+  "bun.lockb",
+  "bun.lock",
+  "yarn.lock",
+  "package-lock.json",
+  "tsconfig.json",
+  "next.config.js",
+  "next.config.mjs",
+  "postcss.config.js",
+  "postcss.config.mjs",
+  "tailwind.config.js",
+  "tailwind.config.ts",
+  "eslint.config.js",
+  "eslint.config.mjs",
+  "jest.config.js",
+  "jest.setup.js",
+  "playwright.config.ts",
+  "components.json",
+  "vercel.json",
+  "README.md",
+  ".env",
+  ".env.local",
+  ".env.example",
+]);
 
 // Schema for a single file in a batch operation
 const batchFileSchema = z.object({
@@ -42,6 +87,30 @@ const batchFileSchema = z.object({
  * @returns Object containing the batchWriteFiles tool
  */
 export function createBatchFileTools(projectId: string) {
+  const resolveRuntimeRelativePath = async (
+    sandbox: ReturnType<typeof getCurrentSandbox>,
+    path: string,
+  ): Promise<string> => {
+    const normalized = path.replace(/^\/+/, "");
+    const [hasSrcApp, hasRootApp] = await Promise.all([
+      directoryExists(sandbox, `${projectDir}/src/app`),
+      directoryExists(sandbox, `${projectDir}/app`),
+    ]);
+
+    const runtimeAppDir = hasSrcApp && !hasRootApp ? "src/app" : "app";
+
+    if (runtimeAppDir === "src/app") {
+      if (normalized === "app") return "src/app";
+      if (normalized.startsWith("app/")) return `src/${normalized}`;
+    } else {
+      if (normalized === "src/app") return "app";
+      if (normalized.startsWith("src/app/"))
+        return normalized.replace(/^src\//, "");
+    }
+
+    return normalized;
+  };
+
   return {
     /**
      * Write multiple files in a single operation.
@@ -87,19 +156,35 @@ export function createBatchFileTools(projectId: string) {
           const projectName = ctx.projectName || "project";
 
           // Resolve app directory
-          const hasSrcApp = await sandbox.files.exists(`${projectDir}/src/app`);
-          const appDir = hasSrcApp ? "src/app" : "app";
+          const [hasSrcApp, hasRootApp] = await Promise.all([
+            directoryExists(sandbox, `${projectDir}/src/app`),
+            directoryExists(sandbox, `${projectDir}/app`),
+          ]);
+          const appDir = hasSrcApp && !hasRootApp ? "src/app" : "app";
+
+          const normalizedBaseDir = (baseDir || "app")
+            .replace(/^\/+/, "")
+            .replace(/\/+$/, "");
+          const effectiveBaseDir =
+            normalizedBaseDir === "app" ? appDir : normalizedBaseDir;
 
           // Process files sequentially to avoid race conditions with directory creation
           for (const file of files) {
             try {
               // Determine full path
-              const isAbsolutePath =
-                file.path.startsWith("app/") ||
-                file.path.startsWith("components/");
-              const relativePath = isAbsolutePath
-                ? file.path
-                : `${baseDir}/${file.path}`;
+              const rawPath = file.path.trim().replace(/^\/+/, "");
+              const firstSegment = rawPath.split("/")[0] || "";
+              const isRootRelative = rawPath.includes("/")
+                ? ROOT_LEVEL_DIRS.has(firstSegment)
+                : ROOT_LEVEL_FILES.has(rawPath) || rawPath.startsWith(".");
+
+              const unresolvedPath = isRootRelative
+                ? rawPath
+                : `${effectiveBaseDir}/${rawPath}`;
+              const relativePath = await resolveRuntimeRelativePath(
+                sandbox,
+                unresolvedPath,
+              );
               const fullPath = `${projectDir}/${relativePath}`;
 
               // Create parent directories

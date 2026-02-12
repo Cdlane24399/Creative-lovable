@@ -7,10 +7,19 @@ import React, {
   useRef,
   useCallback,
 } from "react";
+import dynamic from "next/dynamic";
 import { Camera } from "lucide-react";
-import { CodeEditor } from "./code-editor";
-import { ProjectSettings } from "./project-settings";
 import { useEditor } from "@/components/contexts/editor-context";
+
+// Dynamic import — these are behind tabs, not needed on initial render
+const CodeEditor = dynamic(
+  () => import("./code-editor").then((m) => m.CodeEditor),
+  { ssr: false },
+);
+const ProjectSettings = dynamic(
+  () => import("./project-settings").then((m) => m.ProjectSettings),
+  { ssr: false },
+);
 
 export interface PreviewPanelHandle {
   refresh: () => void;
@@ -38,6 +47,7 @@ export function PreviewPanel({ ref }: PreviewPanelProps) {
   const externalLoading = isPreviewLoading || isDevServerStarting;
 
   const [iframeLoading, setIframeLoading] = useState(true);
+  const iframeLoadingRef = useRef(true);
   const [iframeKey, setIframeKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loadTimeout, setLoadTimeout] = useState(false);
@@ -53,7 +63,11 @@ export function PreviewPanel({ ref }: PreviewPanelProps) {
     : null;
 
   // Combined loading state
-  const isLoading = externalLoading || (sandboxUrl && iframeLoading);
+  // If we have a sandbox URL, prefer the iframe load signal so build/runtime errors are visible.
+  const isLoading = sandboxUrl ? iframeLoading : externalLoading;
+
+  // Keep ref in sync for timers (avoid stale closure values)
+  iframeLoadingRef.current = iframeLoading;
 
   // Cleanup on unmount
   useEffect(() => {
@@ -107,7 +121,7 @@ export function PreviewPanel({ ref }: PreviewPanelProps) {
       clearTimeout(loadTimeoutRef.current);
     }
     loadTimeoutRef.current = setTimeout(() => {
-      if (mountedRef.current && iframeLoading) {
+      if (mountedRef.current && iframeLoadingRef.current) {
         console.warn("[PreviewPanel] Iframe load timeout");
         setLoadTimeout(true);
         setIframeLoading(false);
@@ -163,7 +177,7 @@ export function PreviewPanel({ ref }: PreviewPanelProps) {
         clearTimeout(loadTimeoutRef.current);
       }
       loadTimeoutRef.current = setTimeout(() => {
-        if (mountedRef.current && iframeLoading) {
+        if (mountedRef.current && iframeLoadingRef.current) {
           setLoadTimeout(true);
           setIframeLoading(false);
         }
@@ -222,7 +236,7 @@ export function PreviewPanel({ ref }: PreviewPanelProps) {
 
                   {/* Feature card */}
                   <div className="w-full rounded-2xl bg-zinc-800/50 border border-zinc-700/50 p-5">
-                    <div className="aspect-video rounded-lg bg-gradient-to-br from-violet-500/20 to-pink-500/20 flex items-center justify-center mb-4 overflow-hidden">
+                    <div className="aspect-video rounded-lg bg-linear-to-br from-violet-500/20 to-pink-500/20 flex items-center justify-center mb-4 overflow-hidden">
                       <div className="flex flex-col items-center gap-2 text-zinc-500">
                         <svg
                           className="h-8 w-8 opacity-40"
@@ -323,7 +337,7 @@ export function PreviewPanel({ ref }: PreviewPanelProps) {
                     </div>
 
                     <div className="w-full rounded-2xl bg-zinc-800/50 border border-zinc-700/50 p-5 mt-2">
-                      <div className="aspect-video rounded-lg bg-gradient-to-br from-violet-500/20 to-pink-500/20 flex items-center justify-center mb-4">
+                      <div className="aspect-video rounded-lg bg-linear-to-br from-violet-500/20 to-pink-500/20 flex items-center justify-center mb-4">
                         <div className="flex items-center gap-3">
                           <div className="h-10 w-10 rounded-lg bg-white/10 animate-pulse" />
                           <div className="flex flex-col gap-1.5">

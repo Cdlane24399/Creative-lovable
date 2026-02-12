@@ -160,6 +160,8 @@ export function PromptInput({
         {/* Text Area */}
         <div className="relative">
           <textarea
+            id="chat-prompt-input"
+            name="chatPrompt"
             ref={textareaRef}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}

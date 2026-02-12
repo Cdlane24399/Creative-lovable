@@ -1,24 +1,72 @@
-"use client"
+"use client";
 
-import { useMemo, useState } from "react"
-import { motion, AnimatePresence } from "framer-motion"
-import { ArrowRight, Clock, Star, Folder, Grid3X3, Plus, Loader2, Trash2, ExternalLink } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { useProjects } from "@/hooks/use-projects"
-import { normalizeSandboxPreviewUrl } from "@/lib/utils/url"
-import type { ProjectCardData } from "@/lib/db/types"
+import { useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  ArrowRight,
+  Clock,
+  Star,
+  Folder,
+  Grid3X3,
+  Plus,
+  Loader2,
+  Trash2,
+  ExternalLink,
+  AlertTriangle,
+  X,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useProjects } from "@/hooks/use-projects";
+import { normalizeSandboxPreviewUrl } from "@/lib/utils/url";
+import type { ProjectCardData } from "@/lib/db/types";
 
 // Template data (static)
 const templates = [
-  { id: "t1", title: "SaaS Landing", image: "/saas-pricing-page-dark.jpg", lastEdited: "Template", category: "Marketing" },
-  { id: "t2", title: "E-commerce", image: "/coffee-shop-website-dark.jpg", lastEdited: "Template", category: "Store" },
-  { id: "t3", title: "Portfolio", image: "/gateway-portal-dark-theme.jpg", lastEdited: "Template", category: "Personal" },
-  { id: "t4", title: "Dashboard", image: "/modern-web-dashboard-dark.jpg", lastEdited: "Template", category: "App" },
-  { id: "t5", title: "Blog", image: "/analytics-dashboard.png", lastEdited: "Template", category: "Content" },
-  { id: "t6", title: "Documentation", image: "/saas-pricing-page-dark.jpg", lastEdited: "Template", category: "Docs" },
-]
+  {
+    id: "t1",
+    title: "SaaS Landing",
+    image: "/saas-pricing-page-dark.jpg",
+    lastEdited: "Template",
+    category: "Marketing",
+  },
+  {
+    id: "t2",
+    title: "E-commerce",
+    image: "/coffee-shop-website-dark.jpg",
+    lastEdited: "Template",
+    category: "Store",
+  },
+  {
+    id: "t3",
+    title: "Portfolio",
+    image: "/gateway-portal-dark-theme.jpg",
+    lastEdited: "Template",
+    category: "Personal",
+  },
+  {
+    id: "t4",
+    title: "Dashboard",
+    image: "/modern-web-dashboard-dark.jpg",
+    lastEdited: "Template",
+    category: "App",
+  },
+  {
+    id: "t5",
+    title: "Blog",
+    image: "/analytics-dashboard.png",
+    lastEdited: "Template",
+    category: "Content",
+  },
+  {
+    id: "t6",
+    title: "Documentation",
+    image: "/saas-pricing-page-dark.jpg",
+    lastEdited: "Template",
+    category: "Docs",
+  },
+];
 
-type DisplayProject = ProjectCardData & { category?: string }
+type DisplayProject = ProjectCardData & { category?: string };
 
 const templateProjects: DisplayProject[] = templates.map((template) => ({
   id: template.id,
@@ -28,75 +76,193 @@ const templateProjects: DisplayProject[] = templates.map((template) => ({
   starred: false,
   sandboxUrl: null,
   category: template.category,
-}))
+}));
+
+interface DeleteConfirmationDialogProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  isDeleting: boolean;
+}
+
+function DeleteConfirmationDialog({
+  isOpen,
+  onClose,
+  onConfirm,
+  isDeleting,
+}: DeleteConfirmationDialogProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+      />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        className="relative w-full max-w-md bg-[#18181B] border border-zinc-800 rounded-2xl shadow-2xl p-6 overflow-hidden"
+      >
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500/50 via-red-500 to-red-500/50" />
+
+        <div className="flex flex-col gap-4">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20">
+                <AlertTriangle className="w-5 h-5 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-medium text-white">
+                  Delete Project
+                </h3>
+                <p className="text-sm text-zinc-400">
+                  This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-1 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-800 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="mt-2 text-sm text-zinc-400 leading-relaxed">
+            Are you sure you want to delete this project? All associated files,
+            databases, and deployments will be permanently removed.
+          </div>
+
+          <div className="flex items-center justify-end gap-3 mt-4">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors border border-transparent hover:border-zinc-700"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={isDeleting}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-500 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4" />
+                  Delete Project
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
 
 interface ProjectsSectionProps {
-  onNavigateToEditor: (projectId?: string, prompt?: string) => void
+  onNavigateToEditor: (projectId?: string, prompt?: string) => void;
 }
 
 export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
-  const [selectedTab, setSelectedTab] = useState("My projects")
-  const { projects, projectCards, isLoading, error, refetch, deleteProject, toggleStarred } = useProjects()
+  const [selectedTab, setSelectedTab] = useState("My projects");
+  const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const {
+    projects,
+    projectCards,
+    isLoading,
+    error,
+    refetch,
+    deleteProject,
+    toggleStarred,
+  } = useProjects();
 
-  // Separate starred and recent projects
-  const starredProjects = useMemo(() => projectCards.filter((p) => p.starred), [projectCards])
-  const recentProjects = useMemo(() => projectCards.slice(0, 8), [projectCards])
+  // Separate starred and recent projects — cheap operations, no useMemo needed
+  const starredProjects = projectCards.filter((p) => p.starred);
+  const recentProjects = projectCards.slice(0, 8);
 
-  const tabs = useMemo(() => [
-    { id: "My projects", icon: Folder, count: projectCards.length },
-    { id: "Starred", icon: Star, count: starredProjects.length },
-    { id: "Templates", icon: Grid3X3, count: templates.length },
-  ], [projectCards.length, starredProjects.length])
+  const tabs = useMemo(
+    () => [
+      { id: "My projects", icon: Folder, count: projectCards.length },
+      { id: "Starred", icon: Star, count: starredProjects.length },
+      { id: "Templates", icon: Grid3X3, count: templates.length },
+    ],
+    [projectCards.length, starredProjects.length],
+  );
 
-  const isTemplatesTab = selectedTab === "Templates"
-  const isMyProjectsTab = selectedTab === "My projects"
+  const isTemplatesTab = selectedTab === "Templates";
+  const isMyProjectsTab = selectedTab === "My projects";
 
   const currentProjects = useMemo<DisplayProject[]>(() => {
     if (selectedTab === "Starred") {
-      return starredProjects
+      return starredProjects;
     }
 
     if (isTemplatesTab) {
-      return templateProjects
+      return templateProjects;
     }
 
-    return recentProjects
-  }, [isTemplatesTab, recentProjects, selectedTab, starredProjects])
+    return recentProjects;
+  }, [isTemplatesTab, recentProjects, selectedTab, starredProjects]);
 
-  const shouldShowLoading = isLoading && !isTemplatesTab
-  const shouldShowError = Boolean(error) && !isTemplatesTab
-  const shouldShowEmptyState = !isLoading && !error && currentProjects.length === 0 && !isTemplatesTab
-  const shouldShowProjectsGrid = (!isLoading || isTemplatesTab) && currentProjects.length > 0
+  const shouldShowLoading = isLoading && !isTemplatesTab;
+  const shouldShowError = Boolean(error) && !isTemplatesTab;
+  const shouldShowEmptyState =
+    !isLoading && !error && currentProjects.length === 0 && !isTemplatesTab;
+  const shouldShowProjectsGrid =
+    (!isLoading || isTemplatesTab) && currentProjects.length > 0;
 
   const handleProjectClick = (project: DisplayProject) => {
     if (selectedTab === "Templates") {
       // For templates, start a new project with the template prompt
-      const templatePrompt = `Create a ${project.title.toLowerCase()} website`
-      onNavigateToEditor(undefined, templatePrompt)
+      const templatePrompt = `Create a ${project.title.toLowerCase()} website`;
+      onNavigateToEditor(undefined, templatePrompt);
     } else {
       // For existing projects, open them
-      onNavigateToEditor(project.id)
+      onNavigateToEditor(project.id);
     }
-  }
+  };
 
-  const handleDeleteProject = async (e: React.MouseEvent, projectId: string) => {
-    e.stopPropagation()
-    if (window.confirm("Are you sure you want to delete this project?")) {
-      await deleteProject(projectId)
+  const handleDeleteProject = (e: React.MouseEvent, projectId: string) => {
+    e.stopPropagation();
+    setProjectToDelete(projectId);
+  };
+
+  const confirmDelete = async () => {
+    if (!projectToDelete) return;
+
+    setIsDeleting(true);
+    try {
+      await deleteProject(projectToDelete);
+    } catch (error) {
+      console.error("Failed to delete project:", error);
+    } finally {
+      setIsDeleting(false);
+      setProjectToDelete(null);
     }
-  }
+  };
 
   const handleToggleStar = async (e: React.MouseEvent, projectId: string) => {
-    e.stopPropagation()
-    await toggleStarred(projectId)
-  }
+    e.stopPropagation();
+    await toggleStarred(projectId);
+  };
 
   const handleOpenPreview = async (
     e: React.MouseEvent,
     projectId: string,
     fallbackUrl: string | null,
   ) => {
-    e.stopPropagation()
+    e.stopPropagation();
 
     try {
       const res = await fetch(`/api/sandbox/${projectId}/dev-server`, {
@@ -105,18 +271,18 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
           "Cache-Control": "no-cache, no-store, must-revalidate",
           Pragma: "no-cache",
         },
-      })
+      });
 
       if (res.ok) {
-        const status = await res.json()
+        const status = await res.json();
         const runningUrl =
           status?.isRunning && status?.url
             ? normalizeSandboxPreviewUrl(status.url)
-            : null
+            : null;
 
         if (runningUrl) {
-          window.open(runningUrl, "_blank")
-          return
+          window.open(runningUrl, "_blank");
+          return;
         }
       }
     } catch {
@@ -125,15 +291,15 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
 
     const normalizedFallback = fallbackUrl
       ? normalizeSandboxPreviewUrl(fallbackUrl)
-      : null
+      : null;
     if (normalizedFallback) {
-      window.open(normalizedFallback, "_blank")
-      return
+      window.open(normalizedFallback, "_blank");
+      return;
     }
 
     // If no active preview is available, open editor so it can restore/start server.
-    onNavigateToEditor(projectId)
-  }
+    onNavigateToEditor(projectId);
+  };
 
   return (
     <section className="relative py-12 sm:py-16 bg-[#09090B]">
@@ -150,15 +316,19 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                   "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all",
                   selectedTab === tab.id
                     ? "bg-zinc-800 text-white shadow-sm border border-zinc-700/50"
-                    : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"
+                    : "text-zinc-400 hover:text-white hover:bg-zinc-800/50",
                 )}
               >
                 <tab.icon className="w-4 h-4" />
                 <span>{tab.id}</span>
-                <span className={cn(
-                  "text-xs px-1.5 py-0.5 rounded-md",
-                  selectedTab === tab.id ? "bg-zinc-700 text-zinc-200" : "bg-zinc-800 text-zinc-500"
-                )}>
+                <span
+                  className={cn(
+                    "text-xs px-1.5 py-0.5 rounded-md",
+                    selectedTab === tab.id
+                      ? "bg-zinc-700 text-zinc-200"
+                      : "bg-zinc-800 text-zinc-500",
+                  )}
+                >
                   {tab.count}
                 </span>
               </button>
@@ -211,7 +381,9 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
             </div>
             <div className="text-center">
               <h3 className="text-lg font-medium text-zinc-200 mb-1">
-                {selectedTab === "Starred" ? "No starred projects" : "No projects yet"}
+                {selectedTab === "Starred"
+                  ? "No starred projects"
+                  : "No projects yet"}
               </h3>
               <p className="text-sm text-zinc-500 max-w-sm">
                 {selectedTab === "Starred"
@@ -253,7 +425,7 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                     onClick={() => handleProjectClick(project)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
-                        handleProjectClick(project)
+                        handleProjectClick(project);
                       }
                     }}
                     role="button"
@@ -262,6 +434,17 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                   >
                     <div className="relative rounded-2xl overflow-hidden bg-[#18181B] border border-zinc-800 hover:border-zinc-700 transition-all duration-300 hover:shadow-lg hover:shadow-black/20">
                       {/* Image */}
+
+                      <AnimatePresence>
+                        {projectToDelete && (
+                          <DeleteConfirmationDialog
+                            isOpen={!!projectToDelete}
+                            onClose={() => setProjectToDelete(null)}
+                            onConfirm={confirmDelete}
+                            isDeleting={isDeleting}
+                          />
+                        )}
+                      </AnimatePresence>
                       <div className="relative aspect-[16/10] overflow-hidden bg-zinc-900">
                         {project.image ? (
                           <img
@@ -273,9 +456,13 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-900">
                             <div className="text-center">
                               <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                                <span className="text-emerald-400 font-mono text-lg">{"</>"}</span>
+                                <span className="text-emerald-400 font-mono text-lg">
+                                  {"</>"}
+                                </span>
                               </div>
-                              <span className="text-xs text-zinc-500">No preview</span>
+                              <span className="text-xs text-zinc-500">
+                                No preview
+                              </span>
                             </div>
                           </div>
                         )}
@@ -290,7 +477,8 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                         ) : null}
 
                         {/* Category badge for templates */}
-                        {"category" in project && (project as { category?: string }).category ? (
+                        {"category" in project &&
+                        (project as { category?: string }).category ? (
                           <div className="absolute top-3 left-3">
                             <span className="px-2 py-1 text-[10px] font-medium text-zinc-200 bg-[#18181B] rounded-md border border-zinc-700 shadow-sm">
                               {(project as { category?: string }).category}
@@ -309,7 +497,9 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                               <Star
                                 className={cn(
                                   "w-4 h-4",
-                                  project.starred ? "text-amber-400 fill-amber-400" : "text-zinc-300"
+                                  project.starred
+                                    ? "text-amber-400 fill-amber-400"
+                                    : "text-zinc-300",
                                 )}
                               />
                             </button>
@@ -329,7 +519,9 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                               </button>
                             ) : null}
                             <button
-                              onClick={(e) => handleDeleteProject(e, project.id)}
+                              onClick={(e) =>
+                                handleDeleteProject(e, project.id)
+                              }
                               className="p-2 rounded-lg bg-zinc-800/80 hover:bg-red-600 transition-colors"
                               title="Delete project"
                             >
@@ -357,6 +549,17 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
           </AnimatePresence>
         ) : null}
       </div>
+
+      <AnimatePresence>
+        {projectToDelete && (
+          <DeleteConfirmationDialog
+            isOpen={!!projectToDelete}
+            onClose={() => setProjectToDelete(null)}
+            onConfirm={confirmDelete}
+            isDeleting={isDeleting}
+          />
+        )}
+      </AnimatePresence>
     </section>
-  )
+  );
 }

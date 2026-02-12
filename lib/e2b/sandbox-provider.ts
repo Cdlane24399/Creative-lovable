@@ -145,17 +145,24 @@ async function ensureProjectInitialized(
 
   // Check if project directory exists and has a valid Next.js project shape
   const projectExists = await directoryExists(sandbox, projectDir);
-  const hasPackageJson = projectExists
-    ? await fileExists(sandbox, `${projectDir}/package.json`)
-    : false;
-  const hasAppDir = projectExists
-    ? (await directoryExists(sandbox, `${projectDir}/app`)) ||
-      (await directoryExists(sandbox, `${projectDir}/src/app`))
-    : false;
-  const hasPagesDir = projectExists
-    ? (await directoryExists(sandbox, `${projectDir}/pages`)) ||
-      (await directoryExists(sandbox, `${projectDir}/src/pages`))
-    : false;
+
+  // Parallelize independent filesystem checks (avoids sequential round trips)
+  let hasPackageJson = false;
+  let hasAppDir = false;
+  let hasPagesDir = false;
+  if (projectExists) {
+    const [pkgJson, appDir, srcAppDir, pagesDir, srcPagesDir] =
+      await Promise.all([
+        fileExists(sandbox, `${projectDir}/package.json`),
+        directoryExists(sandbox, `${projectDir}/app`),
+        directoryExists(sandbox, `${projectDir}/src/app`),
+        directoryExists(sandbox, `${projectDir}/pages`),
+        directoryExists(sandbox, `${projectDir}/src/pages`),
+      ]);
+    hasPackageJson = pkgJson;
+    hasAppDir = appDir || srcAppDir;
+    hasPagesDir = pagesDir || srcPagesDir;
+  }
   const projectReady =
     projectExists && hasPackageJson && (hasAppDir || hasPagesDir);
 

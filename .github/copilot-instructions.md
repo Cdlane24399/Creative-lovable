@@ -85,21 +85,17 @@ AI Agent Pipeline:
     -> toUIMessageStreamResponse() --- Streaming to client
 ```
 
-### Sandbox Lifecycle (State Machine)
+### Sandbox Lifecycle
 
-States: `idle` -> `creating` -> `active` -> `paused` -> `expired` -> `error`
+Sandbox state is managed via in-memory Maps in `lib/e2b/sandbox.ts`:
 
-Managed by `SandboxStateMachine` (singleton via `getSandboxStateMachine()`). Key transitions:
+- `activeSandboxes`: Map of projectId -> active `Sandbox` instance
+- `pausedSandboxes`: Map of projectId -> paused sandbox info (sandboxId, pausedAt)
+- `connectionAttempts`: Map of sandboxId -> retry tracking (count, lastAttempt)
 
-- `idle + CREATE -> creating`
-- `creating + CREATED -> active`
-- `active + PAUSE -> paused`
-- `active + EXPIRE -> expired`
-- `expired + CREATE -> creating` (recreation with file restore)
-- `error + RETRY -> creating` (max 3 retries)
-- Any state `+ CLEANUP -> idle`
+Key operations: `createSandbox`, `createSandboxWithAutoPause`, `getSandbox` (with reconnection), `pauseSandbox`, `resumeSandbox`, `closeSandbox`. Includes connection retry logic and periodic auto-cleanup of idle sandboxes.
 
-Sandbox persistence: sandbox IDs are saved to the database, allowing reconnection across API route invocations. File snapshots are persisted for restoration after sandbox expiration.
+Sandbox persistence: sandbox IDs are saved to the database via `ProjectRepository`, allowing reconnection across API route invocations. File snapshots are persisted for restoration after sandbox expiration.
 
 ### Sandbox Provider (AsyncLocalStorage)
 
@@ -171,7 +167,6 @@ lib/
   e2b/
     sandbox.ts                  # Sandbox CRUD, file ops, command execution, screenshots
     sandbox-provider.ts         # withSandbox(), getCurrentSandbox() (AsyncLocalStorage)
-    sandbox-state-machine.ts    # SandboxStateMachine (formal state management)
     sync-manager.ts             # File sync to database
     delta-sync.ts               # Incremental file sync
     file-watcher.ts             # File change detection

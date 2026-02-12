@@ -48,6 +48,8 @@ export interface EditorMeta {
   projectId: string | undefined;
   project: Project | null;
   savedMessages: Message[];
+  /** True once the initial project/messages fetch has completed for the current projectId */
+  messagesLoaded: boolean;
   initialPrompt: string | null | undefined;
   initialModel: ModelProvider | undefined;
   onNavigateHome: (() => void) | undefined;
@@ -126,6 +128,7 @@ export function EditorProvider({
   });
   const titleGeneratedRef = useRef(false);
   const devServerStartedRef = useRef<string | null>(null);
+  const forceRestartNextStartRef = useRef(false);
   const validatingSandboxRef = useRef(false);
   const restorationAttemptedRef = useRef(false);
   const invalidUrlCleanupRef = useRef<Set<string>>(new Set());
@@ -154,10 +157,13 @@ export function EditorProvider({
   const {
     project,
     messages: savedMessages,
+    hasFetched: messagesLoaded,
     updateProject,
     saveScreenshot,
     refetchProject,
-  } = useProject(projectId || null);
+  } = useProject(projectId || null, {
+    autoFetch: !initialPrompt,
+  });
 
   const handleDevServerReady = useCallback(
     (url: string) => {
@@ -213,7 +219,9 @@ export function EditorProvider({
   // Start dev server when pending project name is set (only once per project)
   useEffect(() => {
     if (!pendingServerStart || !projectId) return;
-    if (devServerStartedRef.current === pendingServerStart) return;
+    const forceRestart = forceRestartNextStartRef.current;
+    if (devServerStartedRef.current === pendingServerStart && !forceRestart)
+      return;
 
     console.log(
       "[EditorProvider] Starting dev server for:",
@@ -222,19 +230,18 @@ export function EditorProvider({
       projectId,
       "sandboxId:",
       pendingSandboxId,
+      "forceRestart:",
+      forceRestart,
     );
     devServerStartedRef.current = pendingServerStart;
+    forceRestartNextStartRef.current = false;
     setIsPollingEnabled(true);
-    startDevServer();
+    startDevServer(forceRestart);
   }, [pendingServerStart, projectId, pendingSandboxId, startDevServer]);
 
-  useEffect(() => {
-    sandboxUrlRef.current = sandboxUrl;
-  }, [sandboxUrl]);
-
-  useEffect(() => {
-    projectNameRef.current = projectName;
-  }, [projectName]);
+  // Keep refs in sync with state (assign during render, not in effects)
+  sandboxUrlRef.current = sandboxUrl;
+  projectNameRef.current = projectName;
 
   // Restore project state when loading an existing project
   useEffect(() => {
@@ -251,14 +258,17 @@ export function EditorProvider({
         const normalizedSavedUrl = normalizeSandboxPreviewUrl(
           project.sandbox_url,
         );
-        if (!normalizedSavedUrl && !invalidUrlCleanupRef.current.has(project.id)) {
+        if (
+          !normalizedSavedUrl &&
+          !invalidUrlCleanupRef.current.has(project.id)
+        ) {
           invalidUrlCleanupRef.current.add(project.id);
           console.warn(
             "[EditorProvider] Clearing invalid saved sandbox URL:",
             project.sandbox_url,
           );
           fetch(`/api/projects/${project.id}`, {
-            method: "PUT",
+            method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sandbox_url: null }),
           }).catch((error) => {
@@ -279,7 +289,9 @@ export function EditorProvider({
         validatingSandboxRef.current = true;
 
         Promise.all([
-          fetch(`/api/projects/${project.id}/restore`).then((res) => res.json()),
+          fetch(`/api/projects/${project.id}/restore`).then((res) =>
+            res.json(),
+          ),
           fetch(`/api/sandbox/${project.id}/dev-server`, {
             cache: "no-store",
             headers: {
@@ -311,13 +323,31 @@ export function EditorProvider({
                 "[EditorProvider] Saved URL is stale; restoring sandbox from snapshot...",
               );
               setSandboxUrl(null);
-            } else {
+              devServerStartedRef.current = null;
+              return;
+            }
+
+            if (project.sandbox_id) {
               console.log(
-                "[EditorProvider] No files to restore, using saved sandbox URL",
+                "[EditorProvider] No snapshot yet, attempting sandbox resume via dev-server start",
               );
-              if (normalizedSavedUrl) {
-                setSandboxUrl(normalizedSavedUrl);
-              }
+              setSandboxUrl(null);
+              setPendingSandboxId(project.sandbox_id);
+              forceRestartNextStartRef.current = true;
+              devServerStartedRef.current = null;
+              setPendingServerStart(project.name || project.id);
+              setIsPollingEnabled(true);
+              validatingSandboxRef.current = false;
+              return;
+            }
+
+            if (normalizedSavedUrl) {
+              console.log(
+                "[EditorProvider] Falling back to saved sandbox URL",
+              );
+              setSandboxUrl(normalizedSavedUrl);
+            } else {
+              setSandboxUrl(null);
             }
             validatingSandboxRef.current = false;
           })
@@ -358,6 +388,7 @@ export function EditorProvider({
         }
 
         devServerStartedRef.current = null;
+        forceRestartNextStartRef.current = true;
         const serverName = projectNameRef.current || projectId;
         console.log(
           "[EditorProvider] Starting dev server for restored sandbox:",
@@ -366,8 +397,18 @@ export function EditorProvider({
         setPendingServerStart(serverName);
         setIsPollingEnabled(true);
       } else if (response.status === 422) {
-        console.log("[EditorProvider] No files to restore for this project");
-        setIsPreviewLoading(false);
+        console.log(
+          "[EditorProvider] No snapshot files to restore, attempting sandbox resume/start",
+        );
+        if (project?.sandbox_id) {
+          devServerStartedRef.current = null;
+          forceRestartNextStartRef.current = true;
+          setPendingSandboxId(project.sandbox_id);
+          setPendingServerStart(project.name || projectNameRef.current || projectId);
+          setIsPollingEnabled(true);
+        } else {
+          setIsPreviewLoading(false);
+        }
       } else {
         console.warn(
           "[EditorProvider] Failed to restore sandbox:",
@@ -379,7 +420,7 @@ export function EditorProvider({
       console.error("[EditorProvider] Error restoring sandbox:", error);
       setIsPreviewLoading(false);
     }
-  }, [projectId, initialPrompt]);
+  }, [projectId, initialPrompt, project]);
 
   // Trigger restoration when opening an existing project
   useEffect(() => {
@@ -414,7 +455,13 @@ export function EditorProvider({
         if (title) {
           console.log("[EditorProvider] Generated title:", title);
           setProjectName(title);
-          titleGeneratedRef.current = true;
+
+          const updated = await updateProject({ name: title });
+          if (updated?.name === title) {
+            titleGeneratedRef.current = true;
+          } else {
+            console.warn("[EditorProvider] Failed to persist generated title");
+          }
         }
       } else {
         console.warn(
@@ -424,7 +471,7 @@ export function EditorProvider({
     } catch (error) {
       console.error("Failed to generate title:", error);
     }
-  }, [initialPrompt, projectId]);
+  }, [initialPrompt, projectId, updateProject]);
 
   // Trigger title generation when sandbox URL becomes available
   useEffect(() => {
@@ -676,6 +723,8 @@ export function EditorProvider({
       if (newProjectName) {
         setProjectName(newProjectName);
         setIsPreviewLoading(true);
+        forceRestartNextStartRef.current = true;
+        devServerStartedRef.current = null;
         if (sandboxId) {
           setPendingSandboxId(sandboxId);
         }
@@ -758,7 +807,9 @@ export function EditorProvider({
         "[EditorProvider] Sandbox URL update requested:",
         normalizedUrl || url,
       );
-      updateSandboxUrlDebounced(normalizedUrl, { stopPolling: !!normalizedUrl });
+      updateSandboxUrlDebounced(normalizedUrl, {
+        stopPolling: !!normalizedUrl,
+      });
 
       if (!normalizedUrl) return;
 
@@ -811,6 +862,7 @@ export function EditorProvider({
       projectId,
       project,
       savedMessages,
+      messagesLoaded,
       initialPrompt,
       initialModel,
       onNavigateHome,

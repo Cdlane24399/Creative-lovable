@@ -6,9 +6,9 @@
  * periodic state comparison with content hashing.
  */
 
-import type { Sandbox } from "e2b"
-import { createHash } from "crypto"
-import { getProjectDir } from "./project-dir"
+import type { Sandbox } from "e2b";
+import { createHash } from "crypto";
+import { getProjectDir } from "./project-dir";
 
 // =============================================================================
 // Types
@@ -18,22 +18,22 @@ import { getProjectDir } from "./project-dir"
  * File change detected by the watcher
  */
 export interface FileChange {
-  path: string
-  type: "created" | "modified" | "deleted"
-  timestamp: number
-  size?: number
-  hash?: string
-  previousHash?: string
+  path: string;
+  type: "created" | "modified" | "deleted";
+  timestamp: number;
+  size?: number;
+  hash?: string;
+  previousHash?: string;
 }
 
 /**
  * File state for comparison
  */
 export interface FileState {
-  path: string
-  size: number
-  modifiedTime: number
-  hash?: string
+  path: string;
+  size: number;
+  modifiedTime: number;
+  hash?: string;
 }
 
 /**
@@ -41,21 +41,23 @@ export interface FileState {
  */
 export interface FileWatcherConfig {
   /** Polling interval in milliseconds */
-  pollInterval?: number
+  pollInterval?: number;
   /** Paths to watch (glob patterns) */
-  watchPaths?: string[]
+  watchPaths?: string[];
   /** Paths to ignore */
-  ignorePaths?: string[]
+  ignorePaths?: string[];
   /** Whether to compute content hashes */
-  computeHashes?: boolean
+  computeHashes?: boolean;
   /** Maximum file size to hash (bytes) */
-  maxHashSize?: number
+  maxHashSize?: number;
 }
 
 /**
  * Callback for file changes
  */
-export type FileChangeCallback = (changes: FileChange[]) => void | Promise<void>
+export type FileChangeCallback = (
+  changes: FileChange[],
+) => void | Promise<void>;
 
 // =============================================================================
 // Default Configuration
@@ -86,7 +88,7 @@ const DEFAULT_CONFIG: Required<FileWatcherConfig> = {
   ],
   computeHashes: true,
   maxHashSize: 1024 * 1024, // 1MB
-}
+};
 
 // =============================================================================
 // File Watcher Class
@@ -96,22 +98,22 @@ const DEFAULT_CONFIG: Required<FileWatcherConfig> = {
  * File watcher for E2B sandboxes
  */
 export class SandboxFileWatcher {
-  private sandbox: Sandbox
-  private config: Required<FileWatcherConfig>
-  private lastState: Map<string, FileState> = new Map()
-  private callbacks: Set<FileChangeCallback> = new Set()
-  private intervalId: NodeJS.Timeout | null = null
-  private isWatching: boolean = false
-  private projectDir: string
+  private sandbox: Sandbox;
+  private config: Required<FileWatcherConfig>;
+  private lastState: Map<string, FileState> = new Map();
+  private callbacks: Set<FileChangeCallback> = new Set();
+  private intervalId: NodeJS.Timeout | null = null;
+  private isWatching: boolean = false;
+  private projectDir: string;
 
   constructor(
     sandbox: Sandbox,
     projectDir: string = getProjectDir(),
-    config: FileWatcherConfig = {}
+    config: FileWatcherConfig = {},
   ) {
-    this.sandbox = sandbox
-    this.projectDir = projectDir
-    this.config = { ...DEFAULT_CONFIG, ...config }
+    this.sandbox = sandbox;
+    this.projectDir = projectDir;
+    this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
   /**
@@ -119,24 +121,24 @@ export class SandboxFileWatcher {
    */
   async start(): Promise<void> {
     if (this.isWatching) {
-      return
+      return;
     }
 
-    this.isWatching = true
+    this.isWatching = true;
 
     // Get initial state
-    await this.refreshState()
+    await this.refreshState();
 
     // Start polling
     this.intervalId = setInterval(async () => {
       try {
-        await this.checkForChanges()
+        await this.checkForChanges();
       } catch (error) {
-        console.error("[FileWatcher] Error checking for changes:", error)
+        console.error("[FileWatcher] Error checking for changes:", error);
       }
-    }, this.config.pollInterval)
+    }, this.config.pollInterval);
 
-    console.log(`[FileWatcher] Started watching ${this.projectDir}`)
+    console.log(`[FileWatcher] Started watching ${this.projectDir}`);
   }
 
   /**
@@ -144,46 +146,46 @@ export class SandboxFileWatcher {
    */
   stop(): void {
     if (this.intervalId) {
-      clearInterval(this.intervalId)
-      this.intervalId = null
+      clearInterval(this.intervalId);
+      this.intervalId = null;
     }
-    this.isWatching = false
-    console.log("[FileWatcher] Stopped watching")
+    this.isWatching = false;
+    console.log("[FileWatcher] Stopped watching");
   }
 
   /**
    * Register a callback for file changes
    */
   onChange(callback: FileChangeCallback): () => void {
-    this.callbacks.add(callback)
-    return () => this.callbacks.delete(callback)
+    this.callbacks.add(callback);
+    return () => this.callbacks.delete(callback);
   }
 
   /**
    * Get current file state
    */
   getCurrentState(): Map<string, FileState> {
-    return new Map(this.lastState)
+    return new Map(this.lastState);
   }
 
   /**
    * Force a state refresh
    */
   async refreshState(): Promise<Map<string, FileState>> {
-    this.lastState = await this.scanFiles()
-    return new Map(this.lastState)
+    this.lastState = await this.scanFiles();
+    return new Map(this.lastState);
   }
 
   /**
    * Check for changes since last scan
    */
   private async checkForChanges(): Promise<void> {
-    const currentState = await this.scanFiles()
-    const changes = this.detectChanges(this.lastState, currentState)
+    const currentState = await this.scanFiles();
+    const changes = this.detectChanges(this.lastState, currentState);
 
     if (changes.length > 0) {
-      this.lastState = currentState
-      await this.notifyChanges(changes)
+      this.lastState = currentState;
+      await this.notifyChanges(changes);
     }
   }
 
@@ -191,49 +193,49 @@ export class SandboxFileWatcher {
    * Scan files in the project directory
    */
   private async scanFiles(): Promise<Map<string, FileState>> {
-    const state = new Map<string, FileState>()
+    const state = new Map<string, FileState>();
 
     try {
       // Use find to get all files (more reliable than ls -R)
       const result = await this.sandbox.commands.run(
         `find "${this.projectDir}" -type f -printf '%p\\t%s\\t%T@\\n' 2>/dev/null || true`,
-        { timeoutMs: 30000 }
-      )
+        { timeoutMs: 30000 },
+      );
 
       if (result.exitCode !== 0 || !result.stdout) {
-        return state
+        return state;
       }
 
-      const lines = result.stdout.trim().split("\n").filter(Boolean)
+      const lines = result.stdout.trim().split("\n").filter(Boolean);
 
       for (const line of lines) {
-        const [path, sizeStr, modTimeStr] = line.split("\t")
-        if (!path || !sizeStr || !modTimeStr) continue
+        const [path, sizeStr, modTimeStr] = line.split("\t");
+        if (!path || !sizeStr || !modTimeStr) continue;
 
         // Check if path should be ignored
-        if (this.shouldIgnore(path)) continue
+        if (this.shouldIgnore(path)) continue;
 
-        const size = parseInt(sizeStr, 10)
-        const modifiedTime = parseFloat(modTimeStr) * 1000 // Convert to ms
+        const size = parseInt(sizeStr, 10);
+        const modifiedTime = parseFloat(modTimeStr) * 1000; // Convert to ms
 
         const fileState: FileState = {
           path,
           size,
           modifiedTime,
-        }
+        };
 
         // Compute hash if enabled and file is small enough
         if (this.config.computeHashes && size <= this.config.maxHashSize) {
-          fileState.hash = await this.computeFileHash(path)
+          fileState.hash = await this.computeFileHash(path);
         }
 
-        state.set(path, fileState)
+        state.set(path, fileState);
       }
     } catch (error) {
-      console.error("[FileWatcher] Error scanning files:", error)
+      console.error("[FileWatcher] Error scanning files:", error);
     }
 
-    return state
+    return state;
   }
 
   /**
@@ -242,25 +244,29 @@ export class SandboxFileWatcher {
   private shouldIgnore(path: string): boolean {
     for (const pattern of this.config.ignorePaths) {
       if (this.matchGlob(path, pattern)) {
-        return true
+        return true;
       }
     }
-    return false
+    return false;
   }
 
   /**
-   * Simple glob pattern matching
+   * Simple glob pattern matching.
+   * Caches compiled RegExp per pattern to avoid re-creation in loops.
    */
+  private static globRegexCache = new Map<string, RegExp>();
   private matchGlob(path: string, pattern: string): boolean {
-    // Convert glob pattern to regex
-    const regexPattern = pattern
-      .replace(/\*\*/g, "{{DOUBLE_STAR}}")
-      .replace(/\*/g, "[^/]*")
-      .replace(/{{DOUBLE_STAR}}/g, ".*")
-      .replace(/\?/g, ".")
-
-    const regex = new RegExp(`^${regexPattern}$|${regexPattern}`)
-    return regex.test(path)
+    let regex = SandboxFileWatcher.globRegexCache.get(pattern);
+    if (!regex) {
+      const regexPattern = pattern
+        .replace(/\*\*/g, "{{DOUBLE_STAR}}")
+        .replace(/\*/g, "[^/]*")
+        .replace(/{{DOUBLE_STAR}}/g, ".*")
+        .replace(/\?/g, ".");
+      regex = new RegExp(`^${regexPattern}$|${regexPattern}`);
+      SandboxFileWatcher.globRegexCache.set(pattern, regex);
+    }
+    return regex.test(path);
   }
 
   /**
@@ -270,16 +276,16 @@ export class SandboxFileWatcher {
     try {
       const result = await this.sandbox.commands.run(
         `md5sum "${path}" 2>/dev/null | cut -d' ' -f1`,
-        { timeoutMs: 5000 }
-      )
+        { timeoutMs: 5000 },
+      );
 
       if (result.exitCode === 0 && result.stdout) {
-        return result.stdout.trim()
+        return result.stdout.trim();
       }
     } catch {
       // Ignore hash computation errors
     }
-    return undefined
+    return undefined;
   }
 
   /**
@@ -287,14 +293,14 @@ export class SandboxFileWatcher {
    */
   private detectChanges(
     previous: Map<string, FileState>,
-    current: Map<string, FileState>
+    current: Map<string, FileState>,
   ): FileChange[] {
-    const changes: FileChange[] = []
-    const now = Date.now()
+    const changes: FileChange[] = [];
+    const now = Date.now();
 
     // Check for created and modified files
     for (const [path, currentState] of current) {
-      const previousState = previous.get(path)
+      const previousState = previous.get(path);
 
       if (!previousState) {
         // New file
@@ -304,7 +310,7 @@ export class SandboxFileWatcher {
           timestamp: now,
           size: currentState.size,
           hash: currentState.hash,
-        })
+        });
       } else if (this.hasChanged(previousState, currentState)) {
         // Modified file
         changes.push({
@@ -314,7 +320,7 @@ export class SandboxFileWatcher {
           size: currentState.size,
           hash: currentState.hash,
           previousHash: previousState.hash,
-        })
+        });
       }
     }
 
@@ -325,11 +331,11 @@ export class SandboxFileWatcher {
           path,
           type: "deleted",
           timestamp: now,
-        })
+        });
       }
     }
 
-    return changes
+    return changes;
   }
 
   /**
@@ -338,14 +344,14 @@ export class SandboxFileWatcher {
   private hasChanged(previous: FileState, current: FileState): boolean {
     // If hashes are available, use them
     if (previous.hash && current.hash) {
-      return previous.hash !== current.hash
+      return previous.hash !== current.hash;
     }
 
     // Otherwise use size and modification time
     return (
       previous.size !== current.size ||
       previous.modifiedTime !== current.modifiedTime
-    )
+    );
   }
 
   /**
@@ -353,12 +359,14 @@ export class SandboxFileWatcher {
    */
   private async notifyChanges(changes: FileChange[]): Promise<void> {
     const promises = Array.from(this.callbacks).map((callback) =>
-      Promise.resolve().then(() => callback(changes)).catch((error) => {
-        console.error("[FileWatcher] Callback error:", error)
-      })
-    )
+      Promise.resolve()
+        .then(() => callback(changes))
+        .catch((error) => {
+          console.error("[FileWatcher] Callback error:", error);
+        }),
+    );
 
-    await Promise.allSettled(promises)
+    await Promise.allSettled(promises);
   }
 }
 
@@ -370,7 +378,7 @@ export class SandboxFileWatcher {
  * Create a content hash from a string
  */
 export function hashContent(content: string): string {
-  return createHash("md5").update(content).digest("hex")
+  return createHash("md5").update(content).digest("hex");
 }
 
 /**
@@ -378,32 +386,32 @@ export function hashContent(content: string): string {
  */
 export function compareStates(
   previous: Map<string, FileState>,
-  current: Map<string, FileState>
+  current: Map<string, FileState>,
 ): {
-  created: string[]
-  modified: string[]
-  deleted: string[]
+  created: string[];
+  modified: string[];
+  deleted: string[];
 } {
-  const created: string[] = []
-  const modified: string[] = []
-  const deleted: string[] = []
+  const created: string[] = [];
+  const modified: string[] = [];
+  const deleted: string[] = [];
 
   for (const [path, state] of current) {
-    const prev = previous.get(path)
+    const prev = previous.get(path);
     if (!prev) {
-      created.push(path)
+      created.push(path);
     } else if (prev.hash !== state.hash || prev.size !== state.size) {
-      modified.push(path)
+      modified.push(path);
     }
   }
 
   for (const path of previous.keys()) {
     if (!current.has(path)) {
-      deleted.push(path)
+      deleted.push(path);
     }
   }
 
-  return { created, modified, deleted }
+  return { created, modified, deleted };
 }
 
 /**
@@ -412,7 +420,7 @@ export function compareStates(
 export function createFileWatcher(
   sandbox: Sandbox,
   projectDir?: string,
-  config?: FileWatcherConfig
+  config?: FileWatcherConfig,
 ): SandboxFileWatcher {
-  return new SandboxFileWatcher(sandbox, projectDir, config)
+  return new SandboxFileWatcher(sandbox, projectDir, config);
 }

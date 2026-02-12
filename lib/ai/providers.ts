@@ -7,27 +7,27 @@ const aiGateway = createGateway()
 const MODEL_CONFIG = {
   anthropic: {
     gatewayId: 'anthropic/claude-sonnet-4-5',
-    providerOrder: ['anthropic', 'vertex'] as const,
+    providerOrder: ['anthropic', 'vertex', 'openrouter'] as const,
   },
   opus: {
     gatewayId: 'anthropic/claude-opus-4-6',
-    providerOrder: ['anthropic', 'vertex'] as const,
+    providerOrder: ['anthropic', 'vertex', 'openrouter'] as const,
   },
   google: {
     gatewayId: 'google/gemini-3-flash-preview',
-    providerOrder: ['google', 'vertex'] as const,
+    providerOrder: ['google', 'vertex', 'openrouter'] as const,
   },
   googlePro: {
     gatewayId: 'google/gemini-3-pro-preview',
-    providerOrder: ['google', 'vertex'] as const,
+    providerOrder: ['google', 'vertex', 'openrouter'] as const,
   },
   openai: {
     gatewayId: 'openai/gpt-5.2',
-    providerOrder: ['openai'] as const,
+    providerOrder: ['openai', 'openrouter'] as const,
   },
   haiku: {
     gatewayId: 'anthropic/claude-3-5-haiku-20241022',
-    providerOrder: ['anthropic', 'vertex'] as const,
+    providerOrder: ['anthropic', 'vertex', 'openrouter'] as const,
   },
   minimax: {
     gatewayId: 'minimax/minimax-m2.1',

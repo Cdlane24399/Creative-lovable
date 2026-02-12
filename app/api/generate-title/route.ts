@@ -1,11 +1,12 @@
-import { generateText } from "ai"
-import { withAuth } from "@/lib/auth"
-import { asyncErrorHandler } from "@/lib/errors"
-import { ValidationError } from "@/lib/errors"
-import { getProjectService } from "@/lib/services"
-import { getModel, getGatewayProviderOptions } from "@/lib/ai/providers"
+import { generateText } from "ai";
+import { after } from "next/server";
+import { withAuth } from "@/lib/auth";
+import { asyncErrorHandler } from "@/lib/errors";
+import { ValidationError } from "@/lib/errors";
+import { getProjectService } from "@/lib/services";
+import { getModel, getGatewayProviderOptions } from "@/lib/ai/providers";
 
-const TITLE_PROMPT = `Generate a short, descriptive project title (2-4 words) based on the user's request. 
+const TITLE_PROMPT = `Generate a short, descriptive project title (2-4 words) based on the user's request.
 The title should be:
 - Concise and memorable
 - Descriptive of what's being built
@@ -19,52 +20,60 @@ Examples:
 - "I need a todo app" → "Todo App"
 - "build an e-commerce store for shoes" → "Shoe Store"
 
-User request: `
+User request: `;
 
-export const POST = withAuth(asyncErrorHandler(async (req: Request) => {
-  const { prompt, projectId } = await req.json()
+export const POST = withAuth(
+  asyncErrorHandler(async (req: Request) => {
+    const { prompt, projectId } = await req.json();
 
-  if (!prompt || typeof prompt !== "string") {
-    throw new ValidationError("Prompt is required", { prompt: ["string required"] })
-  }
-
-  // Generate a title using Claude Haiku (fast and cheap)
-  const result = await generateText({
-    model: getModel('haiku'),
-    providerOptions: getGatewayProviderOptions('haiku'),
-    prompt: TITLE_PROMPT + prompt,
-    maxOutputTokens: 20,
-    temperature: 0.3,
-  })
-
-  // Clean up the title - remove quotes, punctuation, extra whitespace
-  let title = result.text
-    .trim()
-    .replace(/^["']|["']$/g, "") // Remove surrounding quotes
-    .replace(/[.!?:;]$/g, "") // Remove trailing punctuation
-    .trim()
-
-  // Ensure title is in Title Case
-  title = title
-    .split(" ")
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ")
-
-  // Limit length
-  if (title.length > 50) {
-    title = title.substring(0, 47) + "..."
-  }
-
-  // Update project name in database if projectId provided
-  if (projectId) {
-    try {
-      const projectService = getProjectService()
-      await projectService.updateProject(projectId, { name: title })
-    } catch (dbError) {
-      // Log but don't fail the request - title generation succeeded
-      console.warn("[generate-title] Failed to update project name:", dbError)
+    if (!prompt || typeof prompt !== "string") {
+      throw new ValidationError("Prompt is required", {
+        prompt: ["string required"],
+      });
     }
-  }
 
-  return Response.json({ title })
-}))
+    // Generate a title using Claude Haiku (fast and cheap)
+    const result = await generateText({
+      model: getModel("haiku"),
+      providerOptions: getGatewayProviderOptions("haiku"),
+      prompt: TITLE_PROMPT + prompt,
+      maxOutputTokens: 20,
+      temperature: 0.3,
+    });
+
+    // Clean up the title - remove quotes, punctuation, extra whitespace
+    let title = result.text
+      .trim()
+      .replace(/^["']|["']$/g, "") // Remove surrounding quotes
+      .replace(/[.!?:;]$/g, "") // Remove trailing punctuation
+      .trim();
+
+    // Ensure title is in Title Case
+    title = title
+      .split(" ")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
+
+    // Limit length
+    if (title.length > 50) {
+      title = title.substring(0, 47) + "...";
+    }
+
+    // Update project name in database if projectId provided (non-blocking)
+    if (projectId) {
+      after(async () => {
+        try {
+          const projectService = getProjectService();
+          await projectService.updateProject(projectId, { name: title });
+        } catch (dbError) {
+          console.warn(
+            "[generate-title] Failed to update project name:",
+            dbError,
+          );
+        }
+      });
+    }
+
+    return Response.json({ title });
+  }),
+);

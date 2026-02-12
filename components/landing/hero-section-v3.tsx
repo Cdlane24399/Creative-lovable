@@ -1,79 +1,90 @@
-"use client"
+"use client";
 
-import type React from "react"
-import { useState, useRef } from "react"
-import { ArrowRight, Wand2, Loader2, Shield, Zap, Terminal, Lock, Users, Building2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { type ModelProvider } from "@/lib/ai/agent"
-import { cn } from "@/lib/utils"
-import { motion, AnimatePresence } from "framer-motion"
-import { ModelSelector } from "@/components/shared/model-selector"
+import type React from "react";
+import { useState, useRef } from "react";
+import {
+  ArrowRight,
+  Wand2,
+  Loader2,
+  Shield,
+  Zap,
+  Terminal,
+  Lock,
+  Users,
+  Building2,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { type ModelProvider } from "@/lib/ai/agent";
+import { cn } from "@/lib/utils";
+import { motion, AnimatePresence } from "framer-motion";
+import { ModelSelector } from "@/components/shared/model-selector";
 
 interface HeroSectionProps {
-  onSubmit: (prompt: string, model: ModelProvider) => void
+  onSubmit: (prompt: string, model: ModelProvider) => void;
 }
 
 export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
-  const [inputValue, setInputValue] = useState("")
-  const [selectedModel, setSelectedModel] = useState<ModelProvider>("anthropic")
-  const [isImproving, setIsImproving] = useState(false)
-  const [showImproveEffect, setShowImproveEffect] = useState(false)
-  const [isFocused, setIsFocused] = useState(false)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [inputValue, setInputValue] = useState("");
+  const [selectedModel, setSelectedModel] =
+    useState<ModelProvider>("anthropic");
+  const [isImproving, setIsImproving] = useState(false);
+  const [showImproveEffect, setShowImproveEffect] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSubmit = () => {
-    if (inputValue.trim()) {
-      onSubmit(inputValue.trim(), selectedModel)
-    }
-  }
+    // Allow starting with an empty prompt (opens editor with no initialPrompt).
+    // This matches the landing-page CTA behavior and avoids a disabled primary action.
+    onSubmit(inputValue.trim(), selectedModel);
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault()
-      handleSubmit()
+      e.preventDefault();
+      handleSubmit();
     }
-  }
+  };
 
   const typewriterEffect = async (text: string) => {
-    setShowImproveEffect(true)
-    setInputValue("")
+    setShowImproveEffect(true);
+    setInputValue("");
 
-    await new Promise(r => setTimeout(r, 200))
+    await new Promise((r) => setTimeout(r, 200));
 
     for (let i = 0; i <= text.length; i++) {
-      setInputValue(text.slice(0, i))
-      const delay = Math.random() * 15 + 8
-      await new Promise(r => setTimeout(r, delay))
+      setInputValue(text.slice(0, i));
+      const delay = Math.random() * 15 + 8;
+      await new Promise((r) => setTimeout(r, delay));
     }
 
-    setShowImproveEffect(false)
-  }
+    setShowImproveEffect(false);
+  };
 
   const handleImprovePrompt = async () => {
-    if (!inputValue.trim() || isImproving) return
+    if (!inputValue.trim() || isImproving) return;
 
-    setIsImproving(true)
+    setIsImproving(true);
 
     try {
       const response = await fetch("/api/improve-prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: inputValue }),
-      })
+      });
 
-      if (!response.ok) throw new Error("Failed to improve prompt")
+      if (!response.ok) throw new Error("Failed to improve prompt");
 
-      const { improvedPrompt } = await response.json()
+      const { improvedPrompt } = await response.json();
 
-      await typewriterEffect(improvedPrompt)
+      await typewriterEffect(improvedPrompt);
 
-      textareaRef.current?.focus()
+      textareaRef.current?.focus();
     } catch (error) {
-      console.error("Failed to improve prompt:", error)
+      console.error("Failed to improve prompt:", error);
     } finally {
-      setIsImproving(false)
+      setIsImproving(false);
     }
-  }
+  };
 
   const companyLogos = [
     { name: "Company 1", width: "w-20" },
@@ -81,13 +92,13 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
     { name: "Company 3", width: "w-20" },
     { name: "Company 4", width: "w-28" },
     { name: "Company 5", width: "w-20" },
-  ]
+  ];
 
   const stats = [
     { value: "50K+", label: "Developers" },
     { value: "2M+", label: "Projects Built" },
     { value: "99.9%", label: "Uptime" },
-  ]
+  ];
 
   return (
     <div className="min-h-[calc(100vh-80px)] flex flex-col items-center justify-center px-4 sm:px-6 lg:px-8 pt-16 pb-24 relative overflow-hidden">
@@ -109,10 +120,14 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
           <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-zinc-900/80 border border-zinc-800 backdrop-blur-sm">
             <div className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-xs font-medium text-emerald-400 uppercase tracking-wider">Enterprise Ready</span>
+              <span className="text-xs font-medium text-emerald-400 uppercase tracking-wider">
+                Enterprise Ready
+              </span>
             </div>
             <div className="w-px h-4 bg-zinc-700" />
-            <span className="text-xs text-zinc-500">SOC 2 Type II Compliant</span>
+            <span className="text-xs text-zinc-500">
+              SOC 2 Type II Compliant
+            </span>
           </div>
         </motion.div>
 
@@ -138,8 +153,8 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
           className="text-base sm:text-lg text-zinc-400 max-w-2xl mx-auto mb-12 text-center leading-relaxed"
         >
           The AI-powered development platform trusted by teams at the world's
-          leading companies. Build, iterate, and deploy Next.js applications with
-          unprecedented speed and precision.
+          leading companies. Build, iterate, and deploy Next.js applications
+          with unprecedented speed and precision.
         </motion.p>
 
         {/* Command Center Input */}
@@ -162,18 +177,22 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
             )}
           </AnimatePresence>
 
-          <div className={cn(
-            "relative bg-zinc-950 rounded-xl border transition-all duration-300",
-            isFocused
-              ? "border-zinc-600 shadow-2xl shadow-blue-500/5"
-              : "border-zinc-800 hover:border-zinc-700",
-            showImproveEffect && "border-indigo-500/50"
-          )}>
+          <div
+            className={cn(
+              "relative bg-zinc-950 rounded-xl border transition-all duration-300",
+              isFocused
+                ? "border-zinc-600 shadow-2xl shadow-blue-500/5"
+                : "border-zinc-800 hover:border-zinc-700",
+              showImproveEffect && "border-indigo-500/50",
+            )}
+          >
             {/* Terminal header bar */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/50">
               <div className="flex items-center gap-2">
                 <Terminal className="w-4 h-4 text-zinc-600" />
-                <span className="text-xs font-mono text-zinc-600 uppercase tracking-wider">Command Interface</span>
+                <span className="text-xs font-mono text-zinc-600 uppercase tracking-wider">
+                  Command Interface
+                </span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5 text-zinc-600">
@@ -192,6 +211,8 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
             <div className="p-5">
               <div className="relative">
                 <textarea
+                  id="landing-prompt-input"
+                  name="landingPrompt"
                   ref={textareaRef}
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
@@ -202,7 +223,7 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
                   className={cn(
                     "w-full bg-transparent text-white placeholder:text-zinc-600 resize-none outline-none text-base leading-relaxed font-mono",
                     "min-h-[140px]",
-                    showImproveEffect && "text-indigo-300"
+                    showImproveEffect && "text-indigo-300",
                   )}
                   disabled={isImproving}
                 />
@@ -210,10 +231,16 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
                 {/* Cursor blink effect when empty */}
                 {!inputValue && !isFocused && (
                   <div className="absolute top-0 left-0 flex items-center pointer-events-none">
-                    <span className="text-zinc-600 font-mono">Describe the application you want to build</span>
+                    <span className="text-zinc-600 font-mono">
+                      Describe the application you want to build
+                    </span>
                     <motion.span
                       animate={{ opacity: [1, 0] }}
-                      transition={{ duration: 0.8, repeat: Infinity, repeatType: "reverse" }}
+                      transition={{
+                        duration: 0.8,
+                        repeat: Infinity,
+                        repeatType: "reverse",
+                      }}
                       className="w-0.5 h-5 bg-zinc-600 ml-0.5"
                     />
                   </div>
@@ -243,7 +270,7 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
                           style={{
                             left: `${10 + Math.random() * 80}%`,
                             top: `${10 + Math.random() * 80}%`,
-                            boxShadow: "0 0 12px 3px rgba(129, 140, 248, 0.5)"
+                            boxShadow: "0 0 12px 3px rgba(129, 140, 248, 0.5)",
                           }}
                         />
                       ))}
@@ -273,18 +300,22 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
                       "h-9 gap-2 px-3 rounded-lg transition-all border",
                       inputValue.trim() && !isImproving
                         ? "text-indigo-400 border-indigo-500/20 hover:bg-indigo-500/10 hover:text-indigo-300 hover:border-indigo-500/30"
-                        : "text-zinc-600 border-zinc-800 cursor-not-allowed"
+                        : "text-zinc-600 border-zinc-800 cursor-not-allowed",
                     )}
                   >
                     {isImproving ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        <span className="text-sm hidden sm:inline">Enhancing...</span>
+                        <span className="text-sm hidden sm:inline">
+                          Enhancing...
+                        </span>
                       </>
                     ) : (
                       <>
                         <Wand2 className="h-4 w-4" />
-                        <span className="text-sm hidden sm:inline">Enhance</span>
+                        <span className="text-sm hidden sm:inline">
+                          Enhance
+                        </span>
                       </>
                     )}
                   </Button>
@@ -292,17 +323,18 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
 
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-zinc-600 hidden sm:inline">
-                    {navigator?.platform?.includes("Mac") ? "Cmd" : "Ctrl"} + Enter to submit
+                    {navigator?.platform?.includes("Mac") ? "Cmd" : "Ctrl"} +
+                    Enter to submit
                   </span>
 
                   <Button
                     onClick={handleSubmit}
-                    disabled={!inputValue.trim() || isImproving}
+                    disabled={isImproving}
                     className={cn(
                       "h-10 px-6 gap-2 rounded-lg font-medium transition-all",
-                      inputValue.trim() && !isImproving
+                      !isImproving
                         ? "bg-white text-black hover:bg-zinc-200 shadow-lg shadow-white/10"
-                        : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                        : "bg-zinc-800 text-zinc-600 cursor-not-allowed",
                     )}
                   >
                     <span>Build Application</span>
@@ -371,7 +403,7 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
                 transition={{ duration: 0.4, delay: 0.8 + index * 0.1 }}
                 className={cn(
                   "h-8 flex items-center justify-center",
-                  logo.width
+                  logo.width,
                 )}
               >
                 <div className="h-6 w-full bg-zinc-800/50 rounded flex items-center justify-center border border-zinc-800">
@@ -383,5 +415,5 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
         </motion.div>
       </div>
     </div>
-  )
+  );
 }

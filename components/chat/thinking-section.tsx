@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
-import React, { useState } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import React, { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface ThinkingSectionProps {
-  content: string
-  isExpanded?: boolean
+  content: string;
+  isExpanded?: boolean;
 }
 
 /**
@@ -17,18 +17,18 @@ export function ThinkingSection({
   content,
   isExpanded: initialExpanded = false,
 }: ThinkingSectionProps) {
-  const [isExpanded, setIsExpanded] = useState(initialExpanded)
+  const [isExpanded, setIsExpanded] = useState(initialExpanded);
 
   // Get first line as title/preview
-  const lines = content.split("\n").filter((line) => line.trim())
-  const firstLine = lines[0] || content.substring(0, 100)
-  const restContent = lines.slice(1).join("\n")
-  const hasMoreContent = lines.length > 1
+  const lines = content.split("\n").filter((line) => line.trim());
+  const firstLine = lines[0] || content.substring(0, 100);
+  const restContent = lines.slice(1).join("\n");
+  const hasMoreContent = lines.length > 1;
 
   // Parse content for **bold** formatting
   const formatThinkingContent = (text: string) => {
     // Split by double asterisks for emphasis
-    const parts = text.split(/\*\*(.*?)\*\*/g)
+    const parts = text.split(/\*\*(.*?)\*\*/g);
 
     return parts.map((part, index) => {
       // Odd indices are the emphasized text (between **)
@@ -37,7 +37,7 @@ export function ThinkingSection({
           <span key={index} className="font-medium text-gray-300">
             {part}
           </span>
-        )
+        );
       }
 
       // Format regular text with proper line breaks
@@ -46,15 +46,15 @@ export function ThinkingSection({
           {lineIndex > 0 && <br />}
           {line}
         </React.Fragment>
-      ))
-    })
-  }
+      ));
+    });
+  };
 
   return (
     <div className="my-2 text-sm text-gray-400">
       {/* Always visible first line with preview */}
       <div
-        onClick={() => hasMoreContent && setIsExpanded(!isExpanded)}
+        onClick={() => hasMoreContent && setIsExpanded((prev) => !prev)}
         className={`${
           hasMoreContent ? "cursor-pointer hover:text-gray-300" : ""
         } transition-colors`}
@@ -62,7 +62,7 @@ export function ThinkingSection({
         <span className="italic">Thinking: </span>
         <span className="italic">
           {formatThinkingContent(
-            firstLine.replace(/^\*\*/, "").replace(/\*\*$/, "")
+            firstLine.replace(/^\*\*/, "").replace(/\*\*$/, ""),
           )}
         </span>
         {hasMoreContent && (
@@ -91,7 +91,7 @@ export function ThinkingSection({
         </AnimatePresence>
       )}
     </div>
-  )
+  );
 }
 
-export default ThinkingSection
+export default ThinkingSection;

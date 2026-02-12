@@ -91,6 +91,60 @@ function getDevServerCommand(pm: PackageManager): string {
   return "npm run dev -- --hostname 0.0.0.0 > /tmp/server.log 2>&1";
 }
 
+async function ensureTailwindPostcssCompatibility(
+  sandbox: Awaited<ReturnType<typeof createSandbox>>,
+  projectDir: string,
+  packageManager: PackageManager,
+): Promise<void> {
+  const detectResult = await executeCommand(
+    sandbox,
+    `cd "${projectDir}" && node -e 'const fs=require("fs");const files=["postcss.config.mjs","postcss.config.js","postcss.config.cjs"];const file=files.find((f)=>fs.existsSync(f));if(!file){process.stdout.write("none");process.exit(0)}const content=fs.readFileSync(file,"utf8");const legacy=/tailwindcss\\s*[:(]/.test(content)&&!content.includes("@tailwindcss/postcss");process.stdout.write(file+"|"+(legacy?"legacy":"ok"));'`,
+    { timeoutMs: 8000 },
+  );
+
+  const output = detectResult.stdout.trim();
+  if (!output || output === "none") return;
+
+  const [configFile, status] = output.split("|");
+  if (status !== "legacy") return;
+
+  console.log(
+    `[dev-server POST] Detected legacy Tailwind PostCSS config (${configFile}), applying compatibility fix`,
+  );
+
+  const configBody = configFile.endsWith(".mjs")
+    ? `const config = {\n  plugins: {\n    "@tailwindcss/postcss": {},\n  },\n};\n\nexport default config;\n`
+    : `module.exports = {\n  plugins: {\n    "@tailwindcss/postcss": {},\n  },\n};\n`;
+
+  await executeCommand(
+    sandbox,
+    `cat > "${projectDir}/${configFile}" <<'EOF'\n${configBody}EOF`,
+    { timeoutMs: 5000 },
+  );
+
+  const dependencyCheck = await executeCommand(
+    sandbox,
+    `cd "${projectDir}" && node -e 'const pkg=require("./package.json");const has=(pkg.devDependencies&&pkg.devDependencies["@tailwindcss/postcss"])||(pkg.dependencies&&pkg.dependencies["@tailwindcss/postcss"]);process.stdout.write(has?"yes":"no");'`,
+    { timeoutMs: 8000 },
+  );
+
+  if (dependencyCheck.stdout.trim() === "yes") return;
+
+  console.log(
+    "[dev-server POST] Installing missing @tailwindcss/postcss dependency",
+  );
+  const installCommand =
+    packageManager === "pnpm"
+      ? `cd "${projectDir}" && pnpm add -D @tailwindcss/postcss`
+      : packageManager === "bun"
+        ? `cd "${projectDir}" && bun add -d @tailwindcss/postcss`
+        : `cd "${projectDir}" && npm install --save-dev @tailwindcss/postcss`;
+
+  await executeCommand(sandbox, installCommand, {
+    timeoutMs: 180000,
+  });
+}
+
 // Helper to get server status
 async function getStatus(projectId: string): Promise<DevServerStatus> {
   const now = Date.now();
@@ -382,6 +436,13 @@ export const POST = withAuth(
           );
         }
 
+        const packageManager = await detectPackageManager(sandbox, projectDir);
+        await ensureTailwindPostcssCompatibility(
+          sandbox,
+          projectDir,
+          packageManager,
+        );
+
         // Fragments-style flow: use template/autostart server when available and
         // return sandbox host URL directly when it's already live.
         const initialStatus = await checkDevServerStatus(sandbox);
@@ -459,7 +520,6 @@ export const POST = withAuth(
         );
 
         // Start the dev server in background
-        const packageManager = await detectPackageManager(sandbox, projectDir);
         const devServerCommand = getDevServerCommand(packageManager);
         console.log(
           `[dev-server POST] Starting dev server with package manager: ${packageManager}`,

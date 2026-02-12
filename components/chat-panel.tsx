@@ -42,7 +42,13 @@ interface ChatPanelProps {
 export function ChatPanel({ ref }: ChatPanelProps) {
   // Consume shared state from EditorContext (no prop drilling)
   const { actions, meta } = useEditor();
-  const { projectId, initialPrompt, initialModel, savedMessages } = meta;
+  const {
+    projectId,
+    initialPrompt,
+    initialModel,
+    savedMessages,
+    messagesLoaded,
+  } = meta;
 
   const [inputValue, setInputValue] = useState("");
   const [isChatEnabled, _setIsChatEnabled] = useState(true);
@@ -85,6 +91,7 @@ export function ChatPanel({ ref }: ChatPanelProps) {
     projectId,
     model: selectedModel,
     initialMessages: savedMessages,
+    messagesLoaded,
     onError: handleChatError,
   });
 
@@ -96,6 +103,7 @@ export function ChatPanel({ ref }: ChatPanelProps) {
 
       const content = inputValue.trim();
       setInputValue("");
+      setLastError(null); // Clear error on new submission
 
       await sendMessage({ text: content });
     },
@@ -103,7 +111,7 @@ export function ChatPanel({ ref }: ChatPanelProps) {
   );
 
   const handleRetry = useCallback(() => {
-    setLastError(null);
+    setLastError(null); // Clear error on retry
     const lastUserMessage = [...messages]
       .reverse()
       .find((m) => m.role === "user");
@@ -184,13 +192,6 @@ export function ChatPanel({ ref }: ChatPanelProps) {
     }),
     [sendMessage],
   );
-
-  // Clear error when user sends a new message
-  useEffect(() => {
-    if (isWorking) {
-      setLastError(null);
-    }
-  }, [isWorking]);
 
   // Auto-send initial prompt from landing page
   useEffect(() => {

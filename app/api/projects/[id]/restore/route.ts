@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { withAuth } from "@/lib/auth"
+import { projectCache } from "@/lib/cache"
 import { getProjectRepository } from "@/lib/db/repositories"
-import { createSandbox, getProjectSnapshot, getHostUrl } from "@/lib/e2b/sandbox"
+import {
+  createSandbox,
+  getProjectSnapshot,
+  getHostUrl,
+  getSandbox,
+} from "@/lib/e2b/sandbox"
 
 /**
  * POST /api/projects/[id]/restore
@@ -34,6 +40,21 @@ export const POST = withAuth(async (req: NextRequest, { params }: { params: Prom
     const fileCount = snapshot ? Object.keys(snapshot.files_snapshot).length : 0
 
     if (!snapshot || fileCount === 0) {
+      const existingSandbox = await getSandbox(projectId)
+      if (existingSandbox) {
+        const previewUrl = getHostUrl(existingSandbox, 3000)
+        return NextResponse.json({
+          success: true,
+          projectId,
+          sandboxId: existingSandbox.sandboxId,
+          previewUrl,
+          filesRestored: 0,
+          dependenciesCount: 0,
+          message:
+            "No snapshot files found, but an existing sandbox is available. Starting dev server should resume the preview.",
+        })
+      }
+
       return NextResponse.json(
         { 
           error: "No files to restore", 
@@ -57,6 +78,7 @@ export const POST = withAuth(async (req: NextRequest, { params }: { params: Prom
     await projectRepo.update(projectId, {
       sandbox_id: sandbox.sandboxId,
     })
+    await projectCache.invalidate(projectId)
 
     // Get the preview URL (port 3000 is default for Next.js)
     const previewUrl = getHostUrl(sandbox, 3000)

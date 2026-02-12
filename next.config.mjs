@@ -9,9 +9,9 @@ const nextConfig = {
     unoptimized: true,
     remotePatterns: [
       {
-        protocol: 'https',
-        hostname: 'avatar.vercel.sh',
-        pathname: '/**',
+        protocol: "https",
+        hostname: "avatar.vercel.sh",
+        pathname: "/**",
       },
     ],
   },
@@ -19,45 +19,57 @@ const nextConfig = {
   // Turbopack configuration (Next.js 16+)
   turbopack: {},
 
+  // Optimize barrel file imports for faster builds and smaller bundles
+  experimental: {
+    optimizePackageImports: [
+      "lucide-react",
+      "framer-motion",
+      "recharts",
+      "date-fns",
+      "react-day-picker",
+      "@radix-ui/react-icons",
+    ],
+  },
+
   // Output optimization
-  output: 'standalone',
+  output: "standalone",
 
   // Compression
   compress: true,
 
   // Transpile packages that need it
-  transpilePackages: ['@e2b/code-interpreter', 'e2b'],
+  transpilePackages: ["@e2b/code-interpreter", "e2b"],
 
   // Security headers
   async headers() {
     return [
       {
-        source: '/(.*)',
+        source: "/(.*)",
         headers: [
           {
-            key: 'X-Frame-Options',
-            value: 'DENY',
+            key: "X-Frame-Options",
+            value: "DENY",
           },
           {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
+            key: "X-Content-Type-Options",
+            value: "nosniff",
           },
           {
-            key: 'Referrer-Policy',
-            value: 'strict-origin-when-cross-origin',
+            key: "Referrer-Policy",
+            value: "strict-origin-when-cross-origin",
           },
           {
-            key: 'X-XSS-Protection',
-            value: '1; mode=block',
+            key: "X-XSS-Protection",
+            value: "1; mode=block",
           },
           {
-            key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=()',
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=()",
           },
         ],
       },
-    ]
+    ];
   },
-}
+};
 
-export default nextConfig
+export default nextConfig;

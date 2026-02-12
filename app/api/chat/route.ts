@@ -56,11 +56,7 @@ const FILE_TOOLS = [
   "getProjectStructure",
   "batchWriteFiles",
 ] as const;
-const BUILD_TOOLS = [
-  "runCommand",
-  "installPackage",
-  "getBuildStatus",
-] as const;
+const BUILD_TOOLS = ["runCommand", "installPackage", "getBuildStatus"] as const;
 const SYNC_TOOLS = ["syncProject"] as const;
 const CODE_TOOLS = ["executeCode"] as const;
 const SUGGESTION_TOOLS = ["generateSuggestions"] as const; // Always available for contextual suggestions
@@ -223,7 +219,8 @@ export const POST = withAuth(async (req: Request) => {
       async () => {
         // Capture sandbox reference for onFinish callback (which runs after
         // AsyncLocalStorage context has exited)
-        const { getCurrentSandbox } = await import("@/lib/e2b/sandbox-provider");
+        const { getCurrentSandbox } =
+          await import("@/lib/e2b/sandbox-provider");
         const sandboxRef = getCurrentSandbox();
 
         // Stream the response with Gateway (provider failover handled by Gateway's order option)
@@ -261,35 +258,39 @@ export const POST = withAuth(async (req: Request) => {
               tokensUsed: usage?.totalTokens,
             });
 
-            // Persist token usage to database
+            // Persist token usage to database (fire-and-forget, non-blocking)
             if (usage && projectId && projectId !== DEFAULT_PROJECT_ID) {
-              try {
-                const promptTokens = usage.inputTokens || 0;
-                const completionTokens = usage.outputTokens || 0;
-                const totalTokens =
-                  usage.totalTokens || promptTokens + completionTokens;
+              const promptTokens = usage.inputTokens || 0;
+              const completionTokens = usage.outputTokens || 0;
+              const totalTokens =
+                usage.totalTokens || promptTokens + completionTokens;
 
-                if (totalTokens > 0) {
-                  await tokenUsageService.recordTokenUsage({
+              if (totalTokens > 0) {
+                tokenUsageService
+                  .recordTokenUsage({
                     project_id: projectId,
                     model: validModel,
                     prompt_tokens: promptTokens,
                     completion_tokens: completionTokens,
                     total_tokens: totalTokens,
                     step_number: currentStepNumber,
+                  })
+                  .then(() => {
+                    log.debug(
+                      `Token usage recorded for step ${currentStepNumber}`,
+                      {
+                        projectId,
+                        model: validModel,
+                        tokens: totalTokens,
+                      },
+                    );
+                  })
+                  .catch((error) => {
+                    log.error("Failed to record token usage:", {
+                      error:
+                        error instanceof Error ? error.message : String(error),
+                    });
                   });
-
-                  log.debug(`Token usage recorded for step ${currentStepNumber}`, {
-                    projectId,
-                    model: validModel,
-                    tokens: totalTokens,
-                  });
-                }
-              } catch (error) {
-                // Log error but don't fail the chat request
-                log.error("Failed to record token usage:", {
-                  error: error instanceof Error ? error.message : String(error),
-                });
               }
             }
           },
@@ -385,7 +386,10 @@ export const POST = withAuth(async (req: Request) => {
 
               // LanguageModelV3ToolCall.input is a JSON string
               try {
-                const parsedInput = JSON.parse(toolCall.input) as Record<string, unknown>;
+                const parsedInput = JSON.parse(toolCall.input) as Record<
+                  string,
+                  unknown
+                >;
                 const repairedInput = { ...parsedInput };
 
                 // Fix common path issues
@@ -455,12 +459,17 @@ export const POST = withAuth(async (req: Request) => {
                   content:
                     msg.parts
                       ?.filter((p) => p.type === "text")
-                      .map((p) => ("text" in p ? (p as { text: string }).text : ""))
+                      .map((p) =>
+                        "text" in p ? (p as { text: string }).text : "",
+                      )
                       .join("") || "",
                   parts: msg.parts as MessageToSave["parts"],
                 }));
 
-                await messageService.saveConversation(projectId, messagesToSave);
+                await messageService.saveConversation(
+                  projectId,
+                  messagesToSave,
+                );
 
                 console.log(
                   `[Chat] Saved ${messagesToSave.length} messages for project ${projectId}`,
@@ -472,11 +481,23 @@ export const POST = withAuth(async (req: Request) => {
               // Auto-sync project files to database at session end (safety net)
               // Uses sandbox reference captured in closure (AsyncLocalStorage context
               // may have exited by the time onFinish runs)
+              // Run in parallel with message saving — independent operations
               if (sandboxRef) {
                 try {
-                  const { quickSyncToDatabaseWithRetry } = await import("@/lib/e2b/sync-manager");
-                  await quickSyncToDatabaseWithRetry(sandboxRef, projectId);
-                  console.log(`[Chat] Auto-synced project files for ${projectId}`);
+                  const { quickSyncToDatabaseWithRetry } =
+                    await import("@/lib/e2b/sync-manager");
+                  quickSyncToDatabaseWithRetry(sandboxRef, projectId)
+                    .then(() =>
+                      console.log(
+                        `[Chat] Auto-synced project files for ${projectId}`,
+                      ),
+                    )
+                    .catch((syncError) =>
+                      console.warn(
+                        "[Chat] Session-end sync failed:",
+                        syncError,
+                      ),
+                    );
                 } catch (syncError) {
                   console.warn("[Chat] Session-end sync failed:", syncError);
                 }

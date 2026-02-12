@@ -17,7 +17,10 @@ export async function scaffoldNextProject(
   description: string
 ): Promise<void> {
   // Create directory structure
-  await executeCommand(sandbox, `mkdir -p "${projectDir}/app" "${projectDir}/components" "${projectDir}/public"`)
+  await executeCommand(
+    sandbox,
+    `mkdir -p "${projectDir}/app" "${projectDir}/components/ui" "${projectDir}/lib" "${projectDir}/public"`,
+  )
 
   // Package.json
   const packageJson = {
@@ -31,18 +34,18 @@ export async function scaffoldNextProject(
       lint: "next lint",
     },
     dependencies: {
-      next: "15.0.0",
-      react: "18.3.1",
-      "react-dom": "18.3.1",
+      next: "^16.1.6",
+      react: "19.2.4",
+      "react-dom": "19.2.4",
     },
     devDependencies: {
-      autoprefixer: "^10.4.19",
-      postcss: "^8.4.38",
-      tailwindcss: "^3.4.3",
-      typescript: "^5.4.5",
-      "@types/node": "^20.12.7",
-      "@types/react": "^18.2.79",
-      "@types/react-dom": "^18.2.25",
+      "@tailwindcss/postcss": "^4.1.18",
+      "@types/node": "^25.2.3",
+      "@types/react": "^19.2.14",
+      "@types/react-dom": "^19.2.3",
+      postcss: "^8.5.6",
+      tailwindcss: "^4.1.18",
+      typescript: "^5.9.3",
     },
   }
 
@@ -113,8 +116,7 @@ export default config;
       `${projectDir}/postcss.config.js`,
       `module.exports = {
   plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
+    "@tailwindcss/postcss": {},
   },
 };
 `
@@ -123,9 +125,7 @@ export default config;
     writeFileToSandbox(
       sandbox,
       `${projectDir}/app/globals.css`,
-      `@tailwind base;
-@tailwind components;
-@tailwind utilities;
+      `@import "tailwindcss";
 
 body {
   font-family: system-ui, -apple-system, sans-serif;
@@ -152,6 +152,64 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   );
 }
 `
+    ),
+
+    writeFileToSandbox(
+      sandbox,
+      `${projectDir}/lib/utils.ts`,
+      `export function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+`,
+    ),
+
+    writeFileToSandbox(
+      sandbox,
+      `${projectDir}/components/ui/button.tsx`,
+      `import * as React from "react";
+import { cn } from "@/lib/utils";
+
+type ButtonVariant = "default" | "outline" | "ghost";
+type ButtonSize = "default" | "sm" | "lg" | "icon";
+
+const variantClasses: Record<ButtonVariant, string> = {
+  default: "bg-black text-white hover:bg-zinc-800",
+  outline: "border border-zinc-300 bg-white text-zinc-900 hover:bg-zinc-50",
+  ghost: "bg-transparent text-zinc-900 hover:bg-zinc-100",
+};
+
+const sizeClasses: Record<ButtonSize, string> = {
+  default: "h-10 px-4 py-2",
+  sm: "h-9 px-3",
+  lg: "h-11 px-8",
+  icon: "h-10 w-10",
+};
+
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+}
+
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant = "default", size = "default", ...props }, ref) => {
+    return (
+      <button
+        ref={ref}
+        className={cn(
+          "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950/40 disabled:pointer-events-none disabled:opacity-50",
+          variantClasses[variant],
+          sizeClasses[size],
+          className,
+        )}
+        {...props}
+      />
+    );
+  },
+);
+
+Button.displayName = "Button";
+`,
     ),
   ])
 }
