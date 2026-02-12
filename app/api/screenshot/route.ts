@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server"
 import { withAuth } from "@/lib/auth"
 import {
   captureSandboxScreenshot,
-  createSandbox,
   getHostUrl,
   getSandbox,
 } from "@/lib/e2b/sandbox"
@@ -26,21 +25,36 @@ export const POST = withAuth(async (req: NextRequest) => {
         let captureUrl: string | null = null
 
         // Fragments-style source of truth: derive preview URL from the live sandbox host.
-        // This avoids stale/mismatched client URLs and keeps screenshot capture deterministic.
+        // Only use currently active/reconnectable sandboxes; do not create a new sandbox
+        // just to capture screenshots.
         try {
-          const sandbox = (await getSandbox(projectId)) || (await createSandbox(projectId))
-          const requestedPort = inferPreviewPort(url)
-          const resolvedUrl = getHostUrl(sandbox, requestedPort)
-          captureUrl = resolvedUrl
-          if (resolvedUrl !== url) {
-            console.log(`[Screenshot] Canonicalized preview URL from ${url} to ${captureUrl}`)
+          const sandbox = await getSandbox(projectId)
+          if (sandbox) {
+            const requestedPort = inferPreviewPort(url)
+            const resolvedUrl = getHostUrl(sandbox, requestedPort)
+            captureUrl = resolvedUrl
+            if (resolvedUrl !== url) {
+              console.log(`[Screenshot] Canonicalized preview URL from ${url} to ${captureUrl}`)
+            }
+          } else {
+            console.warn("[Screenshot] No active sandbox found, skipping sandbox capture path")
           }
         } catch (urlResolveError) {
           console.warn("[Screenshot] Failed to canonicalize preview URL, skipping direct capture:", urlResolveError)
         }
 
         if (!captureUrl) {
-          console.warn("[Screenshot] No canonical sandbox URL available, skipping E2B and host fallbacks")
+          if (isSafeSandboxPreviewUrl(url)) {
+            const hostScreenshot = await captureViaHostPlaywright(url, width, height)
+            if (hostScreenshot) {
+              console.log("[Screenshot] Captured via host Playwright fallback (safe direct URL)")
+              return NextResponse.json({
+                screenshot_base64: hostScreenshot,
+                source: "host-playwright-direct",
+              })
+            }
+          }
+          console.warn("[Screenshot] No canonical sandbox URL available, falling back to placeholder")
         } else {
           console.log(`[Screenshot] Capturing via E2B for project ${projectId}:`, captureUrl)
 
@@ -208,6 +222,16 @@ function inferPreviewPort(rawUrl: string): number {
   }
 
   return 3000
+}
+
+function isSafeSandboxPreviewUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl)
+    if (parsed.protocol !== "https:") return false
+    return /^[0-9]{2,5}-[a-z0-9-]+\.e2b\.app$/i.test(parsed.hostname)
+  } catch {
+    return false
+  }
 }
 
 async function captureViaHostPlaywright(

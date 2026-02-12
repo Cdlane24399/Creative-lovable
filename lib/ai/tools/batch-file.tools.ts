@@ -8,9 +8,10 @@ import { tool } from "ai";
 import { z } from "zod";
 import {
   getAgentContext,
-  updateFileInContext,
+  updateFilesInContext,
   recordToolExecution,
 } from "../agent-context";
+import { isPlaceholderProjectName } from "../project-naming";
 import {
   executeCommand,
   writeFile as writeFileToSandbox,
@@ -21,6 +22,7 @@ import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
 import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager";
 
 const projectDir = getProjectDir();
+const WRITE_CONCURRENCY = 8;
 
 const ROOT_LEVEL_DIRS = new Set([
   "app",
@@ -80,6 +82,52 @@ const batchFileSchema = z.object({
     .describe("Whether to create new or update existing"),
 });
 
+interface ResolvedBatchFile {
+  originalPath: string;
+  relativePath: string;
+  fullPath: string;
+  content: string;
+  requestedAction: "create" | "update";
+}
+
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  let index = 0;
+
+  const runWorker = async () => {
+    while (index < items.length) {
+      const current = index;
+      index += 1;
+      await worker(items[current]);
+    }
+  };
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () =>
+    runWorker(),
+  );
+
+  await Promise.all(workers);
+}
+
+function resolveRuntimeRelativePath(path: string, runtimeAppDir: "app" | "src/app"): string {
+  const normalized = path.replace(/^\/+/, "");
+
+  if (runtimeAppDir === "src/app") {
+    if (normalized === "app") return "src/app";
+    if (normalized.startsWith("app/")) return `src/${normalized}`;
+  } else {
+    if (normalized === "src/app") return "app";
+    if (normalized.startsWith("src/app/")) {
+      return normalized.replace(/^src\//, "");
+    }
+  }
+
+  return normalized;
+}
+
 /**
  * Creates batch file operation tools.
  *
@@ -87,30 +135,6 @@ const batchFileSchema = z.object({
  * @returns Object containing the batchWriteFiles tool
  */
 export function createBatchFileTools(projectId: string) {
-  const resolveRuntimeRelativePath = async (
-    sandbox: ReturnType<typeof getCurrentSandbox>,
-    path: string,
-  ): Promise<string> => {
-    const normalized = path.replace(/^\/+/, "");
-    const [hasSrcApp, hasRootApp] = await Promise.all([
-      directoryExists(sandbox, `${projectDir}/src/app`),
-      directoryExists(sandbox, `${projectDir}/app`),
-    ]);
-
-    const runtimeAppDir = hasSrcApp && !hasRootApp ? "src/app" : "app";
-
-    if (runtimeAppDir === "src/app") {
-      if (normalized === "app") return "src/app";
-      if (normalized.startsWith("app/")) return `src/${normalized}`;
-    } else {
-      if (normalized === "src/app") return "app";
-      if (normalized.startsWith("src/app/"))
-        return normalized.replace(/^src\//, "");
-    }
-
-    return normalized;
-  };
-
   return {
     /**
      * Write multiple files in a single operation.
@@ -121,8 +145,7 @@ export function createBatchFileTools(projectId: string) {
       description:
         "Write multiple files at once (default for new scaffolds and multi-file edits). " +
         "More efficient than multiple writeFile calls. " +
-        "Automatically creates parent directories. " +
-        "Skips files that already exist with identical content.",
+        "Automatically creates parent directories.",
       inputSchema: z.object({
         files: z
           .array(batchFileSchema)
@@ -149,18 +172,20 @@ export function createBatchFileTools(projectId: string) {
         console.log(`[batchWriteFiles] Writing ${files.length} files`);
 
         try {
-          // Get sandbox from infrastructure context
           const sandbox = getCurrentSandbox();
+          const contextProjectName = ctx.projectName;
+          const projectName =
+            contextProjectName &&
+            !isPlaceholderProjectName(contextProjectName, projectId)
+              ? contextProjectName
+              : "project";
 
-          // Get project name from context for frontend parser
-          const projectName = ctx.projectName || "project";
-
-          // Resolve app directory
           const [hasSrcApp, hasRootApp] = await Promise.all([
             directoryExists(sandbox, `${projectDir}/src/app`),
             directoryExists(sandbox, `${projectDir}/app`),
           ]);
-          const appDir = hasSrcApp && !hasRootApp ? "src/app" : "app";
+          const appDir: "app" | "src/app" =
+            hasSrcApp && !hasRootApp ? "src/app" : "app";
 
           const normalizedBaseDir = (baseDir || "app")
             .replace(/^\/+/, "")
@@ -168,74 +193,104 @@ export function createBatchFileTools(projectId: string) {
           const effectiveBaseDir =
             normalizedBaseDir === "app" ? appDir : normalizedBaseDir;
 
-          // Process files sequentially to avoid race conditions with directory creation
-          for (const file of files) {
-            try {
-              // Determine full path
-              const rawPath = file.path.trim().replace(/^\/+/, "");
-              const firstSegment = rawPath.split("/")[0] || "";
-              const isRootRelative = rawPath.includes("/")
-                ? ROOT_LEVEL_DIRS.has(firstSegment)
-                : ROOT_LEVEL_FILES.has(rawPath) || rawPath.startsWith(".");
+          const resolvedFiles: ResolvedBatchFile[] = files.map((file) => {
+            const rawPath = file.path.trim().replace(/^\/+/, "");
+            const firstSegment = rawPath.split("/")[0] || "";
+            const isRootRelative = rawPath.includes("/")
+              ? ROOT_LEVEL_DIRS.has(firstSegment)
+              : ROOT_LEVEL_FILES.has(rawPath) || rawPath.startsWith(".");
 
-              const unresolvedPath = isRootRelative
-                ? rawPath
-                : `${effectiveBaseDir}/${rawPath}`;
-              const relativePath = await resolveRuntimeRelativePath(
-                sandbox,
-                unresolvedPath,
-              );
-              const fullPath = `${projectDir}/${relativePath}`;
+            const unresolvedPath = isRootRelative
+              ? rawPath
+              : `${effectiveBaseDir}/${rawPath}`;
+            const relativePath = resolveRuntimeRelativePath(unresolvedPath, appDir);
 
-              // Create parent directories
-              const dirIndex = fullPath.lastIndexOf("/");
-              if (dirIndex > projectDir.length) {
-                const dir = fullPath.substring(0, dirIndex);
-                await executeCommand(sandbox, `mkdir -p "${dir}"`);
-              }
+            return {
+              originalPath: file.path,
+              relativePath,
+              fullPath: `${projectDir}/${relativePath}`,
+              content: file.content,
+              requestedAction: file.action ?? "create",
+            };
+          });
 
-              // Check if file exists and compare content
-              let shouldWrite = true;
-              let action: "created" | "updated" =
-                file.action === "update" ? "updated" : "created";
+          const uniqueDirs = Array.from(
+            new Set(
+              resolvedFiles
+                .map((file) => {
+                  const dirIndex = file.fullPath.lastIndexOf("/");
+                  return dirIndex > projectDir.length
+                    ? file.fullPath.substring(0, dirIndex)
+                    : null;
+                })
+                .filter((dir): dir is string => Boolean(dir)),
+            ),
+          );
 
+          await runWithConcurrency(uniqueDirs, WRITE_CONCURRENCY, async (dir) => {
+            await executeCommand(sandbox, `mkdir -p "${dir}"`);
+          });
+
+          const contextUpdates: Array<{
+            path: string;
+            content?: string;
+            action?: "created" | "updated" | "deleted";
+          }> = [];
+
+          await runWithConcurrency(
+            resolvedFiles,
+            WRITE_CONCURRENCY,
+            async (file) => {
               try {
-                const existing = await sandbox.files.read(fullPath);
-                if (existing === file.content) {
-                  shouldWrite = false;
-                  results.skipped.push(relativePath);
-                } else {
-                  action = "updated";
+                if (file.requestedAction === "create") {
+                  await writeFileToSandbox(sandbox, file.fullPath, file.content);
+                  results.created.push(file.relativePath);
+                  contextUpdates.push({
+                    path: file.relativePath,
+                    content: file.content,
+                    action: "created",
+                  });
+                  return;
                 }
-              } catch {
-                // File doesn't exist, will create
-                action = "created";
-              }
 
-              if (shouldWrite) {
-                await writeFileToSandbox(sandbox, fullPath, file.content);
-                updateFileInContext(
-                  projectId,
-                  relativePath,
-                  file.content,
-                  action,
-                );
+                let action: "created" | "updated" = "updated";
+                try {
+                  const existingContent = await sandbox.files.read(file.fullPath);
+                  if (existingContent === file.content) {
+                    results.skipped.push(file.relativePath);
+                    return;
+                  }
+                } catch {
+                  action = "created";
+                }
+
+                await writeFileToSandbox(sandbox, file.fullPath, file.content);
 
                 if (action === "created") {
-                  results.created.push(relativePath);
+                  results.created.push(file.relativePath);
                 } else {
-                  results.updated.push(relativePath);
+                  results.updated.push(file.relativePath);
                 }
+
+                contextUpdates.push({
+                  path: file.relativePath,
+                  content: file.content,
+                  action,
+                });
+              } catch (error) {
+                const errorMsg =
+                  error instanceof Error ? error.message : "Write failed";
+                results.failed.push({ path: file.originalPath, error: errorMsg });
+                console.error(
+                  `[batchWriteFiles] Failed to write ${file.originalPath}:`,
+                  errorMsg,
+                );
               }
-            } catch (error) {
-              const errorMsg =
-                error instanceof Error ? error.message : "Write failed";
-              results.failed.push({ path: file.path, error: errorMsg });
-              console.error(
-                `[batchWriteFiles] Failed to write ${file.path}:`,
-                errorMsg,
-              );
-            }
+            },
+          );
+
+          if (contextUpdates.length > 0) {
+            updateFilesInContext(projectId, contextUpdates);
           }
 
           const success = results.failed.length === 0;
@@ -244,20 +299,17 @@ export function createBatchFileTools(projectId: string) {
             results.updated.length +
             results.skipped.length;
 
-          // Auto-sync to database after batch write
-          if (results.created.length > 0 || results.updated.length > 0) {
-            try {
-              const syncResult = await quickSyncToDatabaseWithRetry(
-                sandbox,
-                projectId,
-                projectDir,
-              );
-              console.log(
-                `[batchWriteFiles] Auto-synced: ${syncResult.filesWritten} files`,
-              );
-            } catch (syncError) {
-              console.warn("[batchWriteFiles] Auto-sync failed:", syncError);
-            }
+          // Fire-and-forget sync so filesReady returns immediately.
+          if (contextUpdates.length > 0) {
+            quickSyncToDatabaseWithRetry(sandbox, projectId, projectDir)
+              .then((syncResult) => {
+                console.log(
+                  `[batchWriteFiles] Background sync completed: ${syncResult.filesWritten} files`,
+                );
+              })
+              .catch((syncError) => {
+                console.warn("[batchWriteFiles] Background sync failed:", syncError);
+              });
           }
 
           const result = {
@@ -268,8 +320,8 @@ export function createBatchFileTools(projectId: string) {
             updated: results.updated,
             skipped: results.skipped,
             failed: results.failed,
-            filesReady: success, // Signal that files are written and ready
-            projectName, // Include for frontend parser
+            filesReady: success,
+            projectName,
             message: success
               ? `Wrote ${results.created.length} new, ${results.updated.length} updated, ${results.skipped.length} skipped`
               : `Partial success: ${totalProcessed} succeeded, ${results.failed.length} failed`,
@@ -303,9 +355,10 @@ export function createBatchFileTools(projectId: string) {
             startTime,
           );
 
-          // Get project name from context for error response
-          const projectName =
-            getAgentContext(projectId).projectName || "project";
+          const projectName = getAgentContext(projectId).projectName || "project";
+          const safeProjectName = isPlaceholderProjectName(projectName, projectId)
+            ? "project"
+            : projectName;
 
           return {
             success: false,
@@ -317,7 +370,7 @@ export function createBatchFileTools(projectId: string) {
             failed: results.failed,
             error: errorMsg,
             filesReady: false,
-            projectName,
+            projectName: safeProjectName,
             message: `Failed to write files: ${errorMsg}`,
           };
         }

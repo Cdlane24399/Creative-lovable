@@ -103,6 +103,7 @@ export function useChatWithTools({
   const chat = useChat<ChatMessage>({
     transport,
     messages: convertedInitialMessages,
+    experimental_throttle: 50,
     onError: (error) => {
       console.error("Chat error:", error);
       onError?.(error);

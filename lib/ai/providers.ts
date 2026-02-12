@@ -1,9 +1,16 @@
 import { createGateway } from 'ai'
+import { createOpenAI } from '@ai-sdk/openai'
 
 // Gateway instance - uses AI_GATEWAY_API_KEY locally, Vercel OIDC in production
 const aiGateway = createGateway()
 
 // Model configuration with Gateway IDs and provider routing
+type ModelConfigEntry = {
+  gatewayId: string
+  providerOrder: readonly string[]
+  openRouterId?: string
+}
+
 const MODEL_CONFIG = {
   anthropic: {
     gatewayId: 'anthropic/claude-sonnet-4-5',
@@ -38,12 +45,64 @@ const MODEL_CONFIG = {
     providerOrder: ['moonshotai'] as const,
   },
   glm: {
-    gatewayId: 'zai/glm-4.7',
+    gatewayId: 'zai/glm-5',
     providerOrder: ['zai'] as const,
+    openRouterId: 'z-ai/glm-5',
   },
-} as const
+} as const satisfies Record<string, ModelConfigEntry>
 
 export type ModelKey = keyof typeof MODEL_CONFIG
+
+const OPENROUTER_BASE_URL =
+  process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1'
+
+let openRouterClient: ReturnType<typeof createOpenAI> | null = null
+
+function getOpenRouterClient() {
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim()
+  if (!apiKey) {
+    throw new Error(
+      'OpenRouter fallback requested but OPENROUTER_API_KEY is not configured',
+    )
+  }
+
+  if (!openRouterClient) {
+    const headers: Record<string, string> = {}
+
+    if (process.env.OPENROUTER_HTTP_REFERER) {
+      headers['HTTP-Referer'] = process.env.OPENROUTER_HTTP_REFERER
+    }
+    if (process.env.OPENROUTER_APP_NAME) {
+      headers['X-Title'] = process.env.OPENROUTER_APP_NAME
+    }
+
+    openRouterClient = createOpenAI({
+      name: 'openrouter',
+      apiKey,
+      baseURL: OPENROUTER_BASE_URL,
+      ...(Object.keys(headers).length > 0 ? { headers } : {}),
+    })
+  }
+
+  return openRouterClient
+}
+
+function getOpenRouterModelId(key: ModelKey) {
+  const config = MODEL_CONFIG[key] as ModelConfigEntry
+  return config.openRouterId ?? config.gatewayId
+}
+
+export function hasOpenRouterFallback() {
+  return Boolean(process.env.OPENROUTER_API_KEY?.trim())
+}
+
+/**
+ * Get a model instance via OpenRouter (direct provider fallback path).
+ */
+export function getOpenRouterModel(key: ModelKey) {
+  const openRouter = getOpenRouterClient()
+  return openRouter(getOpenRouterModelId(key))
+}
 
 /**
  * Get a model instance via AI Gateway

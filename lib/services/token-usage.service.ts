@@ -64,6 +64,8 @@ const COST_RATES: Record<string, { input: number; output: number }> = {
   "kimi-k2.5": { input: 1.0, output: 3.0 },
 
   // Zhipu AI (GLM)
+  "glm-5": { input: 1.0, output: 3.0 },
+  // Legacy GLM mapping retained for historical records
   "glm-4.7": { input: 1.0, output: 3.0 },
 };
 
@@ -121,7 +123,7 @@ const MODEL_MAPPINGS: Record<string, string> = {
   moonshot: "kimi-k2.5",
 
   // Zhipu AI (GLM)
-  glm: "glm-4.7",
+  glm: "glm-5",
 };
 
 // =============================================================================
@@ -221,6 +223,34 @@ export class TokenUsageService {
     });
 
     return record;
+  }
+
+  /**
+   * Record multiple token usage entries in one DB write.
+   */
+  async recordTokenUsageBatch(
+    records: Array<Omit<TokenUsageInsert, "cost_usd"> & { cost_usd?: number }>,
+  ): Promise<void> {
+    if (records.length === 0) return;
+
+    const rows = records.map((entry) => ({
+      ...entry,
+      cost_usd:
+        entry.cost_usd ??
+        this.calculateCost(
+          entry.model,
+          entry.prompt_tokens,
+          entry.completion_tokens,
+          entry.total_tokens,
+        ),
+    }));
+
+    await this.tokenUsageRepo.recordUsageBatch(rows);
+
+    logger.debug("Token usage batch recorded", {
+      count: rows.length,
+      projectId: rows[0]?.project_id,
+    });
   }
 
   /**

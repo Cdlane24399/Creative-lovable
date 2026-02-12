@@ -203,24 +203,35 @@ export class ProjectRepository extends BaseRepository<Project> {
    */
   async ensureExists(id: string, defaultName: string = "Untitled Project"): Promise<Project> {
     try {
+      const existing = await this.findById(id)
+      if (existing) {
+        return existing
+      }
+
       const client = await this.getClient()
 
-      // Upsert: Try to insert, if conflict on ID, update updated_at
       const { data, error } = await client
         .from(this.tableName)
-        .upsert({
+        .insert({
           id,
           name: defaultName,
           description: 'Auto-created',
           files_snapshot: {},
           dependencies: {},
           starred: false,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'id' })
+          updated_at: new Date().toISOString(),
+        })
         .select()
         .single()
 
-      if (error) throw error
+      if (error) {
+        const isDuplicate = error.code === '23505'
+        if (isDuplicate) {
+          const raced = await this.findById(id)
+          if (raced) return raced
+        }
+        throw error
+      }
 
       return this.transformRow(data as ProjectDbRow)
     } catch (error) {

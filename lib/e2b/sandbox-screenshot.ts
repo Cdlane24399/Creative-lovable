@@ -4,9 +4,6 @@ import { executeCommand } from "./sandbox-commands";
 import { writeFile } from "./sandbox-files";
 import { checkDevServerHttp } from "./sandbox-devserver";
 
-// Re-declare the CodeInterpreterSandbox type locally to avoid pulling in the full module
-type CodeInterpreterSandbox = import("@e2b/code-interpreter").Sandbox;
-
 /**
  * Get the public URL for a port in the sandbox.
  * This is used to expose a running web server to the internet.
@@ -79,6 +76,18 @@ export function looksLikeMissingSystemLibs(output: string): boolean {
   );
 }
 
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+export function hasPngSignature(data: Uint8Array): boolean {
+  if (data.length < PNG_SIGNATURE.length) return false;
+  for (let index = 0; index < PNG_SIGNATURE.length; index += 1) {
+    if (data[index] !== PNG_SIGNATURE[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export async function captureSandboxScreenshot(
   projectId: string,
   options: {
@@ -87,10 +96,9 @@ export async function captureSandboxScreenshot(
     height?: number;
     waitForLoad?: number;
   } = {},
-  // Accept getSandbox/createSandbox as injected dependencies to avoid circular imports
+  // Accept getSandbox as injected dependency to avoid circular imports
   sandboxFns: {
     getSandbox: (projectId: string) => Promise<Sandbox | undefined>;
-    createSandbox: (projectId: string) => Promise<Sandbox>;
   },
 ): Promise<string | null> {
   const {
@@ -107,10 +115,13 @@ export async function captureSandboxScreenshot(
 
   let sandbox: any;
   try {
-    // Get the regular sandbox (not Desktop) - this is where the dev server runs
-    sandbox =
-      (await sandboxFns.getSandbox(projectId)) ||
-      (await sandboxFns.createSandbox(projectId));
+    // Only capture from an existing/reconnectable sandbox. Do not create a
+    // brand-new sandbox for screenshots because that produces mismatched previews.
+    sandbox = await sandboxFns.getSandbox(projectId);
+    if (!sandbox) {
+      console.warn("[Screenshot] No active sandbox available for capture");
+      return null;
+    }
 
     const { internalUrl } = resolveInternalSandboxUrl(sandboxUrl);
     console.log(
@@ -276,7 +287,9 @@ await run();
 
     // Read and validate the screenshot file
     console.log("[Screenshot] Reading screenshot file...");
-    const screenshotData = await sandbox.files.read(screenshotPath);
+    const screenshotData = await sandbox.files.read(screenshotPath, {
+      format: "bytes",
+    });
 
     if (!screenshotData || screenshotData.length === 0) {
       throw new Error("Screenshot file is empty");
@@ -284,6 +297,10 @@ await run();
 
     if (screenshotData.length < 100) {
       throw new Error("Screenshot file too small, likely corrupted");
+    }
+
+    if (!hasPngSignature(screenshotData)) {
+      throw new Error("Screenshot output is not a valid PNG");
     }
 
     // Convert to base64

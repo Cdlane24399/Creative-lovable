@@ -54,7 +54,6 @@ export {
 import { captureSandboxScreenshot as _captureSandboxScreenshotImpl } from "./sandbox-screenshot";
 import {
   getSandbox as _getSandbox,
-  createSandbox as _createSandbox,
 } from "./sandbox-lifecycle";
 
 export async function captureSandboxScreenshot(
@@ -68,7 +67,6 @@ export async function captureSandboxScreenshot(
 ): Promise<string | null> {
   return _captureSandboxScreenshotImpl(projectId, options, {
     getSandbox: _getSandbox,
-    createSandbox: _createSandbox,
   });
 }
 

@@ -49,6 +49,18 @@ const contextStore = new Map<string, AgentContext>()
 /** Track contexts that are being loaded from DB (prevent duplicate loads) */
 const loadingContexts = new Map<string, Promise<AgentContext>>()
 
+/** Per-project revision counters used to avoid dropping writes during async persistence */
+const contextRevisions = new Map<string, number>()
+
+/** Per-project scheduled save timer */
+const scheduledSaveTimers = new Map<string, NodeJS.Timeout>()
+
+/** Per-project max flush deadline */
+const scheduledFlushDeadlines = new Map<string, number>()
+
+/** In-flight save promises keyed by projectId */
+const inFlightSaves = new Map<string, Promise<void>>()
+
 /** Flag to enable async persistence (set to true for production) */
 const ENABLE_ASYNC_PERSISTENCE = true
 
@@ -58,8 +70,17 @@ const CONTEXT_TTL_MS = 30 * 60 * 1000
 /** Maximum number of contexts to keep in memory */
 const MAX_CONTEXTS = 100
 
+/** Maximum number of file entries to persist in agent_context */
+const MAX_PERSISTED_FILE_ENTRIES = 300
+
 /** Cleanup interval in milliseconds (5 minutes) */
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000
+
+/** Debounce window before persisting dirty contexts */
+const DIRTY_FLUSH_DEBOUNCE_MS = 500
+
+/** Maximum allowed delay before forcing a context flush */
+const DIRTY_FLUSH_MAX_DELAY_MS = 2000
 
 /** Track when cleanup was last run */
 let lastCleanup = Date.now()
@@ -72,6 +93,23 @@ async function getRepositoriesModule(): Promise<RepositoriesModule> {
     repositoriesModulePromise = import("@/lib/db/repositories")
   }
   return repositoriesModulePromise
+}
+
+function createPersistedFilesMap(files: Map<string, FileInfo>): Map<string, FileInfo> {
+  const entries = Array.from(files.entries())
+    .sort((a, b) => b[1].lastModified.getTime() - a[1].lastModified.getTime())
+    .slice(0, MAX_PERSISTED_FILE_ENTRIES)
+    .map(([path, info]) => [
+      path,
+      {
+        path: info.path,
+        contentHash: info.contentHash,
+        lastModified: info.lastModified,
+        action: info.action,
+      } satisfies FileInfo,
+    ] as const)
+
+  return new Map(entries)
 }
 
 /**
@@ -99,7 +137,7 @@ function cleanupExpiredContexts(): void {
 
   // Remove expired contexts
   for (const key of expiredKeys) {
-    contextStore.delete(key)
+    clearContext(key)
     console.log(`[agent-context] Expired context removed: ${key}`)
   }
 
@@ -110,7 +148,7 @@ function cleanupExpiredContexts(): void {
     
     const toRemove = entries.slice(0, contextStore.size - MAX_CONTEXTS)
     for (const [key] of toRemove) {
-      contextStore.delete(key)
+      clearContext(key)
       console.log(`[agent-context] Evicted old context: ${key}`)
     }
   }
@@ -150,6 +188,7 @@ export function getAgentContext(projectId: string): AgentContext {
   if (!context) {
     context = createEmptyContext(projectId)
     contextStore.set(projectId, context)
+    contextRevisions.set(projectId, 0)
   }
 
   return context
@@ -200,12 +239,14 @@ export async function getAgentContextAsync(projectId: string): Promise<AgentCont
           isDirty: false,
         }
         contextStore.set(projectId, context)
+        contextRevisions.set(projectId, 0)
         return context
       }
 
       // No context in DB, create new one
       const newContext = createEmptyContext(projectId)
       contextStore.set(projectId, newContext)
+      contextRevisions.set(projectId, 0)
       return newContext
     } finally {
       loadingContexts.delete(projectId)
@@ -220,23 +261,23 @@ export async function getAgentContextAsync(projectId: string): Promise<AgentCont
  * Persist context to database (write-through)
  * Non-blocking - errors are logged but don't throw
  */
-async function persistContext(context: AgentContext): Promise<void> {
+async function persistContext(
+  context: AgentContext,
+  persistedRevision: number,
+): Promise<void> {
   if (!ENABLE_ASYNC_PERSISTENCE) return
 
   try {
-    const { getContextRepository, getProjectRepository } = await getRepositoriesModule()
+    const { getContextRepository } = await getRepositoriesModule()
     const contextRepo = getContextRepository()
-    const projectRepo = getProjectRepository()
-
-    // Ensure project exists first to prevent FK violations
-    await projectRepo.ensureExists(context.projectId, context.projectName || "Untitled Project")
+    const filesForPersistence = createPersistedFilesMap(context.files)
 
     // Save context
     await contextRepo.upsert(context.projectId, {
       projectName: context.projectName,
       projectDir: context.projectDir,
       sandboxId: context.sandboxId,
-      files: context.files,
+      files: filesForPersistence,
       dependencies: context.dependencies,
       buildStatus: context.buildStatus,
       serverState: context.serverState,
@@ -246,24 +287,90 @@ async function persistContext(context: AgentContext): Promise<void> {
       completedSteps: context.completedSteps,
     })
 
-    context.isDirty = false
+    const latestRevision = contextRevisions.get(context.projectId) ?? 0
+    if (latestRevision === persistedRevision) {
+      context.isDirty = false
+    }
   } catch (error) {
     console.error(`[agent-context] Failed to persist context for ${context.projectId}:`, error)
   }
 }
 
+function clearScheduledSave(projectId: string): void {
+  const timer = scheduledSaveTimers.get(projectId)
+  if (timer) {
+    clearTimeout(timer)
+    scheduledSaveTimers.delete(projectId)
+  }
+}
+
+async function persistContextForProject(projectId: string): Promise<void> {
+  const context = contextStore.get(projectId)
+  if (!context || !context.isDirty) {
+    clearScheduledSave(projectId)
+    scheduledFlushDeadlines.delete(projectId)
+    return
+  }
+
+  clearScheduledSave(projectId)
+  scheduledFlushDeadlines.delete(projectId)
+
+  const existingSave = inFlightSaves.get(projectId)
+  if (existingSave) {
+    await existingSave
+    // A new write may have arrived while waiting.
+    if (contextStore.get(projectId)?.isDirty) {
+      return persistContextForProject(projectId)
+    }
+    return
+  }
+
+  const revision = contextRevisions.get(projectId) ?? 0
+  const savePromise = persistContext(context, revision).finally(() => {
+    inFlightSaves.delete(projectId)
+  })
+
+  inFlightSaves.set(projectId, savePromise)
+  await savePromise
+}
+
+export async function flushContext(projectId: string): Promise<boolean> {
+  const context = contextStore.get(projectId)
+  if (!context || !context.isDirty) {
+    return false
+  }
+
+  await persistContextForProject(projectId)
+  return true
+}
+
 /**
  * Mark context as dirty and trigger async save
- * Uses write-through pattern: save immediately but don't block
+ * Uses per-project debounce with max delay to collapse write bursts.
  */
 function markDirtyAndSave(context: AgentContext): void {
+  const projectId = context.projectId
   context.isDirty = true
   context.lastActivity = new Date()
+  contextRevisions.set(projectId, (contextRevisions.get(projectId) ?? 0) + 1)
 
-  // Fire and forget - persist asynchronously
-  persistContext(context).catch(() => {
-    // Error already logged in persistContext
-  })
+  const now = Date.now()
+  const existingDeadline = scheduledFlushDeadlines.get(projectId)
+  const deadline = existingDeadline ?? now + DIRTY_FLUSH_MAX_DELAY_MS
+  scheduledFlushDeadlines.set(projectId, deadline)
+
+  const timeUntilDeadline = Math.max(0, deadline - now)
+  const delay = Math.min(DIRTY_FLUSH_DEBOUNCE_MS, timeUntilDeadline)
+
+  clearScheduledSave(projectId)
+  scheduledSaveTimers.set(
+    projectId,
+    setTimeout(() => {
+      persistContextForProject(projectId).catch(() => {
+        // Error already logged in persistContext
+      })
+    }, delay),
+  )
 }
 
 // =============================================================================
@@ -713,6 +820,10 @@ export function getContextRecommendations(projectId: string): string[] {
  * Clear context for a project (in-memory only)
  */
 export function clearContext(projectId: string): void {
+  clearScheduledSave(projectId)
+  scheduledFlushDeadlines.delete(projectId)
+  inFlightSaves.delete(projectId)
+  contextRevisions.delete(projectId)
   contextStore.delete(projectId)
 }
 
@@ -744,8 +855,8 @@ export function getAllContexts(): Map<string, AgentContext> {
 export async function saveContext(projectId: string): Promise<boolean> {
   const context = contextStore.get(projectId)
   if (!context) return false
-  
-  await persistContext(context)
+
+  await flushContext(projectId)
   return true
 }
 
@@ -755,13 +866,13 @@ export async function saveContext(projectId: string): Promise<boolean> {
  */
 export async function flushAllContexts(): Promise<void> {
   const savePromises: Promise<void>[] = []
-  
-  for (const [projectId, context] of contextStore) {
-    if (context.isDirty) {
-      savePromises.push(persistContext(context))
-    }
+
+  for (const [projectId] of contextStore) {
+    clearScheduledSave(projectId)
+    scheduledFlushDeadlines.delete(projectId)
+    savePromises.push(persistContextForProject(projectId))
   }
-  
+
   await Promise.allSettled(savePromises)
 }
 

@@ -97,8 +97,9 @@ E2B_TEMPLATE=nextjs-app-bun
 # E2B_TEMPLATE_ID=nextjs-app-bun
 
 # Required: AI Gateway (recommended) OR at least one direct provider
-AI_GATEWAY_URL=https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}
-AI_GATEWAY_TOKEN=your_gateway_token
+AI_GATEWAY_API_KEY=your_gateway_api_key
+# Optional gateway URL override (only if you use a custom endpoint):
+# AI_GATEWAY_URL=https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}
 
 # Fallback: Direct provider API keys (if not using Gateway)
 ANTHROPIC_API_KEY=your_anthropic_key

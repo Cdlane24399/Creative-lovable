@@ -1,10 +1,14 @@
 import { generateText } from "ai";
-import { after } from "next/server";
 import { withAuth } from "@/lib/auth";
 import { asyncErrorHandler } from "@/lib/errors";
 import { ValidationError } from "@/lib/errors";
 import { getProjectService } from "@/lib/services";
-import { getModel, getGatewayProviderOptions } from "@/lib/ai/providers";
+import {
+  getModel,
+  getGatewayProviderOptions,
+  getOpenRouterModel,
+  hasOpenRouterFallback,
+} from "@/lib/ai/providers";
 
 const TITLE_PROMPT = `Generate a short, descriptive project title (2-4 words) based on the user's request.
 The title should be:
@@ -33,13 +37,31 @@ export const POST = withAuth(
     }
 
     // Generate a title using Claude Haiku (fast and cheap)
-    const result = await generateText({
-      model: getModel("haiku"),
-      providerOptions: getGatewayProviderOptions("haiku"),
-      prompt: TITLE_PROMPT + prompt,
-      maxOutputTokens: 20,
-      temperature: 0.3,
-    });
+    let result: Awaited<ReturnType<typeof generateText>>;
+    try {
+      result = await generateText({
+        model: getModel("haiku"),
+        providerOptions: getGatewayProviderOptions("haiku"),
+        prompt: TITLE_PROMPT + prompt,
+        maxOutputTokens: 20,
+        temperature: 0.3,
+      });
+    } catch (gatewayError) {
+      if (!hasOpenRouterFallback()) {
+        throw gatewayError;
+      }
+
+      console.warn(
+        "[generate-title] Gateway failed, retrying with OpenRouter fallback:",
+        gatewayError,
+      );
+      result = await generateText({
+        model: getOpenRouterModel("haiku"),
+        prompt: TITLE_PROMPT + prompt,
+        maxOutputTokens: 20,
+        temperature: 0.3,
+      });
+    }
 
     // Clean up the title - remove quotes, punctuation, extra whitespace
     let title = result.text
@@ -59,19 +81,16 @@ export const POST = withAuth(
       title = title.substring(0, 47) + "...";
     }
 
-    // Update project name in database if projectId provided (non-blocking)
+    // Update project name in database if projectId provided.
+    // Keep this in-band so auto naming is reliable.
     if (projectId) {
-      after(async () => {
-        try {
-          const projectService = getProjectService();
-          await projectService.updateProject(projectId, { name: title });
-        } catch (dbError) {
-          console.warn(
-            "[generate-title] Failed to update project name:",
-            dbError,
-          );
-        }
-      });
+      try {
+        const projectService = getProjectService();
+        await projectService.ensureProjectExists(projectId, title);
+        await projectService.updateProject(projectId, { name: title });
+      } catch (dbError) {
+        console.warn("[generate-title] Failed to update project name:", dbError);
+      }
     }
 
     return Response.json({ title });

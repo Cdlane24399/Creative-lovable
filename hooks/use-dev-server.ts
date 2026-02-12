@@ -236,8 +236,8 @@ export function useDevServer({
     }
   }, [fetchStatus, updateStatus])
 
-  // Start polling with exponential backoff
-  const startPolling = useCallback((baseInterval: number) => {
+  // Start polling with bounded exponential backoff
+  const startPolling = useCallback((baseInterval: number, maxInterval: number) => {
     stopPolling()
     pollActiveRef.current = true
     backoffIntervalRef.current = baseInterval
@@ -254,10 +254,10 @@ export function useDevServer({
           backoffIntervalRef.current = baseInterval
           lastStatusHashRef.current = newHash
         } else {
-          // Increase backoff when no changes (max 10 seconds)
+          // Increase backoff when no changes (bounded)
           backoffIntervalRef.current = Math.min(
-            backoffIntervalRef.current * 1.5,
-            10000
+            Math.max(baseInterval, Math.round(backoffIntervalRef.current * 1.35)),
+            maxInterval,
           )
         }
 
@@ -316,7 +316,7 @@ export function useDevServer({
       } else {
         // No URL yet - start polling to wait for server
         console.log("[useDevServer] No URL in response, starting polling...")
-        startPolling(startingPollInterval)
+        startPolling(Math.min(startingPollInterval, 750), 4000)
       }
     } catch (err) {
       console.error("[useDevServer] Error starting server:", err)
@@ -385,7 +385,7 @@ export function useDevServer({
     }
 
     // Start polling with running interval (assume server might be running)
-    startPolling(runningPollInterval)
+    startPolling(Math.min(runningPollInterval, 2000), runningPollInterval)
 
     return () => {
       stopPolling()

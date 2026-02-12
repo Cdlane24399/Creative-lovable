@@ -100,6 +100,7 @@ interface ContextSummaryRow {
 
 export class ContextRepository {
   private readonly tableName = "agent_context"
+  private static ensuredProjects = new Set<string>()
 
   private async getClient() {
     return createServiceRoleClient()
@@ -234,12 +235,11 @@ export class ContextRepository {
 
   async upsert(projectId: string, data: Partial<AgentContextData>): Promise<void> {
     try {
-      // Ensure project exists
-      const projectRepo = getProjectRepository()
-      const projectExists = await projectRepo.exists(projectId)
-
-      if (!projectExists) {
+      // Ensure project exists (single round-trip path).
+      if (!ContextRepository.ensuredProjects.has(projectId)) {
+        const projectRepo = getProjectRepository()
         await projectRepo.ensureExists(projectId, data.projectName || "Untitled Project")
+        ContextRepository.ensuredProjects.add(projectId)
       }
 
       const serialized = this.serializeContext(data)
@@ -251,16 +251,8 @@ export class ContextRepository {
         ...serialized
       }
 
-      // We need to merge with existing data if not provided in serialized?
-      // Supabase upsert replaces the row if we don't handle it carefully?
-      // No, Supabase upsert UPDATEs the columns provided.
-      // But if I provide only 'files', does it null out others?
-      // Supabase `upsert` updates the row. Columns not in the payload are NOT modified (if row exists).
-      // Wait, `upsert` in SQL is INSERT ... ON CONFLICT UPDATE.
-      // If I provide `{id: 1, col1: 'val'}`, and `col2` is not provided:
-      // If inserting: `col2` gets default or null.
-      // If updating: `col2` is untouched.
-      // So this is exactly what we want!
+      // Upsert updates only the provided columns on conflict.
+      // This allows partial context updates without extra read/merge queries.
 
       const { error } = await client
         .from(this.tableName)
@@ -333,6 +325,7 @@ export class ContextRepository {
       const client = await this.getClient()
       const { error } = await client.from(this.tableName).delete().eq('project_id', projectId)
       if (error) throw error
+      ContextRepository.ensuredProjects.delete(projectId)
       return true
     } catch (error) {
       this.handleError(error, "delete")

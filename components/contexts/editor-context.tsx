@@ -14,6 +14,10 @@ import { useDevServer } from "@/hooks/use-dev-server";
 import { generatePlaceholderImage } from "@/lib/utils/screenshot";
 import { normalizeSandboxPreviewUrl } from "@/lib/utils/url";
 import { type ModelProvider } from "@/lib/ai/agent";
+import {
+  deriveProjectNameFromPrompt,
+  isPlaceholderProjectName,
+} from "@/lib/ai/project-naming";
 import type { EditorView } from "@/components/editor-header";
 import type { ChatPanelHandle } from "@/components/chat-panel";
 import type { PreviewPanelHandle } from "@/components/preview-panel";
@@ -249,7 +253,7 @@ export function EditorProvider({
       setProjectName(project.name);
       if (
         project.name &&
-        project.name !== "Untitled Project" &&
+        !isPlaceholderProjectName(project.name, project.id) &&
         !initialPrompt
       ) {
         titleGeneratedRef.current = true;
@@ -435,11 +439,7 @@ export function EditorProvider({
     if (!initialPrompt || !projectId) return;
     if (titleGeneratedRef.current) return;
     const currentProjectName = projectNameRef.current;
-    if (
-      currentProjectName !== "Untitled Project" &&
-      currentProjectName !== projectId
-    )
-      return;
+    if (!isPlaceholderProjectName(currentProjectName, projectId)) return;
 
     console.log("[EditorProvider] Generating project title...");
 
@@ -503,31 +503,6 @@ export function EditorProvider({
     };
   }, [sandboxUrl, projectId]);
 
-  const extractProjectName = useCallback(
-    (prompt: string | null | undefined): string => {
-      if (!prompt) return "Untitled Project";
-
-      const patterns = [
-        /create (?:a |an )?(.+?) (?:website|app|page|landing|dashboard)/i,
-        /build (?:a |an )?(.+?) (?:website|app|page|landing|dashboard)/i,
-        /make (?:a |an )?(.+?) (?:website|app|page|landing|dashboard)/i,
-        /(.+?) (?:website|app|page|landing|dashboard)/i,
-      ];
-
-      for (const pattern of patterns) {
-        const match = prompt.match(pattern);
-        if (match && match[1]) {
-          const name = match[1].trim();
-          return name.charAt(0).toUpperCase() + name.slice(1);
-        }
-      }
-
-      const words = prompt.split(" ").slice(0, 3).join(" ");
-      return words.length > 30 ? words.substring(0, 30) + "..." : words;
-    },
-    [],
-  );
-
   // ---- Actions ----
 
   const saveProject = useCallback(async () => {
@@ -537,15 +512,17 @@ export function EditorProvider({
       const response = await fetch(`/api/projects/${projectId}`);
 
       if (response.status === 404) {
+        const promptDerivedName = deriveProjectNameFromPrompt(initialPrompt);
+        const nameForCreate = isPlaceholderProjectName(projectName, projectId)
+          ? promptDerivedName
+          : projectName;
+
         const createResponse = await fetch("/api/projects", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             id: projectId,
-            name:
-              projectName ||
-              extractProjectName(initialPrompt) ||
-              "Untitled Project",
+            name: nameForCreate || "Untitled Project",
             sandbox_url: sandboxUrl,
           }),
         });
@@ -576,7 +553,6 @@ export function EditorProvider({
     projectName,
     initialPrompt,
     updateProject,
-    extractProjectName,
   ]);
   saveProjectRef.current = saveProject;
 
@@ -714,21 +690,31 @@ export function EditorProvider({
 
   const handleFilesReady = useCallback(
     (newProjectName: string, sandboxId?: string) => {
+      const promptDerivedName = deriveProjectNameFromPrompt(initialPrompt);
+      const resolvedProjectName = isPlaceholderProjectName(
+        newProjectName,
+        projectId,
+      )
+        ? !isPlaceholderProjectName(projectNameRef.current, projectId)
+          ? projectNameRef.current
+          : promptDerivedName
+        : newProjectName;
+
       console.log(
         "[EditorProvider] Files ready, project:",
-        newProjectName,
+        resolvedProjectName,
         "sandboxId:",
         sandboxId,
       );
-      if (newProjectName) {
-        setProjectName(newProjectName);
+      if (resolvedProjectName) {
+        setProjectName(resolvedProjectName);
         setIsPreviewLoading(true);
         forceRestartNextStartRef.current = true;
         devServerStartedRef.current = null;
         if (sandboxId) {
           setPendingSandboxId(sandboxId);
         }
-        setPendingServerStart(newProjectName);
+        setPendingServerStart(resolvedProjectName);
 
         if (initialPrompt && !titleGeneratedRef.current) {
           generateProjectTitle();
@@ -775,7 +761,7 @@ export function EditorProvider({
         }, 3000);
       }
     },
-    [refetchProject, initialPrompt, generateProjectTitle],
+    [refetchProject, initialPrompt, generateProjectTitle, projectId],
   );
 
   /**
@@ -814,14 +800,13 @@ export function EditorProvider({
       if (!normalizedUrl) return;
 
       setProjectName((prevProjectName) => {
-        if (!prevProjectName.includes("Untitled")) return prevProjectName;
-        const extractedName = extractProjectName(initialPrompt);
-        return extractedName !== "Untitled Project"
-          ? extractedName
-          : prevProjectName;
+        if (!isPlaceholderProjectName(prevProjectName, projectId)) {
+          return prevProjectName;
+        }
+        return deriveProjectNameFromPrompt(initialPrompt);
       });
     },
-    [initialPrompt, updateSandboxUrlDebounced, extractProjectName],
+    [initialPrompt, projectId, updateSandboxUrlDebounced],
   );
 
   // Cleanup timeouts on unmount

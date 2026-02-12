@@ -106,6 +106,31 @@ export class MessageService {
     }
   }
 
+  private partsEqual(
+    left: MessagePart[] | null | undefined,
+    right: MessagePart[] | undefined,
+  ): boolean {
+    const normalizedLeft = left ?? []
+    const normalizedRight = right ?? []
+    return JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight)
+  }
+
+  private isEquivalentMessage(
+    dbMessage: Message,
+    persisted: {
+      role: "user" | "assistant" | "system"
+      content: string
+      parts?: MessagePart[]
+      model?: string
+    },
+  ): boolean {
+    return (
+      dbMessage.role === persisted.role &&
+      dbMessage.content === persisted.content &&
+      this.partsEqual(dbMessage.parts, persisted.parts)
+    )
+  }
+
   /**
    * Get all messages for a project
    * Uses cache when available
@@ -173,17 +198,61 @@ export class MessageService {
       return []
     }
 
-    // Save all messages (replaces existing)
-    const saved = await this.messageRepo.saveConversation(
-      projectId,
-      messages.map((message) => this.buildPersistedMessage(message))
+    const persistedMessages = messages.map((message) =>
+      this.buildPersistedMessage(message),
     )
 
-    // Invalidate and update cache
-    await messagesCache.invalidate(projectId)
-    await messagesCache.set(projectId, saved)
+    const rewriteConversation = async (): Promise<Message[]> => {
+      const saved = await this.messageRepo.saveConversation(
+        projectId,
+        persistedMessages,
+      )
+      await messagesCache.invalidate(projectId)
+      await messagesCache.set(projectId, saved)
+      return saved
+    }
 
-    return saved
+    try {
+      const existingCount = await this.messageRepo.countByProjectId(projectId)
+
+      if (existingCount > persistedMessages.length) {
+        return rewriteConversation()
+      }
+
+      if (existingCount > 0) {
+        const recent = await this.messageRepo.findRecentByProjectId(projectId, 1)
+        const lastExisting = recent[0]
+        const matchingIncoming = persistedMessages[existingCount - 1]
+
+        if (
+          !lastExisting ||
+          !matchingIncoming ||
+          !this.isEquivalentMessage(lastExisting, matchingIncoming)
+        ) {
+          return rewriteConversation()
+        }
+      }
+
+      if (existingCount === persistedMessages.length) {
+        const existingMessages = await this.messageRepo.findByProjectId(projectId)
+        await messagesCache.set(projectId, existingMessages)
+        return existingMessages
+      }
+
+      const newMessages = persistedMessages.slice(existingCount)
+      await this.messageRepo.createBatch({
+        projectId,
+        messages: newMessages,
+      })
+
+      const saved = await this.messageRepo.findByProjectId(projectId)
+      await messagesCache.invalidate(projectId)
+      await messagesCache.set(projectId, saved)
+      return saved
+    } catch {
+      // Fallback to full rewrite for correctness if incremental path fails.
+      return rewriteConversation()
+    }
   }
 
   /**

@@ -342,8 +342,8 @@ const myTool = tool({
 | Variable                        | Description                                    | Required    |
 | ------------------------------- | ---------------------------------------------- | ----------- |
 | `E2B_API_KEY`                   | API key for E2B sandboxes                      | Yes         |
-| `AI_GATEWAY_URL`                | AI Gateway endpoint URL                        | Recommended |
-| `AI_GATEWAY_TOKEN`              | AI Gateway authentication token                | Recommended |
+| `AI_GATEWAY_API_KEY`            | AI Gateway authentication key used by AI SDK `createGateway()` | Recommended |
+| `AI_GATEWAY_URL`                | AI Gateway endpoint URL override               | Optional    |
 | `ANTHROPIC_API_KEY`             | Anthropic API key (fallback)                   | Fallback    |
 | `OPENAI_API_KEY`                | OpenAI API key (fallback)                      | Fallback    |
 | `GOOGLE_GENERATIVE_AI_API_KEY`  | Google AI API key (fallback)                   | Fallback    |

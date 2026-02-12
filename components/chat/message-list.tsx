@@ -1,11 +1,14 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { Message } from "./message";
 import type { UIMessage } from "ai";
 import { ChatEmptyState } from "./chat-error";
 import { ChatError } from "./chat-error";
-import { SuggestionChips, defaultSuggestions } from "./suggestion-chips";
+import {
+  SuggestionChips,
+  buildHeuristicSuggestions,
+} from "./suggestion-chips";
 
 // Hoisted static JSX — avoids recreating element tree on every render
 const typingIndicator = (
@@ -18,31 +21,13 @@ const typingIndicator = (
   </div>
 );
 
-/**
- * Extracts AI-generated suggestions from the last assistant message.
- * Looks for generateSuggestions tool result in message parts.
- */
-function extractSuggestionsFromMessage(message: UIMessage): string[] | null {
-  if (message.role !== "assistant" || !message.parts) {
-    return null;
-  }
-
-  for (const part of message.parts) {
-    // Tool parts have type like "tool-generateSuggestions" and state/output fields
-    const toolPart = part as { type: string; state?: string; output?: unknown };
-
-    if (
-      toolPart.type === "tool-generateSuggestions" &&
-      toolPart.state === "output-available"
-    ) {
-      const output = toolPart.output as { suggestions?: string[] } | undefined;
-      if (output?.suggestions && Array.isArray(output.suggestions)) {
-        return output.suggestions;
-      }
-    }
-  }
-
-  return null;
+function getMessageText(message: UIMessage | undefined): string {
+  if (!message || !message.parts) return "";
+  return message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => ("text" in part ? (part as { text: string }).text : ""))
+    .join(" ")
+    .trim();
 }
 
 interface MessageListProps {
@@ -66,27 +51,53 @@ export const MessageList = React.memo(
     onSelectSuggestion,
   }: MessageListProps) {
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const shouldAutoScrollRef = useRef(true);
+
+    const uniqueMessages = useMemo(
+      () => [...new Map(messages.map((message) => [message.id, message])).values()],
+      [messages],
+    );
+
+    const lastAssistantMessage = useMemo(
+      () => [...uniqueMessages].reverse().find((message) => message.role === "assistant"),
+      [uniqueMessages],
+    );
 
     useEffect(() => {
-      // Auto-scroll to bottom when new messages appear
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messages]);
+      const scrollContainer = messagesEndRef.current?.closest(
+        "[data-chat-scroll-container='true']",
+      ) as HTMLElement | null;
+      if (!scrollContainer) return;
 
-    if (messages.length === 0 && !isWorking) {
+      const handleScroll = () => {
+        const distanceFromBottom =
+          scrollContainer.scrollHeight -
+          scrollContainer.scrollTop -
+          scrollContainer.clientHeight;
+        shouldAutoScrollRef.current = distanceFromBottom < 120;
+      };
+
+      handleScroll();
+      scrollContainer.addEventListener("scroll", handleScroll, { passive: true });
+
+      return () => {
+        scrollContainer.removeEventListener("scroll", handleScroll);
+      };
+    }, []);
+
+    useEffect(() => {
+      if (!shouldAutoScrollRef.current) return;
+      messagesEndRef.current?.scrollIntoView({ behavior: isWorking ? "auto" : "smooth" });
+    }, [uniqueMessages, isWorking]);
+
+    if (uniqueMessages.length === 0 && !isWorking) {
       return <ChatEmptyState />;
     }
 
-    // Deduplicate messages by ID
-    const uniqueMessages = [
-      ...new Map(messages.map((m) => [m.id, m])).values(),
-    ];
-
-    // Check if the last message is from the assistant (for showing suggestion chips)
-    const lastMessage = uniqueMessages[uniqueMessages.length - 1];
     const showSuggestionChips =
       !isWorking &&
       !error &&
-      lastMessage?.role === "assistant" &&
+      lastAssistantMessage?.role === "assistant" &&
       onSelectSuggestion;
 
     return (
@@ -97,23 +108,23 @@ export const MessageList = React.memo(
             role={message.role}
             parts={message.parts as any[]}
             thinkingTime={getThinkingTime?.(message.id)}
+            isStreaming={
+              Boolean(isWorking) &&
+              message.role === "assistant" &&
+              message.id === lastAssistantMessage?.id
+            }
           />
         ))}
 
-        {/* Suggestion Chips - shown after last assistant message when not working */}
         {showSuggestionChips && (
           <SuggestionChips
-            suggestions={
-              extractSuggestionsFromMessage(lastMessage) ?? defaultSuggestions
-            }
+            suggestions={buildHeuristicSuggestions(getMessageText(lastAssistantMessage))}
             onSelect={onSelectSuggestion}
           />
         )}
 
-        {/* Typing Indicator */}
         {isWorking && !isCallingTools && typingIndicator}
 
-        {/* Error State */}
         {error && !isWorking && <ChatError error={error} onRetry={onRetry} />}
 
         <div ref={messagesEndRef} className="h-px w-full" />

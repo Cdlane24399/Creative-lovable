@@ -688,7 +688,7 @@ export async function quickSyncToDatabase(
   });
 
   try {
-    await manager.initialize();
+    // Perform direct one-shot sync without starting file watcher/hash polling.
     return await manager.syncToDatabase();
   } finally {
     manager.stop();
@@ -717,21 +717,15 @@ export async function quickSyncToDatabaseWithRetry(
     try {
       const result = await quickSyncToDatabase(sandbox, projectId, projectDir);
 
-      // Validate that files were actually written
-      if (result.success && result.filesWritten > 0) {
+      if (result.success) {
         console.log(
           `[SyncManager] Sync succeeded on attempt ${attempt + 1}: ${result.filesWritten} files`,
         );
         return { ...result, retryCount: attempt };
       }
 
-      // If no files written, treat as failure and retry
-      if (result.filesWritten === 0 && attempt < maxRetries - 1) {
-        console.warn(
-          `[SyncManager] Sync returned 0 files on attempt ${attempt + 1}, retrying...`,
-        );
+      if (attempt < maxRetries - 1) {
         retryCount = attempt + 1;
-        // Exponential backoff: 500ms, 1000ms, 2000ms
         await new Promise((resolve) =>
           setTimeout(resolve, 500 * Math.pow(2, attempt)),
         );

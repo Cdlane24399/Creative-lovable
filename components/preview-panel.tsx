@@ -10,6 +10,7 @@ import React, {
 import dynamic from "next/dynamic";
 import { Camera } from "lucide-react";
 import { useEditor } from "@/components/contexts/editor-context";
+import { PreviewLoading } from "./preview-loading";
 
 // Dynamic import — these are behind tabs, not needed on initial render
 const CodeEditor = dynamic(
@@ -202,66 +203,10 @@ export function PreviewPanel({ ref }: PreviewPanelProps) {
           <div className="relative h-full w-full">
             {/* Loading indicator for iframe or dev server */}
             {(isLoading || loadTimeout) && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#111111]">
-                <div className="flex flex-col items-center gap-6 max-w-sm w-full px-6">
-                  {/* Spinner and status */}
-                  <div className="flex flex-col items-center gap-3">
-                    {loadTimeout ? (
-                      <>
-                        <div className="relative">
-                          <div className="h-10 w-10 rounded-full border-2 border-amber-500/20" />
-                          <div className="absolute inset-0 h-10 w-10 rounded-full border-2 border-transparent border-t-amber-500 animate-spin" />
-                        </div>
-                        <span className="text-sm text-amber-400">
-                          Taking longer than usual...
-                        </span>
-                        <span className="text-xs text-zinc-500">
-                          The dev server may still be starting up
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <div className="relative">
-                          <div className="h-10 w-10 rounded-full border-2 border-emerald-500/20" />
-                          <div className="absolute inset-0 h-10 w-10 rounded-full border-2 border-transparent border-t-emerald-500 animate-spin" />
-                        </div>
-                        <span className="text-sm text-zinc-400">
-                          {externalLoading
-                            ? "Starting dev server..."
-                            : "Getting ready..."}
-                        </span>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Feature card */}
-                  <div className="w-full rounded-2xl bg-zinc-800/50 border border-zinc-700/50 p-5">
-                    <div className="aspect-video rounded-lg bg-linear-to-br from-violet-500/20 to-pink-500/20 flex items-center justify-center mb-4 overflow-hidden">
-                      <div className="flex flex-col items-center gap-2 text-zinc-500">
-                        <svg
-                          className="h-8 w-8 opacity-40"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={1.5}
-                            d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                          />
-                        </svg>
-                      </div>
-                    </div>
-                    <h3 className="text-sm font-medium text-white mb-1">
-                      Edit visually
-                    </h3>
-                    <p className="text-xs text-zinc-400 leading-relaxed">
-                      Click to edit directly or describe changes to Lovable.
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <PreviewLoading
+                isTimeout={loadTimeout}
+                isExternalLoading={externalLoading}
+              />
             )}
 
             {/* Error display */}

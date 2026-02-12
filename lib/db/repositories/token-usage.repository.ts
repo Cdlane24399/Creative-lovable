@@ -148,6 +148,39 @@ export class TokenUsageRepository extends BaseRepository<TokenUsage> {
   }
 
   /**
+   * Record token usage records in a single insert.
+   */
+  async recordUsageBatch(data: TokenUsageInsert[]): Promise<TokenUsage[]> {
+    if (data.length === 0) return []
+
+    try {
+      const client = await this.getClient()
+
+      const rows = data.map((entry) => ({
+        id: generateId(),
+        project_id: entry.project_id,
+        model: entry.model,
+        prompt_tokens: entry.prompt_tokens,
+        completion_tokens: entry.completion_tokens,
+        total_tokens: entry.total_tokens,
+        step_number: entry.step_number ?? null,
+        cost_usd: entry.cost_usd ?? null,
+        timestamp: entry.timestamp ?? new Date().toISOString(),
+      }))
+
+      const { data: result, error } = await client
+        .from(this.tableName)
+        .insert(rows)
+        .select()
+
+      if (error) throw error
+      return result.map((row) => this.transformRow(row as TokenUsageDbRow))
+    } catch (error) {
+      this.handleError(error, "recordUsageBatch")
+    }
+  }
+
+  /**
    * Get token usage records for a project with optional date filtering
    */
   async getUsageByProject(

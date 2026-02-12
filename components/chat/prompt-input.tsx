@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { MODEL_DISPLAY_NAMES, type ModelProvider } from "@/lib/ai/agent";
+import { MiniMaxIcon, MoonshotIcon, GLMIcon } from "@/components/shared/icons";
 
 // Icons (reusing from existing chat-panel or definition here for portability)
 const AnthropicIcon = ({ className }: { className?: string }) => (
@@ -346,5 +347,8 @@ function ModelIcon({
     return <AnthropicIcon className={className} />;
   if (model.includes("google")) return <GoogleIcon className={className} />;
   if (model.includes("openai")) return <OpenAIIcon className={className} />;
+  if (model === "minimax") return <MiniMaxIcon className={className} />;
+  if (model === "moonshot") return <MoonshotIcon className={className} />;
+  if (model === "glm") return <GLMIcon className={className} />;
   return <Loader2 className={className} />;
 }

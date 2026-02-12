@@ -469,7 +469,7 @@ export const POST = withAuth(
         if (!forceRestart) {
           const templatePort = await waitForRunningPort(
             sandbox,
-            12_000,
+            4_000,
             DEFAULT_WEB_PORT,
           );
           if (templatePort) {
@@ -505,11 +505,13 @@ export const POST = withAuth(
             ),
           ),
         );
-        await executeCommand(
-          sandbox,
-          `rm -rf "${projectDir}/.next" 2>/dev/null || true`,
-          { timeoutMs: 5000 },
-        );
+        if (forceRestart) {
+          await executeCommand(
+            sandbox,
+            `rm -rf "${projectDir}/.next" 2>/dev/null || true`,
+            { timeoutMs: 5000 },
+          );
+        }
         await new Promise((resolve) => setTimeout(resolve, 500));
 
         // Clear server log for fresh output (but preserve .next cache for faster rebuilds)
@@ -535,17 +537,16 @@ export const POST = withAuth(
         );
         console.log("[dev-server POST] Background process started");
 
-        // Extended wait for server startup (120 seconds max to account for slower environments and first-time builds)
-        const maxWaitMs = 120000;
+        // Keep startup window bounded so failures surface quickly.
+        const maxWaitMs = 90000;
         const pollInterval = 1000;
         const maxPolls = Math.ceil(maxWaitMs / pollInterval);
 
         let serverReady = false;
         let actualPort = 3000;
+        let fatalLogSnippet = "";
 
-        console.log(
-          "[dev-server POST] Polling for server readiness (max 120s)...",
-        );
+        console.log("[dev-server POST] Polling for server readiness...");
         // Adaptive polling: start fast, slow down over time
         const getInterval = (i: number) =>
           i < 5 ? 1000 : i < 15 ? 2000 : 3000;
@@ -553,37 +554,11 @@ export const POST = withAuth(
         for (let i = 0; i < maxPolls; i++) {
           await new Promise((resolve) => setTimeout(resolve, getInterval(i)));
 
-          // Combined check: look for "Ready in" AND port in logs with a single command
-          const logCheck = await executeCommand(
-            sandbox,
-            `grep -c "Ready in" /tmp/server.log 2>/dev/null && grep -oE "http://localhost:[0-9]+" /tmp/server.log 2>/dev/null | tail -1 | grep -oE "[0-9]+$" || echo ""`,
-            { timeoutMs: 5000 },
-          );
-          const lines = logCheck.stdout.trim().split("\n");
-          const readyCount = parseInt(lines[0] || "0", 10);
-          const logPort = parseInt(lines[1] || "", 10);
-
-          // Trust Next.js "Ready" signal + port as sufficient evidence
-          // No HTTP verification needed - the "Ready in" message means the server is accepting connections
-          if (readyCount > 0 && logPort > 0) {
-            // Verify the port is actually listening (fast kernel-level check)
-            const portCheck = await executeCommand(
-              sandbox,
-              `ss -tln 2>/dev/null | grep -q ":${logPort} " && echo "listening" || echo "closed"`,
-              { timeoutMs: 2000 },
-            );
-            if (portCheck.stdout.trim() === "listening") {
-              console.log(
-                `[dev-server POST] Server ready on port ${logPort} (Next.js Ready + port listening)`,
-              );
-              serverReady = true;
-              actualPort = logPort;
-              break;
-            }
-          }
-
-          // Fallback: Check all common ports for a listening socket
-          const portStatus = await checkDevServerStatus(sandbox);
+          // Fast path: trust listening socket first.
+          const portStatus = await checkDevServerStatus(sandbox, [
+            DEFAULT_WEB_PORT,
+            ...DEV_SERVER_PORTS.filter((p) => p !== DEFAULT_WEB_PORT),
+          ]);
           if (portStatus.isRunning && portStatus.port) {
             console.log(
               `[dev-server POST] Server detected on port ${portStatus.port}`,
@@ -593,38 +568,46 @@ export const POST = withAuth(
             break;
           }
 
-          // Log progress every 5 seconds
-          if ((i + 1) % 5 === 0) {
-            const elapsed = ((i + 1) * pollInterval) / 1000;
+          // Secondary path: detect Next.js ready logs and resolve port.
+          const logCheck = await executeCommand(
+            sandbox,
+            `grep -c "Ready in" /tmp/server.log 2>/dev/null && grep -oE "http://localhost:[0-9]+" /tmp/server.log 2>/dev/null | tail -1 | grep -oE "[0-9]+$" || echo ""`,
+            { timeoutMs: 4000 },
+          );
+          const lines = logCheck.stdout.trim().split("\n");
+          const readyCount = parseInt(lines[0] || "0", 10);
+          const logPort = parseInt(lines[1] || "", 10);
+          if (readyCount > 0 && logPort > 0) {
+            const portCheck = await executeCommand(
+              sandbox,
+              `ss -tln 2>/dev/null | grep -q ":${logPort} " && echo "listening" || echo "closed"`,
+              { timeoutMs: 2000 },
+            );
+            if (portCheck.stdout.trim() === "listening") {
+              serverReady = true;
+              actualPort = logPort;
+              break;
+            }
+          }
+
+          // Check for fatal errors every ~3 polling iterations to fail fast.
+          if ((i + 1) % 3 === 0) {
+            const elapsed = Math.round(((i + 1) * pollInterval) / 1000);
             console.log(
               `[dev-server POST] Still waiting... ${elapsed}s elapsed`,
             );
 
-            // Check for fatal errors in logs that indicate server won't recover
-            const errorCheck = await executeCommand(
+            const fatalCheck = await executeCommand(
               sandbox,
-              `tail -n 15 /tmp/server.log 2>/dev/null | grep -iE "error|failed|EADDRINUSE|FATAL" || echo ""`,
-              { timeoutMs: 5000 },
+              `tail -n 40 /tmp/server.log 2>/dev/null | grep -iE "EADDRINUSE|Cannot find module|SyntaxError|FATAL|ERR_MODULE_NOT_FOUND" || true`,
+              { timeoutMs: 3000 },
             );
-            if (errorCheck.stdout.trim()) {
-              console.warn(
-                `[dev-server POST] Potential issues in logs:`,
-                errorCheck.stdout.trim(),
+            if (fatalCheck.stdout.trim()) {
+              fatalLogSnippet = fatalCheck.stdout.trim();
+              console.error(
+                `[dev-server POST] Fatal startup errors detected, aborting wait`,
               );
-
-              // Check for fatal errors that won't self-resolve
-              const fatalCheck = await executeCommand(
-                sandbox,
-                `tail -n 30 /tmp/server.log 2>/dev/null | grep -c "EADDRINUSE\\|Cannot find module\\|SyntaxError\\|FATAL" || echo "0"`,
-                { timeoutMs: 3000 },
-              );
-              const fatalCount = parseInt(fatalCheck.stdout.trim());
-              if (fatalCount > 0 && elapsed >= 15) {
-                console.error(
-                  `[dev-server POST] Fatal errors detected after ${elapsed}s, stopping wait`,
-                );
-                break;
-              }
+              break;
             }
           }
         }
@@ -644,8 +627,10 @@ export const POST = withAuth(
 
           return NextResponse.json(
             {
-              error:
-                "Dev server failed to start within 120 seconds. The server may still be starting up in the background.",
+              error: fatalLogSnippet
+                ? "Dev server failed to start due to fatal build/runtime errors."
+                : "Dev server failed to start within 90 seconds. The server may still be starting up in the background.",
+              fatalLogs: fatalLogSnippet || undefined,
               logs: logsResult.stdout,
               hint: "Try refreshing the page in a few seconds, or check the server logs for errors.",
             },

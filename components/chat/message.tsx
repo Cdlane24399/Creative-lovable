@@ -210,13 +210,21 @@ interface MessageProps {
     role: "user" | "assistant" | "system" | "data"
     content?: string
     parts?: MessagePart[]
+    isStreaming?: boolean
     /** Thinking time in seconds before the response started */
     thinkingTime?: number
     /** Optional thinking/reasoning content to display */
     thinkingContent?: string
 }
 
-export function Message({ role, content, parts, thinkingTime, thinkingContent }: MessageProps) {
+export function Message({
+    role,
+    content,
+    parts,
+    isStreaming = false,
+    thinkingTime,
+    thinkingContent,
+}: MessageProps) {
     if (role === "user") {
         return (
             <div className="flex w-full justify-end">
@@ -253,11 +261,11 @@ export function Message({ role, content, parts, thinkingTime, thinkingContent }:
             <div className="flex flex-col gap-2 rounded-2xl p-1">
                 {parts ? (
                     // Complex message with parts (text + tools)
-                    <AssistantMessageParts parts={parts} />
+                    <AssistantMessageParts parts={parts} isStreaming={isStreaming} />
                 ) : (
                     // Simple text content
                     <div className="text-sm text-zinc-300">
-                        <ChatMarkdown content={content || ""} />
+                        <ChatMarkdown content={content || ""} isStreaming={isStreaming} />
                     </div>
                 )}
             </div>
@@ -265,7 +273,7 @@ export function Message({ role, content, parts, thinkingTime, thinkingContent }:
     )
 }
 
-function AssistantMessageParts({ parts }: { parts: MessagePart[] }) {
+function AssistantMessageParts({ parts, isStreaming }: { parts: MessagePart[]; isStreaming: boolean }) {
     const elements: React.ReactNode[] = []
 
     parts.forEach((part, index) => {
@@ -275,7 +283,7 @@ function AssistantMessageParts({ parts }: { parts: MessagePart[] }) {
 
             elements.push(
                 <div key={`text-${index}`} className="text-sm text-zinc-300 px-1">
-                    <ChatMarkdown content={(part as TextPart).text} />
+                    <ChatMarkdown content={(part as TextPart).text} isStreaming={isStreaming} />
                 </div>
             )
         } else if (part.type.startsWith("tool-")) {

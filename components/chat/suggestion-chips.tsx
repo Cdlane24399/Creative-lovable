@@ -61,10 +61,58 @@ export function SuggestionChips({ suggestions, onSelect, className }: Suggestion
     )
 }
 
-// Default contextual suggestions based on common UI enhancements
+const HEURISTIC_RULES: Array<{ keywords: string[]; suggestions: string[] }> = [
+  {
+    keywords: ["auth", "login", "signup", "user"],
+    suggestions: [
+      "Add forgot-password flow",
+      "Add social sign-in",
+      "Add account settings page",
+      "Add role-based access",
+    ],
+  },
+  {
+    keywords: ["dashboard", "analytics", "metrics", "chart"],
+    suggestions: [
+      "Add date-range filters",
+      "Add export to CSV",
+      "Add realtime metrics",
+      "Add drill-down charts",
+    ],
+  },
+  {
+    keywords: ["ecommerce", "shop", "cart", "product", "checkout"],
+    suggestions: [
+      "Add product search",
+      "Add saved favorites",
+      "Add order history",
+      "Add checkout validation",
+    ],
+  },
+  {
+    keywords: ["landing", "marketing", "hero", "homepage"],
+    suggestions: [
+      "Add testimonials section",
+      "Add pricing comparison",
+      "Add FAQ accordion",
+      "Add conversion tracking",
+    ],
+  },
+]
+
+export function buildHeuristicSuggestions(contextText?: string): string[] {
+  const normalized = (contextText || "").toLowerCase()
+  for (const rule of HEURISTIC_RULES) {
+    if (rule.keywords.some((keyword) => normalized.includes(keyword))) {
+      return rule.suggestions
+    }
+  }
+  return defaultSuggestions
+}
+
 export const defaultSuggestions = [
-    "Add 3D interactive card",
-    "Add card content",
-    "Create card gallery",
-    "Add particle effects",
+  "Add loading skeletons",
+  "Add empty state UX",
+  "Add keyboard shortcuts",
+  "Add mobile polish",
 ]

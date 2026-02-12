@@ -1,37 +1,67 @@
 # Creative-lovable Development Guide for AI Assistants
 
-This guide provides a comprehensive overview of the Creative-lovable codebase, architecture, and key patterns to help AI assistants understand and contribute to the project effectively.
+AI-powered web development assistant that builds working Next.js applications in seconds. Uses E2B sandboxes for code execution and Vercel AI SDK v6 for agentic workflows.
 
-## 1. Project Overview
+## Information Recording Principles (Claude must read)
 
-Creative-lovable is an AI-powered web development assistant that builds and iterates on real, working Next.js applications in seconds. It leverages E2B sandboxes for secure code execution and the Vercel AI SDK for state-of-the-art agentic workflows.
+This document uses **progressive disclosure** to maximize LLM working efficiency.
 
-### 1.1. Core Technologies
+### Level 1 (this file) contains only
 
-| Category | Technology | Version | Notes |
-|---|---|---|---|
-| Framework | Next.js | ^16.1.6 | App Router, Server Components |
-| Runtime | React | 19.2.4 | Server and Client Components |
-| Language | TypeScript | ^5.9.3 | Strict mode enabled |
-| Styling | Tailwind CSS | ^4.1.18 | Utility-first CSS |
-| UI Components | shadcn/ui, Radix UI | Latest | Pre-installed and configured |
-| AI SDK | Vercel AI SDK | ^6.0.73 (stable) | Streaming, tools, agentic logic via `createGateway()` |
-| Code Execution | E2B Code Interpreter | ^2.3.3 | Secure sandbox environment |
-| Code Execution | Vercel Sandbox | ^1.4.1 | Alternative sandbox runtime |
-| Database | Neon PostgreSQL | ^1.0.2 (dev) | Serverless Postgres |
-| Auth | Supabase Auth | SSR ^0.8.0, JS ^2.95.2 | User authentication and management |
-| Cache | Upstash Redis | ^1.36.2 | Rate limiting and caching |
-| Testing | Jest | ^30.2.0 | Unit and integration tests |
-| Testing | Playwright | ^1.58.1 | End-to-end tests |
-| Package Manager | pnpm | | Used for dependency management |
+| Type | Example |
+|---|---|
+| Iron rules / code patterns | `inputSchema` not `parameters`, `createGateway()` |
+| Common commands | `pnpm dev`, `pnpm test` |
+| Directory navigation | Function → file mapping |
+| Error diagnostics | Symptom → cause → fix |
+| Trigger index tables | Pointers to Level 2 references |
+
+### Level 2 (`docs/references/`) contains
+
+| Type | Example |
+|---|---|
+| Environment variables | Full env var table, `.env.example` details |
+| Model catalog | All available AI models with descriptions |
+| Rate limiting | Code patterns for rate-limited routes |
+
+### When asked to record information
+
+1. **High-frequency?** → Write to this file (Level 1)
+2. **Low-frequency?** → Write to `docs/references/` (Level 2)
+3. **Every L2 reference must have** a trigger condition + content summary
 
 ---
 
-## 2. Codebase Architecture
+## Reference Index (check here when something goes wrong)
 
-The codebase follows a standard Next.js project structure with a clear separation of concerns between UI, application logic, and data layers.
+| Trigger | Document | Key Content |
+|---|---|---|
+| Missing API key, env var setup | `docs/references/env-and-models.md` | Full env vars table, `.env.example` guide |
+| Which model to use, adding a model | `docs/references/env-and-models.md` | All model keys, gateway IDs, descriptions |
+| Adding rate limiting to a route | `docs/references/env-and-models.md` | `checkChatRateLimit` code pattern |
 
-### 2.1. Directory Structure
+---
+
+## Core Technologies
+
+| Category | Technology | Notes |
+|---|---|---|
+| Framework | Next.js ^16.1.6 | App Router, Server Components |
+| Runtime | React 19.2.4 | Server and Client Components |
+| Language | TypeScript ^5.9.3 | Strict mode enabled |
+| Styling | Tailwind CSS ^4.1.18 | Utility-first CSS |
+| UI | shadcn/ui, Radix UI | Pre-installed and configured |
+| AI SDK | Vercel AI SDK ^6.0.73 | Streaming, tools, agentic logic via `createGateway()` |
+| Sandbox | E2B ^2.3.3 | Secure sandbox environment |
+| Database | Neon PostgreSQL | Serverless Postgres |
+| Auth | Supabase Auth | SSR + JS client |
+| Cache | Upstash Redis | Rate limiting and caching |
+| Testing | Jest ^30.2.0, Playwright ^1.58.1 | Unit/integration + E2E |
+| Package Manager | pnpm | |
+
+---
+
+## Directory Structure
 
 ```
 Creative-lovable/
@@ -41,7 +71,7 @@ Creative-lovable/
 ├── components/           # Reusable React components
 │   ├── ui/               # shadcn/ui components
 │   ├── features/         # Feature-specific components
-│   └── layout/           # Layout components (Header, Footer, etc.)
+│   └── layout/           # Layout components
 ├── lib/                  # Core application logic
 │   ├── ai/               # AI agent, tools, and prompts
 │   ├── db/               # Database repositories and types
@@ -49,93 +79,57 @@ Creative-lovable/
 │   ├── e2b/              # E2B sandbox management
 │   └── utils/            # Shared utility functions
 ├── hooks/                # Custom React hooks
-├── styles/               # Global CSS styles
 └── public/               # Static assets
 ```
 
-### 2.2. Key Files and Responsibilities
+## Key Files
 
 | File Path | Description |
 |---|---|
-| `lib/ai/web-builder-agent.ts` | Defines the core AI agent tools and logic. **This is the primary file for AI agent development.** |
-| `lib/ai/agent.ts` | Contains the main system prompt and model configurations. |
-| `lib/ai/providers.ts` | AI Gateway and model routing via `createGateway()`. Defines all available models and provider fallback order. |
-| `lib/ai/tools/index.ts` | Tool barrel exports with categories. Central registry for all tool factory functions. |
-| `lib/ai/tools/batch-file.tools.ts` | **NEW**: Batch file write operations (write up to 50 files in one call). |
-| `lib/ai/tools/project-init.tools.ts` | **NEW**: Project initialization and scaffolding from templates. |
-| `lib/ai/tools/sync.tools.ts` | **NEW**: Database sync persistence with retry logic. |
-| `app/api/chat/route.ts` | The main API endpoint for handling chat requests and streaming AI responses. |
-| `lib/e2b/sandbox.ts` | Manages the lifecycle of E2B sandboxes, including creation, cleanup, and state management. |
+| `lib/ai/web-builder-agent.ts` | Core AI agent tools and logic. **Primary file for AI agent development.** |
+| `lib/ai/agent.ts` | Main system prompt and model configurations. |
+| `lib/ai/providers.ts` | AI Gateway and model routing via `createGateway()`. |
+| `lib/ai/tools/index.ts` | Tool barrel exports. Central registry for all tool factories. |
+| `lib/ai/tools/batch-file.tools.ts` | Batch file write operations (up to 50 files per call). |
+| `lib/ai/tools/project-init.tools.ts` | Project initialization from templates. |
+| `lib/ai/tools/sync.tools.ts` | Database sync persistence with retry logic. |
+| `app/api/chat/route.ts` | Main chat API endpoint, streaming AI responses. |
+| `lib/e2b/sandbox.ts` | E2B sandbox lifecycle (creation, cleanup, state). |
 | `lib/e2b/sync-manager.ts` | File sync to database for project persistence. |
-| `lib/db/repositories/` | Contains the data access layer for interacting with the database. |
-| `lib/services/` | Implements the business logic that coordinates between the API layer and the database. |
+| `lib/db/repositories/` | Data access layer. |
+| `lib/services/` | Business logic coordinating API and database layers. |
 
 ---
 
-## 3. Development Workflow
-
-### 3.1. Local Development Setup
-
-1.  **Install Dependencies**: `pnpm install`
-2.  **Environment Variables**: Copy `.env.example` to `.env.local` and fill in the required API keys.
-3.  **Start Dev Server**: `pnpm dev`
-
-### 3.2. Common Commands
+## Common Commands
 
 | Command | Description |
 |---|---|
-| `pnpm dev` | Start the Next.js development server. |
-| `pnpm build` | Build the application for production. |
-| `pnpm test` | Run the Jest test suite. |
-| `pnpm test:e2e` | Run Playwright end-to-end tests. |
-| `pnpm test:e2e:ui` | Run Playwright tests with interactive UI. |
-| `pnpm lint` | Run ESLint to check for code quality issues. |
-| `pnpm template:build` | Build the production E2B sandbox template. |
-| `pnpm sandbox` | Create a new sandbox instance via script. |
-| `pnpm db:up` | Start local Supabase via Docker Compose. |
-| `pnpm db:down` | Stop local Supabase containers. |
-| `pnpm db:logs` | Tail Supabase Docker Compose logs. |
-| `pnpm db:psql` | Open psql shell to local Supabase database. |
+| `pnpm dev` | Start Next.js dev server |
+| `pnpm build` | Production build |
+| `pnpm test` | Run Jest test suite |
+| `pnpm test:e2e` | Run Playwright E2E tests |
+| `pnpm lint` | ESLint code quality check |
+| `pnpm template:build` | Build E2B sandbox template |
+| `pnpm db:up` / `pnpm db:down` | Start/stop local Supabase |
+| `pnpm db:psql` | Open psql shell to local DB |
 
-### 3.3. Environment Variables
+---
 
-| Variable | Description | Required |
-|---|---|---|
-| `E2B_API_KEY` | API key for E2B sandboxes. | Yes |
-| `AI_GATEWAY_URL` | AI Gateway endpoint URL. | Recommended |
-| `AI_GATEWAY_TOKEN` | AI Gateway authentication token. | Recommended |
-| `ANTHROPIC_API_KEY` | API key for Anthropic models. | Fallback |
-| `OPENAI_API_KEY` | API key for OpenAI models. | Fallback |
-| `GOOGLE_GENERATIVE_AI_API_KEY` | API key for Google models. | Fallback |
-| `DATABASE_URL` | PostgreSQL connection string. | Yes |
-| `NEXT_PUBLIC_SUPABASE_URL` | Public URL for your Supabase project. | Yes |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon key for your Supabase project. | Yes |
-| `E2B_TEMPLATE` | Custom E2B template ID/name for faster startup. | Recommended |
-| `E2B_TEMPLATE_ID` | Legacy alias for `E2B_TEMPLATE`. | Fallback |
-| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST endpoint for caching/rate limiting. | Recommended |
-| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST authentication token. | Recommended |
-| `REDIS_URL` | Alternative name for Redis endpoint. | Fallback |
-| `REDIS_TOKEN` | Alternative name for Redis token. | Fallback |
+## AI SDK v6 Code Patterns (must stay here — directly copyable)
 
-See `.env.example` for complete configuration options.
+### Gateway Model Routing
 
-### 3.4. AI SDK v6 Patterns
-
-The codebase uses Vercel AI SDK v6 (stable) with the following patterns:
-
-**AI Gateway Model Routing:**
 ```typescript
 import { createGateway } from 'ai'
 
 const aiGateway = createGateway()
 
-// Model config maps keys to gateway IDs and provider fallback order
 const MODEL_CONFIG = {
   anthropic: {
     gatewayId: 'anthropic/claude-sonnet-4-5',
     providerOrder: ['anthropic', 'vertex'] as const,
   },
-  // ... other models
 }
 
 export function getModel(key: ModelKey) {
@@ -147,7 +141,8 @@ export function getGatewayProviderOptions(key: ModelKey) {
 }
 ```
 
-**Streaming with streamText:**
+### Streaming with streamText
+
 ```typescript
 import { streamText, stepCountIs } from "ai"
 import { getModel, getGatewayProviderOptions } from "@/lib/ai/providers"
@@ -159,7 +154,6 @@ const result = streamText({
   tools,
   stopWhen: stepCountIs(50),
   onStepFinish: async ({ text, toolCalls, usage }) => {
-    // Log or persist token usage
     logger.info({ usage }, 'Step completed')
   },
 })
@@ -167,23 +161,9 @@ const result = streamText({
 return result.toUIMessageStreamResponse()
 ```
 
-**Available Models (via AI Gateway):**
+### Tool Definition (CRITICAL: use `inputSchema`, NOT `parameters`)
 
-| Key | Model | Description |
-|---|---|---|
-| `anthropic` | Claude Sonnet 4.5 | Fast and capable (default) |
-| `opus` | Claude Opus 4.6 | Most capable, best reasoning |
-| `google` | Gemini 3 Flash Preview | Fast, great for tool use |
-| `googlePro` | Gemini 3 Pro Preview | Best multimodal understanding |
-| `openai` | GPT-5.2 | Latest OpenAI model |
-| `haiku` | Claude 3.5 Haiku | Title generation |
-| `minimax` | MiniMax M2.1 | Advanced Chinese LLM with strong reasoning |
-| `moonshot` | Kimi K2.5 | Long context specialist |
-| `glm` | GLM-4.7 | General Language Model from Zhipu AI |
-
-**Tool Definition:**
 ```typescript
-// IMPORTANT: Use `inputSchema` (NOT `parameters`) — AI SDK v6 reads `inputSchema` internally.
 import { tool } from "ai"
 import { z } from "zod"
 
@@ -193,32 +173,12 @@ const myTool = tool({
     input: z.string().describe("The input to process"),
   }),
   execute: async ({ input }) => {
-    // Tool implementation
     return { result: "processed" }
   },
 })
 ```
 
-**Rate Limiting:**
-```typescript
-import { checkChatRateLimit } from "@/lib/rate-limit"
-
-export const POST = withAuth(async (req: Request) => {
-  // Check rate limit
-  const rateLimit = checkChatRateLimit(req)
-  if (!rateLimit.allowed) {
-    return Response.json(
-      { error: "Rate limit exceeded" },
-      { status: 429, headers: rateLimit.headers }
-    )
-  }
-  // ... handler logic
-})
-```
-
-### 3.5. Error Handling
-
-Always use the custom error classes from `lib/errors.ts`:
+### Error Handling
 
 ```typescript
 import {
@@ -228,66 +188,64 @@ import {
   asyncErrorHandler
 } from "@/lib/errors"
 
-// In API routes
 export const POST = withAuth(asyncErrorHandler(async (req: Request) => {
   if (!isValid) {
     throw new ValidationError("Invalid input", errors)
   }
-  // ...
 }))
 ```
 
 ---
 
-## 4. AI Agent Instructions
+## AI Agent Tools
 
-### 4.1. System Prompt
-
-The main system prompt is located in `lib/ai/agent.ts`. It instructs the AI to act as an elite full-stack engineer, building complete, production-ready Next.js applications. Key principles include:
-
--   **Build Complete Apps**: Architect entire applications, not just single pages.
--   **Componentize Everything**: Break down UI into reusable components.
--   **Interactive by Default**: Ensure all applications have working interactivity.
-
-### 4.2. Available Tools
-
-The AI agent's tools are organized into category-based factory functions in `lib/ai/tools/`. Each factory creates a set of related tools. The barrel export is at `lib/ai/tools/index.ts`.
-
-**Tool Factory Categories:**
+Tool factories in `lib/ai/tools/`, barrel export at `lib/ai/tools/index.ts`.
 
 | Factory | Description |
 |---|---|
 | `createPlanningTools` | Task planning and workflow organization |
 | `createStateTools` | Sandbox and application state management |
 | `createFileTools` | File operations (read, write, delete) |
-| `createBatchFileTools` | **NEW**: Bulk file operations (up to 50 files per call) |
+| `createBatchFileTools` | Bulk file operations (up to 50 files per call) |
 | `createProjectTools` | Project structure and configuration |
-| `createProjectInitTools` | **NEW**: Initialize new projects from templates |
-| `createSyncTools` | **NEW**: Database persistence with retry logic |
+| `createProjectInitTools` | Initialize new projects from templates |
+| `createSyncTools` | Database persistence with retry logic |
 | `createBuildTools` | Building and bundling applications |
-| `createWebsiteTools` | **DEPRECATED**: Use `createProjectInitTools` + `createBatchFileTools` + `createSyncTools` instead |
 | `createCodeTools` | Code analysis and transformation |
 | `createSuggestionTools` | Suggestion generation for follow-ups |
+| `createWebsiteTools` | **DEPRECATED**: Use `createProjectInitTools` + `createBatchFileTools` + `createSyncTools` |
 
-**Key Individual Tools:**
+**Key tools:** `initializeProject`, `batchWriteFiles`, `syncProject`, `writeFile`, `editFile`, `readFile`, `getProjectStructure`, `installPackage`, `getBuildStatus`, `runCommand`, `executeCode`, `generateSuggestions`.
 
--   `initializeProject`: Scaffold a new Next.js project from template.
--   `batchWriteFiles`: Write multiple files in a single operation (max 50 files).
--   `syncProject`: Sync project files to database with retry.
--   `writeFile`: Write an individual file to the sandbox.
--   `editFile`: Make targeted edits to an existing file.
--   `readFile`: Read file contents from the sandbox.
--   `getProjectStructure`: Scan the project to understand the file structure.
--   `installPackage`: Install npm packages.
--   `getBuildStatus`: Check dev server logs for errors.
--   `runCommand`: Execute shell commands in the sandbox.
--   `executeCode`: Run code in the sandbox.
--   `generateSuggestions`: Generate follow-up suggestions.
--   `createWebsite`: **DEPRECATED** -- use `initializeProject` + `batchWriteFiles` + `syncProject` instead.
+---
 
-### 4.3. Contributing to the AI Agent
+## Contributing to the AI Agent
 
--   **Adding a new tool**: Create a new tool factory in `lib/ai/tools/` (e.g., `my-feature.tools.ts`), then export it from `lib/ai/tools/index.ts`. Each tool uses the `tool()` function from the AI SDK.
--   **Modifying the system prompt**: Edit the `SYSTEM_PROMPT` constant in `lib/ai/agent.ts`.
--   **Adding a new model**: Add a new entry to `MODEL_CONFIG` in `lib/ai/providers.ts` with the gateway ID and provider fallback order.
--   **Improving context awareness**: Enhance the `generateAgenticSystemPrompt` function in `lib/ai/web-builder-agent.ts` to provide more relevant context to the AI.
+- **Adding a tool**: Create factory in `lib/ai/tools/` (e.g., `my-feature.tools.ts`), export from `lib/ai/tools/index.ts`. Use `tool()` from AI SDK.
+- **Modifying system prompt**: Edit `SYSTEM_PROMPT` in `lib/ai/agent.ts`.
+- **Adding a model**: Add entry to `MODEL_CONFIG` in `lib/ai/providers.ts` with gateway ID and provider fallback order.
+- **Improving context**: Enhance `generateAgenticSystemPrompt` in `lib/ai/web-builder-agent.ts`.
+
+---
+
+## Modify Code Before Reading (check here first)
+
+| You want to change... | Read first | Key pitfall |
+|---|---|---|
+| AI agent tools | `lib/ai/web-builder-agent.ts` | Must register in `lib/ai/tools/index.ts` barrel export |
+| System prompt | `lib/ai/agent.ts` | `SYSTEM_PROMPT` constant; don't break token budget |
+| Model config | `lib/ai/providers.ts` | Must have `gatewayId` + `providerOrder` in `MODEL_CONFIG` |
+| Chat API route | `app/api/chat/route.ts` | Uses `streamText` + `toUIMessageStreamResponse()` pattern |
+| Sandbox lifecycle | `lib/e2b/sandbox.ts` | State management and cleanup are tightly coupled |
+| File sync | `lib/e2b/sync-manager.ts` | Has retry logic; don't bypass it |
+| Environment vars | `docs/references/env-and-models.md` | Full table there; `.env.example` is source of truth |
+
+---
+
+## Reference Trigger Index (long conversations — check this)
+
+| What you need | Read this | Contains |
+|---|---|---|
+| Env var names and descriptions | `docs/references/env-and-models.md` | Full env vars table, required/optional status |
+| Which AI model to use | `docs/references/env-and-models.md` | All model keys, gateway IDs, capabilities |
+| Rate limiting pattern | `docs/references/env-and-models.md` | `checkChatRateLimit` code example |

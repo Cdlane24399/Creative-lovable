@@ -163,7 +163,48 @@ describe('MessageService', () => {
   })
 
   describe('saveConversation', () => {
-    it('should save conversation and update cache', async () => {
+    it('should append only new messages and update cache', async () => {
+      const existingMessage = mockMessages[0]
+      const savedMessages = [mockMessages[0], mockMessages[1]]
+      mockMessageRepo.countByProjectId.mockResolvedValue(1)
+      mockMessageRepo.findRecentByProjectId.mockResolvedValue([existingMessage])
+      mockMessageRepo.createBatch.mockResolvedValue([mockMessages[1]])
+      mockMessageRepo.findByProjectId.mockResolvedValue(savedMessages)
+
+      const result = await service.saveConversation('project-123', [
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi there!' },
+      ])
+
+      expect(result).toEqual(savedMessages)
+      expect(mockMessageRepo.createBatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: 'project-123',
+          messages: [
+            expect.objectContaining({
+              role: 'assistant',
+              content: 'Hi there!',
+            }),
+          ],
+        }),
+      )
+      expect(mockCache.invalidate).toHaveBeenCalledWith('project-123')
+      expect(mockCache.set).toHaveBeenCalledWith('project-123', savedMessages)
+      expect(mockMessageRepo.saveConversation).not.toHaveBeenCalled()
+    })
+
+    it('should return empty array for empty messages', async () => {
+      const result = await service.saveConversation('project-123', [])
+
+      expect(result).toEqual([])
+      expect(mockMessageRepo.saveConversation).not.toHaveBeenCalled()
+    })
+
+    it('should fallback to rewrite when history does not match', async () => {
+      mockMessageRepo.countByProjectId.mockResolvedValue(1)
+      mockMessageRepo.findRecentByProjectId.mockResolvedValue([
+        { ...mockMessages[0], content: 'Different content' },
+      ])
       mockMessageRepo.saveConversation.mockResolvedValue(mockMessages)
 
       const result = await service.saveConversation('project-123', [
@@ -172,15 +213,7 @@ describe('MessageService', () => {
       ])
 
       expect(result).toEqual(mockMessages)
-      expect(mockCache.invalidate).toHaveBeenCalledWith('project-123')
-      expect(mockCache.set).toHaveBeenCalledWith('project-123', mockMessages)
-    })
-
-    it('should return empty array for empty messages', async () => {
-      const result = await service.saveConversation('project-123', [])
-
-      expect(result).toEqual([])
-      expect(mockMessageRepo.saveConversation).not.toHaveBeenCalled()
+      expect(mockMessageRepo.saveConversation).toHaveBeenCalled()
     })
   })
 

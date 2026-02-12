@@ -168,7 +168,7 @@ async function ensureProjectInitialized(
 
   if (projectReady) {
     // Project already exists (restored from snapshot or template), just set context
-    setProjectInfo(projectId, { projectName: projectId, projectDir });
+    setProjectInfo(projectId, { projectDir, sandboxId: sandbox.sandboxId });
     return;
   }
 
@@ -185,7 +185,7 @@ async function ensureProjectInitialized(
     await scaffoldNextProject(sandbox, projectDir, projectId, "");
   }
 
-  setProjectInfo(projectId, { projectName: projectId, projectDir });
+  setProjectInfo(projectId, { projectDir, sandboxId: sandbox.sandboxId });
 }
 
 /**

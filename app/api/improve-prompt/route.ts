@@ -1,39 +1,62 @@
 import { generateText } from "ai"
 import { withAuth } from "@/lib/auth"
 import { asyncErrorHandler } from "@/lib/errors"
-import { getModel, getGatewayProviderOptions } from "@/lib/ai/providers"
+import {
+  getModel,
+  getGatewayProviderOptions,
+  getOpenRouterModel,
+  hasOpenRouterFallback,
+} from "@/lib/ai/providers"
 import { improvePromptSchema, createValidationErrorResponse, ValidationError as ZodValidationError } from "@/lib/validations"
 import { logger } from "@/lib/logger"
 
 export const maxDuration = 30
 
-const PROMPT_IMPROVER_SYSTEM = `You are a prompt enhancement specialist. Your job is to take a user's brief web development request and expand it into a detailed, actionable prompt that will result in a better web application.
+const PROMPT_IMPROVER_SYSTEM = `Rewrite the user's web app prompt to be clearer and more implementation-ready.
+- Keep the original intent.
+- Add concrete UI structure, interactions, and key components.
+- Keep it concise: 2-3 sentences, plain language.
+- Return only the improved prompt text.`
 
-Rules:
-1. Keep the core intent but add specific details about:
-   - UI/UX features (animations, interactions, responsive design)
-   - Pages and navigation structure
-   - Key components and sections
-   - Visual style and design direction
-   - Interactive elements and user flows
+const IMPROVE_PROMPT_CACHE_TTL_MS = 10 * 60 * 1000
+const IMPROVE_PROMPT_CACHE_MAX_ENTRIES = 200
+const improvePromptCache = new Map<
+  string,
+  { value: string; expiresAt: number }
+>()
 
-2. Be specific but concise - aim for 2-4 sentences max
-3. Use natural language, not bullet points
-4. Maintain the user's original vision while enhancing it
-5. Add suggestions for modern design patterns (bento grids, glassmorphism, gradients, etc.)
-6. Include interactivity requirements (forms, modals, state changes)
+function normalizePromptCacheKey(prompt: string): string {
+  return prompt.trim().replace(/\s+/g, " ").toLowerCase()
+}
 
-Examples:
-Input: "landing page for a startup"
-Output: "Build a modern SaaS landing page with a hero section featuring animated gradient backgrounds and a product demo video, a bento-grid features section with hover effects, customer testimonials carousel, tiered pricing cards with interactive toggle for monthly/yearly billing, and a contact form with validation. Use a dark theme with vibrant accent colors and smooth scroll animations."
+function getCachedImprovedPrompt(prompt: string): string | null {
+  const key = normalizePromptCacheKey(prompt)
+  const entry = improvePromptCache.get(key)
+  if (!entry) return null
+  if (entry.expiresAt < Date.now()) {
+    improvePromptCache.delete(key)
+    return null
+  }
+  return entry.value
+}
 
-Input: "dashboard"
-Output: "Create a comprehensive analytics dashboard with a collapsible sidebar navigation, real-time stats cards with animated counters, interactive data visualization charts, a recent activity feed with live updates, user profile dropdown menu, and a dark/light theme toggle. Include loading skeletons, empty states, and toast notifications for user actions."
+function cacheImprovedPrompt(prompt: string, improved: string): void {
+  const key = normalizePromptCacheKey(prompt)
+  improvePromptCache.set(key, {
+    value: improved,
+    expiresAt: Date.now() + IMPROVE_PROMPT_CACHE_TTL_MS,
+  })
 
-Input: "portfolio"
-Output: "Design a creative portfolio website with an immersive hero section featuring parallax scrolling and a 3D element, a filterable project gallery with modal previews and smooth transitions, an about section with animated skill bars, a timeline-based experience section, and a contact form with social links. Use a minimal aesthetic with bold typography and subtle micro-interactions."
+  if (improvePromptCache.size <= IMPROVE_PROMPT_CACHE_MAX_ENTRIES) {
+    return
+  }
 
-Return ONLY the improved prompt, nothing else.`
+  // Drop oldest entry.
+  const oldestKey = improvePromptCache.keys().next().value
+  if (oldestKey) {
+    improvePromptCache.delete(oldestKey)
+  }
+}
 
 export const POST = withAuth(asyncErrorHandler(async (req: Request) => {
   const requestId = req.headers.get('x-request-id') ?? 'unknown'
@@ -52,13 +75,41 @@ export const POST = withAuth(asyncErrorHandler(async (req: Request) => {
   const { prompt } = validation.data
   log.info('Improving prompt', { promptLength: prompt.length })
 
-  const result = await generateText({
-    model: getModel('anthropic'),
-    providerOptions: getGatewayProviderOptions('anthropic'),
-    system: PROMPT_IMPROVER_SYSTEM,
-    prompt: prompt,
-    maxOutputTokens: 300,
-  })
+  const cached = getCachedImprovedPrompt(prompt)
+  if (cached) {
+    return Response.json({ improvedPrompt: cached })
+  }
 
-  return Response.json({ improvedPrompt: result.text.trim() })
+  let result: Awaited<ReturnType<typeof generateText>>
+  try {
+    result = await generateText({
+      model: getModel('google'),
+      providerOptions: getGatewayProviderOptions('google'),
+      system: PROMPT_IMPROVER_SYSTEM,
+      prompt: prompt,
+      maxOutputTokens: 180,
+    })
+  } catch (gatewayError) {
+    if (!hasOpenRouterFallback()) {
+      throw gatewayError
+    }
+
+    log.warn('Gateway failed, retrying improve-prompt with OpenRouter fallback', {
+      error:
+        gatewayError instanceof Error
+          ? gatewayError.message
+          : String(gatewayError),
+    })
+
+    result = await generateText({
+      model: getOpenRouterModel('google'),
+      system: PROMPT_IMPROVER_SYSTEM,
+      prompt: prompt,
+      maxOutputTokens: 180,
+    })
+  }
+
+  const improvedPrompt = result.text.trim()
+  cacheImprovedPrompt(prompt, improvedPrompt)
+  return Response.json({ improvedPrompt })
 }))

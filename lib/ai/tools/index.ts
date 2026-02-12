@@ -26,4 +26,3 @@ export { createProjectInitTools } from "./project-init.tools";
 export { createSyncTools } from "./sync.tools";
 export { createBuildTools } from "./build.tools";
 export { createCodeTools } from "./code.tools";
-export { createSuggestionTools } from "./suggestion.tools";

@@ -343,7 +343,10 @@ export function ChatPanel({ ref }: ChatPanelProps) {
   return (
     <div className="flex h-full flex-col bg-[#111111]">
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+      <div
+        data-chat-scroll-container="true"
+        className="flex-1 overflow-y-auto px-4 py-6 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent"
+      >
         <div className="mx-auto w-full max-w-3xl">
           <MessageList
             messages={messages}
