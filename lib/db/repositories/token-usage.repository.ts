@@ -27,6 +27,19 @@ export interface TokenUsageStats {
   record_count: number
 }
 
+interface TokenUsageDbRow {
+  id: string
+  project_id: string
+  model: string
+  prompt_tokens: number | string
+  completion_tokens: number | string
+  total_tokens: number | string
+  step_number: number | null
+  cost_usd: number | string | null
+  timestamp: string
+  created_at: string
+}
+
 // =============================================================================
 // Repository Implementation
 // =============================================================================
@@ -36,7 +49,7 @@ export class TokenUsageRepository extends BaseRepository<TokenUsage> {
     super("token_usage")
   }
 
-  private transformRow(row: any): TokenUsage {
+  private transformRow(row: TokenUsageDbRow): TokenUsage {
     return {
       ...row,
       prompt_tokens: Number(row.prompt_tokens),
@@ -59,7 +72,7 @@ export class TokenUsageRepository extends BaseRepository<TokenUsage> {
         if (error.code === "PGRST116") return null
         throw error
       }
-      return this.transformRow(data)
+      return this.transformRow(data as TokenUsageDbRow)
     } catch (error) {
       this.handleError(error, "findById")
     }
@@ -128,7 +141,7 @@ export class TokenUsageRepository extends BaseRepository<TokenUsage> {
         .single()
 
       if (error) throw error
-      return this.transformRow(result)
+      return this.transformRow(result as TokenUsageDbRow)
     } catch (error) {
       this.handleError(error, "recordUsage")
     }
@@ -172,7 +185,7 @@ export class TokenUsageRepository extends BaseRepository<TokenUsage> {
 
       const { data, error } = await query
       if (error) throw error
-      return data.map((row) => this.transformRow(row))
+      return data.map((row) => this.transformRow(row as TokenUsageDbRow))
     } catch (error) {
       this.handleError(error, "getUsageByProject")
     }

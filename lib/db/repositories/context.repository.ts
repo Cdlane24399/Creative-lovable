@@ -8,7 +8,7 @@
 import { createServiceRoleClient } from "@/lib/supabase/server"
 import { parseJsonSafe } from "./base.repository"
 import { getProjectRepository } from "./project.repository"
-import { DatabaseError, NotFoundError } from "@/lib/errors"
+import { DatabaseError } from "@/lib/errors"
 import type { 
   TaskGraph, 
   FileInfo, 
@@ -55,6 +55,45 @@ export interface ContextUpdate {
 const MAX_TOOL_HISTORY = 50
 const MAX_ERROR_HISTORY = 20
 
+interface ContextDbRow {
+  project_id: string
+  project_name: string | null
+  project_dir: string | null
+  sandbox_id: string | null
+  files: unknown
+  dependencies: unknown
+  build_status: unknown
+  server_state: unknown
+  tool_history: unknown
+  error_history: unknown
+  task_graph: unknown
+  completed_steps: unknown
+  current_plan: unknown
+  updated_at: string
+}
+
+interface ContextSerializedUpdate {
+  project_name?: string | null
+  project_dir?: string | null
+  sandbox_id?: string | null
+  files?: Record<string, FileInfo>
+  dependencies?: Record<string, string>
+  build_status?: BuildStatus
+  server_state?: ServerState
+  tool_history?: ToolExecution[]
+  error_history?: string[]
+  task_graph?: TaskGraph | null
+  completed_steps?: string[]
+  current_plan?: string[] | null
+}
+
+interface ContextSummaryRow {
+  project_name: string | null
+  task_graph: unknown
+  files: unknown
+  updated_at: string
+}
+
 // =============================================================================
 // Repository Implementation
 // =============================================================================
@@ -66,16 +105,21 @@ export class ContextRepository {
     return createServiceRoleClient()
   }
 
-  private handleError(error: any, operationName: string): never {
+  private handleError(error: unknown, operationName: string): never {
     console.error(`[ContextRepository] ${operationName} failed:`, error)
+    const message = error instanceof Error ? error.message : "Unknown error"
     throw new DatabaseError(
-      `${operationName} failed: ${error.message || "Unknown error"}`
+      `${operationName} failed: ${message}`
     )
   }
 
-  private transformRow(row: any): AgentContextData {
+  private transformRow(row: ContextDbRow): AgentContextData {
     const files = parseJsonSafe<Record<string, FileInfo>>(row.files, {})
     const dependencies = parseJsonSafe<Record<string, string>>(row.dependencies, {})
+    const buildStatus = parseJsonSafe<BuildStatus | null>(row.build_status, null)
+    const serverState = parseJsonSafe<ServerState | null>(row.server_state, null)
+    const taskGraph = parseJsonSafe<TaskGraph | null>(row.task_graph, null)
+    const currentPlan = parseJsonSafe<string[] | null>(row.current_plan, null)
 
     return {
       projectId: row.project_id,
@@ -87,40 +131,28 @@ export class ContextRepository {
         { ...v, lastModified: new Date(v.lastModified) }
       ])),
       dependencies: new Map(Object.entries(dependencies)),
-      buildStatus: row.build_status
+      buildStatus: buildStatus
         ? {
-          ...parseJsonSafe<BuildStatus>(row.build_status, {
-            hasErrors: false,
-            hasWarnings: false,
-            errors: [],
-            warnings: [],
-            lastChecked: new Date()
-          }),
-          lastChecked: new Date(parseJsonSafe<BuildStatus>(row.build_status, {} as BuildStatus).lastChecked)
+          ...buildStatus,
+          lastChecked: new Date(buildStatus.lastChecked)
         }
         : undefined,
-      serverState: row.server_state
-        ? parseJsonSafe<ServerState>(row.server_state, undefined as unknown as ServerState)
-        : undefined,
+      serverState: serverState ?? undefined,
       toolHistory: parseJsonSafe<ToolExecution[]>(row.tool_history, []).map(t => ({
         ...t,
         timestamp: new Date(t.timestamp)
       })),
       errorHistory: parseJsonSafe<string[]>(row.error_history, []),
-      taskGraph: row.task_graph
-        ? parseJsonSafe<TaskGraph>(row.task_graph, undefined as unknown as TaskGraph)
-        : undefined,
+      taskGraph: taskGraph ?? undefined,
       completedSteps: parseJsonSafe<string[]>(row.completed_steps, []),
-      currentPlan: row.current_plan
-        ? parseJsonSafe<string[]>(row.current_plan, undefined as unknown as string[])
-        : undefined,
+      currentPlan: currentPlan ?? undefined,
       createdAt: new Date(row.updated_at),
       lastActivity: new Date(row.updated_at),
     }
   }
 
-  private serializeContext(data: Partial<AgentContextData>): any {
-    const row: any = {}
+  private serializeContext(data: Partial<AgentContextData>): ContextSerializedUpdate {
+    const row: ContextSerializedUpdate = {}
 
     if (data.projectName !== undefined) row.project_name = data.projectName || null
     if (data.projectDir !== undefined) row.project_dir = data.projectDir || null
@@ -179,7 +211,7 @@ export class ContextRepository {
         throw error
       }
 
-      return this.transformRow(data)
+      return this.transformRow(data as ContextDbRow)
     } catch (error) {
       this.handleError(error, "findByProjectId")
     }
@@ -348,15 +380,16 @@ export class ContextRepository {
         throw error
       }
 
-      const files = data.files ? (typeof data.files === 'string' ? JSON.parse(data.files) : data.files) : {}
+      const summaryRow = data as ContextSummaryRow
+      const files = parseJsonSafe<Record<string, unknown>>(summaryRow.files, {})
       const fileCount = Object.keys(files).length
 
       return {
         exists: true,
-        projectName: data.project_name || undefined,
-        hasTaskGraph: !!data.task_graph,
+        projectName: summaryRow.project_name || undefined,
+        hasTaskGraph: !!summaryRow.task_graph,
         fileCount,
-        lastActivity: new Date(data.updated_at),
+        lastActivity: new Date(summaryRow.updated_at),
       }
     } catch (error) {
       this.handleError(error, "getSummary")

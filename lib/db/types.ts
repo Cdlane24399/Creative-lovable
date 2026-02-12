@@ -42,9 +42,9 @@ export interface MessagePart {
 export interface CreateProjectRequest {
   name: string
   description?: string
-  screenshot_base64?: string
-  sandbox_id?: string
-  sandbox_url?: string
+  screenshot_base64?: string | null
+  sandbox_id?: string | null
+  sandbox_url?: string | null
   files_snapshot?: Record<string, string>
   dependencies?: Record<string, string>
 }
@@ -52,10 +52,10 @@ export interface CreateProjectRequest {
 export interface UpdateProjectRequest {
   name?: string
   description?: string
-  screenshot_base64?: string
-  screenshot_url?: string
-  sandbox_id?: string
-  sandbox_url?: string
+  screenshot_base64?: string | null
+  screenshot_url?: string | null
+  sandbox_id?: string | null
+  sandbox_url?: string | null
   files_snapshot?: Record<string, string>
   dependencies?: Record<string, string>
   starred?: boolean

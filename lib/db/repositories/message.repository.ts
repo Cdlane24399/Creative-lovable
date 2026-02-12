@@ -5,7 +5,7 @@
  * Uses Supabase Client.
  */
 
-import { BaseRepository, generateId, parseJsonSafe, toJsonString } from "./base.repository"
+import { BaseRepository, generateId, parseJsonSafe } from "./base.repository"
 import type { Message, MessagePart } from "../types"
 
 // =============================================================================
@@ -37,6 +37,10 @@ export interface MessageBatch {
   }>
 }
 
+type MessageDbRow = Omit<Message, "parts"> & {
+  parts: unknown
+}
+
 // =============================================================================
 // Repository Implementation
 // =============================================================================
@@ -46,7 +50,7 @@ export class MessageRepository extends BaseRepository<Message> {
     super("messages")
   }
 
-  private transformRow(row: any): Message {
+  private transformRow(row: MessageDbRow): Message {
     return {
       ...row,
       parts: parseJsonSafe<MessagePart[] | null>(row.parts, null),
@@ -61,7 +65,7 @@ export class MessageRepository extends BaseRepository<Message> {
           if (error.code === 'PGRST116') return null
           throw error
       }
-      return this.transformRow(data)
+      return this.transformRow(data as MessageDbRow)
     } catch (error) {
       this.handleError(error, "findById")
     }
@@ -117,7 +121,7 @@ export class MessageRepository extends BaseRepository<Message> {
 
       const { data, error } = await query
       if (error) throw error
-      return data.map(row => this.transformRow(row))
+      return data.map((row) => this.transformRow(row as MessageDbRow))
     } catch (error) {
       this.handleError(error, "findByProjectId")
     }
@@ -138,7 +142,7 @@ export class MessageRepository extends BaseRepository<Message> {
 
       if (error) throw error
       // Reverse to get chronological order
-      return data.reverse().map(row => this.transformRow(row))
+      return data.reverse().map((row) => this.transformRow(row as MessageDbRow))
     } catch (error) {
       this.handleError(error, "findRecentByProjectId")
     }
@@ -159,7 +163,7 @@ export class MessageRepository extends BaseRepository<Message> {
       }).select().single()
 
       if (error) throw error
-      return this.transformRow(result)
+      return this.transformRow(result as MessageDbRow)
     } catch (error) {
       this.handleError(error, "create")
     }
@@ -181,7 +185,7 @@ export class MessageRepository extends BaseRepository<Message> {
 
       const { data, error } = await client.from(this.tableName).upsert(rows, { onConflict: 'id' }).select()
       if (error) throw error
-      return data.map(row => this.transformRow(row))
+      return data.map((row) => this.transformRow(row as MessageDbRow))
     } catch (error) {
       this.handleError(error, "createBatch")
     }
@@ -268,7 +272,7 @@ export class MessageRepository extends BaseRepository<Message> {
           if (error.code === 'PGRST116') return null
           throw error
       }
-      return this.transformRow(data)
+      return this.transformRow(data as MessageDbRow)
     } catch (error) {
       this.handleError(error, "updateContent")
     }
@@ -315,7 +319,7 @@ export class MessageRepository extends BaseRepository<Message> {
             if (error.code === 'PGRST116') return null
             throw error
         }
-        return this.transformRow(data)
+        return this.transformRow(data as MessageDbRow)
     } catch (error) {
         this.handleError(error, "findLastByProjectId")
     }
@@ -335,7 +339,7 @@ export class MessageRepository extends BaseRepository<Message> {
             .order('created_at', { ascending: true })
         
         if (error) throw error
-        return data.map(row => this.transformRow(row))
+        return data.map((row) => this.transformRow(row as MessageDbRow))
     } catch (error) {
         this.handleError(error, "findByRole")
     }

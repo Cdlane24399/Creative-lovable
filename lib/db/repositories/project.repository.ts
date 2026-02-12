@@ -29,6 +29,26 @@ export interface ProjectQueryOptions extends FindOptions {
   filters?: ProjectFilters
 }
 
+type ProjectDbRow = Omit<Project, "files_snapshot" | "dependencies"> & {
+  files_snapshot: unknown
+  dependencies: unknown
+}
+
+type ProjectListRow = Omit<Project, "files_snapshot" | "dependencies">
+
+interface ProjectUpdateRow {
+  updated_at: string
+  name?: string
+  description?: string | null
+  screenshot_base64?: string | null
+  screenshot_url?: string | null
+  sandbox_id?: string | null
+  sandbox_url?: string | null
+  files_snapshot?: Record<string, string>
+  dependencies?: Record<string, string>
+  starred?: boolean
+}
+
 // =============================================================================
 // Repository Implementation
 // =============================================================================
@@ -42,7 +62,7 @@ export class ProjectRepository extends BaseRepository<Project> {
    * Transform database row to Project type
    * Handles JSONB field parsing
    */
-  private transformRow(row: any): Project {
+  private transformRow(row: ProjectDbRow): Project {
     return {
       ...row,
       files_snapshot: parseJsonSafe<Record<string, string>>(row.files_snapshot, {}),
@@ -90,7 +110,7 @@ export class ProjectRepository extends BaseRepository<Project> {
       if (error) throw error
 
       // Use light transform for list view (no JSONB fields fetched)
-      return data.map(row => ({
+      return (data as ProjectListRow[]).map((row) => ({
         ...row,
         files_snapshot: {},  // Not fetched in list view
         dependencies: {},    // Not fetched in list view
@@ -117,7 +137,7 @@ export class ProjectRepository extends BaseRepository<Project> {
         throw error
       }
 
-      return this.transformRow(data)
+      return this.transformRow(data as ProjectDbRow)
     } catch (error) {
       this.handleError(error, "findById")
     }
@@ -140,7 +160,7 @@ export class ProjectRepository extends BaseRepository<Project> {
         throw error
       }
 
-      return this.transformRow(data)
+      return this.transformRow(data as ProjectDbRow)
     } catch (error) {
       this.handleError(error, "findBySandboxId")
     }
@@ -172,7 +192,7 @@ export class ProjectRepository extends BaseRepository<Project> {
 
       if (error) throw error
 
-      return this.transformRow(result)
+      return this.transformRow(result as ProjectDbRow)
     } catch (error) {
       this.handleError(error, "create")
     }
@@ -202,7 +222,7 @@ export class ProjectRepository extends BaseRepository<Project> {
 
       if (error) throw error
 
-      return this.transformRow(data)
+      return this.transformRow(data as ProjectDbRow)
     } catch (error) {
       this.handleError(error, "ensureExists")
     }
@@ -215,7 +235,7 @@ export class ProjectRepository extends BaseRepository<Project> {
     try {
       const client = await this.getClient()
 
-      const updateData: any = { updated_at: new Date().toISOString() }
+      const updateData: ProjectUpdateRow = { updated_at: new Date().toISOString() }
       if (data.name !== undefined) updateData.name = data.name.trim()
       if (data.description !== undefined) updateData.description = data.description
       if (data.screenshot_base64 !== undefined) updateData.screenshot_base64 = data.screenshot_base64
@@ -238,7 +258,7 @@ export class ProjectRepository extends BaseRepository<Project> {
         throw error
       }
 
-      return this.transformRow(result)
+      return this.transformRow(result as ProjectDbRow)
     } catch (error) {
       this.handleError(error, "update")
     }
@@ -248,7 +268,7 @@ export class ProjectRepository extends BaseRepository<Project> {
    * Update sandbox information for a project
    */
   async updateSandbox(id: string, sandboxId: string | null, sandboxUrl?: string | null): Promise<void> {
-    await this.update(id, { sandbox_id: sandboxId as any, sandbox_url: sandboxUrl as any })
+    await this.update(id, { sandbox_id: sandboxId, sandbox_url: sandboxUrl })
   }
 
   /**

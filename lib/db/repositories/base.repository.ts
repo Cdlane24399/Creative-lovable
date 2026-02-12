@@ -69,7 +69,7 @@ export abstract class BaseRepository<T extends BaseEntity> {
   /**
    * Handle database errors
    */
-  protected handleError(error: any, operationName: string): never {
+  protected handleError(error: unknown, operationName: string): never {
     console.error(`[${this.tableName}] ${operationName} failed:`, error)
     
     if (error instanceof DatabaseError || 
@@ -78,8 +78,9 @@ export abstract class BaseRepository<T extends BaseEntity> {
       throw error
     }
     
+    const message = error instanceof Error ? error.message : "Unknown error"
     throw new DatabaseError(
-      `${operationName} failed: ${error.message || "Unknown error"}`
+      `${operationName} failed: ${message}`
     )
   }
 
