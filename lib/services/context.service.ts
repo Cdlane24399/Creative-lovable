@@ -42,6 +42,20 @@ import {
   type ContextUpdate,
 } from "@/lib/db/repositories"
 import type { TaskGraph, Task, TaskStatus } from "@/lib/ai/context-types"
+import { ValidationError } from "@/lib/errors"
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+/** Maximum number of tool executions to retain in history */
+const MAX_TOOL_HISTORY = 50
+
+/** Maximum number of error entries to retain in history */
+const MAX_ERROR_HISTORY = 20
+
+/** Default number of recent messages to fetch for context */
+const DEFAULT_RECENT_MESSAGE_COUNT = 20
 
 // =============================================================================
 // Types
@@ -82,6 +96,12 @@ export class ContextService {
    * Checks cache first, loads from DB if not found
    */
   async getContext(projectId: string): Promise<AgentContextData> {
+    if (!projectId || projectId.trim().length === 0) {
+      throw new ValidationError("projectId is required", {
+        projectId: ["projectId must not be empty or blank"],
+      })
+    }
+
     // Check cache first
     const cached = contextCache.get(projectId)
     if (cached) {
@@ -266,17 +286,17 @@ export class ContextService {
     const context = await this.getContext(projectId)
 
     context.toolHistory.push(execution)
-    
+
     // Trim history
-    if (context.toolHistory.length > 50) {
-      context.toolHistory = context.toolHistory.slice(-50)
+    if (context.toolHistory.length > MAX_TOOL_HISTORY) {
+      context.toolHistory = context.toolHistory.slice(-MAX_TOOL_HISTORY)
     }
 
     // Track errors
     if (execution.error) {
       context.errorHistory.push(`[${execution.toolName}] ${execution.error}`)
-      if (context.errorHistory.length > 20) {
-        context.errorHistory = context.errorHistory.slice(-20)
+      if (context.errorHistory.length > MAX_ERROR_HISTORY) {
+        context.errorHistory = context.errorHistory.slice(-MAX_ERROR_HISTORY)
       }
     }
 

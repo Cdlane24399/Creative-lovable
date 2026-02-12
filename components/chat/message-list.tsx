@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef } from "react";
-import { Message } from "./message";
+import { Message, type MessagePart } from "./message";
 import type { UIMessage } from "ai";
 import { ChatEmptyState } from "./chat-error";
 import { ChatError } from "./chat-error";
@@ -106,7 +106,7 @@ export const MessageList = React.memo(
           <Message
             key={message.id}
             role={message.role}
-            parts={message.parts as any[]}
+            parts={message.parts as MessagePart[]}
             thinkingTime={getThinkingTime?.(message.id)}
             isStreaming={
               Boolean(isWorking) &&

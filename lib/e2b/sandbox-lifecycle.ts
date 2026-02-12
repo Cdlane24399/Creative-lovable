@@ -27,6 +27,7 @@ const connectionAttempts = new Map<
 >();
 export const MAX_RECONNECT_ATTEMPTS = 3;
 export const RECONNECT_COOLDOWN_MS = 5000; // 5 seconds between attempts
+const CONNECTION_ATTEMPTS_TTL_MS = 60 * 60 * 1000; // 1 hour TTL for stale entries
 
 // Default timeout for sandboxes (10 minutes for website generation)
 // Note: E2B default is 5 minutes, extended to 10 for:
@@ -49,6 +50,20 @@ const sandboxLastActivity = new Map<string, number>();
  */
 export function updateSandboxActivity(projectId: string): void {
   sandboxLastActivity.set(projectId, Date.now());
+}
+
+/**
+ * Clean up stale connection attempt entries older than TTL.
+ * Prevents memory leak from accumulated entries for sandboxes that were
+ * never successfully reconnected and never cleaned up.
+ */
+function cleanupStaleConnectionAttempts(): void {
+  const now = Date.now();
+  for (const [sandboxId, attempts] of connectionAttempts) {
+    if (now - attempts.lastAttempt > CONNECTION_ATTEMPTS_TTL_MS) {
+      connectionAttempts.delete(sandboxId);
+    }
+  }
 }
 
 /**
@@ -97,6 +112,9 @@ export function isSandboxExpired(projectId: string): boolean {
  * Clean up expired sandboxes
  */
 export async function cleanupExpiredSandboxes(): Promise<void> {
+  // Also clean up stale connection attempt entries to prevent memory leaks
+  cleanupStaleConnectionAttempts();
+
   const expiredProjects: string[] = [];
 
   // Find expired sandboxes
@@ -640,7 +658,12 @@ async function resolveSandbox(
         metadata: { projectId },
       },
     });
-    const candidates = await paginator.nextItems();
+    const candidates = await Promise.race([
+      paginator.nextItems(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Sandbox.list timed out")), 5000),
+      ),
+    ]);
 
     if (candidates.length > 0) {
       const candidate = candidates[0];

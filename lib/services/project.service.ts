@@ -31,6 +31,7 @@ import type {
   Message,
 } from "@/lib/db/types";
 import { ValidationError, NotFoundError } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 
 // =============================================================================
 // Types
@@ -111,8 +112,9 @@ export class ProjectService {
       const refreshed = await this.projectRepo.findById(project.id);
       return refreshed || project;
     } catch (error) {
-      console.warn(
-        `[ProjectService] Failed to hydrate files snapshot for ${project.id}:`,
+      logger.warn(
+        "Failed to hydrate files snapshot",
+        { projectId: project.id, operation: "hydrateFilesSnapshotIfNeeded" },
         error,
       );
       return project;
@@ -204,7 +206,9 @@ export class ProjectService {
     const project = await this.hydrateFilesSnapshotIfNeeded(foundProject);
 
     // Update last opened timestamp (non-blocking)
-    this.projectRepo.updateLastOpened(id).catch(console.error);
+    this.projectRepo.updateLastOpened(id).catch((err) =>
+      logger.warn("Failed to update last opened timestamp", { projectId: id }, err)
+    );
 
     // Try to get messages from cache
     const cachedMessages = await cachedMessagesPromise;

@@ -105,6 +105,8 @@ export class SandboxFileWatcher {
   private intervalId: NodeJS.Timeout | null = null;
   private isWatching: boolean = false;
   private projectDir: string;
+  private consecutiveFailures: number = 0;
+  private static readonly MAX_CONSECUTIVE_FAILURES = 3;
 
   constructor(
     sandbox: Sandbox,
@@ -130,11 +132,25 @@ export class SandboxFileWatcher {
     await this.refreshState();
 
     // Start polling
+    this.consecutiveFailures = 0;
     this.intervalId = setInterval(async () => {
       try {
         await this.checkForChanges();
+        this.consecutiveFailures = 0;
       } catch (error) {
-        console.error("[FileWatcher] Error checking for changes:", error);
+        this.consecutiveFailures++;
+        console.error(
+          `[FileWatcher] Error checking for changes (failure ${this.consecutiveFailures}/${SandboxFileWatcher.MAX_CONSECUTIVE_FAILURES}):`,
+          error,
+        );
+        if (
+          this.consecutiveFailures >= SandboxFileWatcher.MAX_CONSECUTIVE_FAILURES
+        ) {
+          console.error(
+            `[FileWatcher] ${SandboxFileWatcher.MAX_CONSECUTIVE_FAILURES} consecutive failures, stopping watcher`,
+          );
+          this.stop();
+        }
       }
     }, this.config.pollInterval);
 

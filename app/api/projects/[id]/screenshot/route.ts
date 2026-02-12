@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { withAuth } from "@/lib/auth"
 import { asyncErrorHandler, ValidationError } from "@/lib/errors"
+import { checkChatRateLimit } from "@/lib/rate-limit"
 import { getProjectService } from "@/lib/services"
+
+export const maxDuration = 30
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -49,6 +52,15 @@ export function isValidScreenshotPayload(value: string): boolean {
  * - sandbox_url?: string - Optional sandbox preview URL
  */
 export const POST = withAuth(asyncErrorHandler(async (request: NextRequest, context: RouteContext) => {
+  const rateLimit = checkChatRateLimit(request)
+  if (!rateLimit.allowed) {
+    const retryAfter = Math.ceil((rateLimit.resetTime - Date.now()) / 1000)
+    return NextResponse.json(
+      { error: "Rate limit exceeded", retryAfter },
+      { status: 429, headers: { "Retry-After": retryAfter.toString() } }
+    )
+  }
+
   const [{ id }, body] = await Promise.all([context.params, request.json()])
   const projectService = getProjectService()
 

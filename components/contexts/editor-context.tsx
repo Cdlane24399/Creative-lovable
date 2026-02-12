@@ -249,6 +249,8 @@ export function EditorProvider({
 
   // Restore project state when loading an existing project
   useEffect(() => {
+    let isCancelled = false;
+
     if (project) {
       setProjectName(project.name);
       if (
@@ -307,6 +309,8 @@ export function EditorProvider({
             .catch(() => null),
         ])
           .then(([restoreData, serverStatus]) => {
+            if (isCancelled) return;
+
             const runningUrl =
               serverStatus?.isRunning && serverStatus?.url
                 ? normalizeSandboxPreviewUrl(serverStatus.url)
@@ -356,6 +360,7 @@ export function EditorProvider({
             validatingSandboxRef.current = false;
           })
           .catch(() => {
+            if (isCancelled) return;
             console.log(
               "[EditorProvider] Validation failed, using saved sandbox URL",
             );
@@ -366,6 +371,10 @@ export function EditorProvider({
           });
       }
     }
+
+    return () => {
+      isCancelled = true;
+    };
   }, [project, updateProject]);
 
   // Restore sandbox when opening an existing project without a working preview

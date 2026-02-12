@@ -85,6 +85,32 @@ export abstract class BaseRepository<T extends BaseEntity> {
   }
 
   /**
+   * Retry an operation with exponential backoff for transient errors.
+   * Retries on deadlock (40P01) and Supabase timeout (PGRST301).
+   */
+  protected async withRetry<R>(
+    operation: () => Promise<R>,
+    maxRetries: number = 3,
+  ): Promise<R> {
+    const TRANSIENT_CODES = new Set(['PGRST301', '40P01'])
+    let lastError: unknown
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation()
+      } catch (err: unknown) {
+        lastError = err
+        const code = (err as { code?: string })?.code
+        if (!code || !TRANSIENT_CODES.has(code) || attempt === maxRetries) {
+          throw err
+        }
+        const delayMs = Math.min(100 * Math.pow(2, attempt), 2000)
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
+      }
+    }
+    throw lastError
+  }
+
+  /**
    * Find a single entity by ID
    */
   abstract findById(id: string): Promise<T | null>

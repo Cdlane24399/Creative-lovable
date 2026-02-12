@@ -98,6 +98,9 @@ export async function writeFiles(
   // Try native API if requested (fastest)
   if (useNativeApi) {
     try {
+      console.log(
+        `[writeFiles] Strategy: native batch API for ${files.length} files`,
+      );
       onProgress?.("batch", "Using native batch write API");
       await sandbox.files.write(
         files.map(({ path, content }) => ({
@@ -126,6 +129,9 @@ export async function writeFiles(
   }
 
   // Chunked writes with concurrency control for better performance
+  console.log(
+    `[writeFiles] Strategy: chunked individual writes for ${files.length} files (concurrency: ${concurrency})`,
+  );
   try {
     const results: Array<{ path: string; success: boolean; error?: string }> =
       [];

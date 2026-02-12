@@ -1,22 +1,34 @@
 import { NextRequest, NextResponse } from "next/server"
 import { withAuth } from "@/lib/auth"
+import { asyncErrorHandler, ValidationError } from "@/lib/errors"
+import { checkChatRateLimit } from "@/lib/rate-limit"
 import {
   captureSandboxScreenshot,
   getHostUrl,
   getSandbox,
 } from "@/lib/e2b/sandbox"
 
+export const maxDuration = 60
+
 /**
  * POST /api/screenshot
  * Capture a screenshot of a URL using E2B Desktop SDK's native screenshot capability.
  * Falls back to SVG placeholder if screenshot fails.
  */
-export const POST = withAuth(async (req: NextRequest) => {
-  try {
+export const POST = withAuth(asyncErrorHandler(async (req: NextRequest) => {
+    const rateLimit = checkChatRateLimit(req)
+    if (!rateLimit.allowed) {
+      const retryAfter = Math.ceil((rateLimit.resetTime - Date.now()) / 1000)
+      return NextResponse.json(
+        { error: "Rate limit exceeded", retryAfter },
+        { status: 429, headers: { "Retry-After": retryAfter.toString() } }
+      )
+    }
+
     const { url, projectName, projectId, width = 1280, height = 800 } = await req.json()
 
     if (!url || typeof url !== "string") {
-      return NextResponse.json({ error: "URL is required" }, { status: 400 })
+      throw new ValidationError("URL is required", { url: ["A valid URL string is required"] })
     }
 
     // Try to capture screenshot using E2B if projectId is provided
@@ -114,14 +126,7 @@ export const POST = withAuth(async (req: NextRequest) => {
       screenshot_base64: `data:image/svg+xml;base64,${base64}`,
       source: "placeholder",
     })
-  } catch (error) {
-    console.error("Screenshot error:", error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to capture screenshot" },
-      { status: 500 }
-    )
-  }
-})
+}))
 
 /**
  * Generates an SVG that looks like a website preview.

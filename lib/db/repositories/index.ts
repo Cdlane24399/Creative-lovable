@@ -21,6 +21,7 @@ export {
 export {
   ProjectRepository,
   getProjectRepository,
+  resetProjectRepository,
   type ProjectFilters,
   type ProjectQueryOptions,
 } from "./project.repository"
@@ -29,6 +30,7 @@ export {
 export {
   MessageRepository,
   getMessageRepository,
+  resetMessageRepository,
   type CreateMessageData,
   type MessageQueryOptions,
   type MessageBatch,
@@ -38,6 +40,7 @@ export {
 export {
   ContextRepository,
   getContextRepository,
+  resetContextRepository,
   type FileInfo,
   type BuildStatus,
   type ServerState,

@@ -91,60 +91,6 @@ function getDevServerCommand(pm: PackageManager): string {
   return "npm run dev -- --hostname 0.0.0.0 > /tmp/server.log 2>&1";
 }
 
-async function ensureTailwindPostcssCompatibility(
-  sandbox: Awaited<ReturnType<typeof createSandbox>>,
-  projectDir: string,
-  packageManager: PackageManager,
-): Promise<void> {
-  const detectResult = await executeCommand(
-    sandbox,
-    `cd "${projectDir}" && node -e 'const fs=require("fs");const files=["postcss.config.mjs","postcss.config.js","postcss.config.cjs"];const file=files.find((f)=>fs.existsSync(f));if(!file){process.stdout.write("none");process.exit(0)}const content=fs.readFileSync(file,"utf8");const legacy=/tailwindcss\\s*[:(]/.test(content)&&!content.includes("@tailwindcss/postcss");process.stdout.write(file+"|"+(legacy?"legacy":"ok"));'`,
-    { timeoutMs: 8000 },
-  );
-
-  const output = detectResult.stdout.trim();
-  if (!output || output === "none") return;
-
-  const [configFile, status] = output.split("|");
-  if (status !== "legacy") return;
-
-  console.log(
-    `[dev-server POST] Detected legacy Tailwind PostCSS config (${configFile}), applying compatibility fix`,
-  );
-
-  const configBody = configFile.endsWith(".mjs")
-    ? `const config = {\n  plugins: {\n    "@tailwindcss/postcss": {},\n  },\n};\n\nexport default config;\n`
-    : `module.exports = {\n  plugins: {\n    "@tailwindcss/postcss": {},\n  },\n};\n`;
-
-  await executeCommand(
-    sandbox,
-    `cat > "${projectDir}/${configFile}" <<'EOF'\n${configBody}EOF`,
-    { timeoutMs: 5000 },
-  );
-
-  const dependencyCheck = await executeCommand(
-    sandbox,
-    `cd "${projectDir}" && node -e 'const pkg=require("./package.json");const has=(pkg.devDependencies&&pkg.devDependencies["@tailwindcss/postcss"])||(pkg.dependencies&&pkg.dependencies["@tailwindcss/postcss"]);process.stdout.write(has?"yes":"no");'`,
-    { timeoutMs: 8000 },
-  );
-
-  if (dependencyCheck.stdout.trim() === "yes") return;
-
-  console.log(
-    "[dev-server POST] Installing missing @tailwindcss/postcss dependency",
-  );
-  const installCommand =
-    packageManager === "pnpm"
-      ? `cd "${projectDir}" && pnpm add -D @tailwindcss/postcss`
-      : packageManager === "bun"
-        ? `cd "${projectDir}" && bun add -d @tailwindcss/postcss`
-        : `cd "${projectDir}" && npm install --save-dev @tailwindcss/postcss`;
-
-  await executeCommand(sandbox, installCommand, {
-    timeoutMs: 180000,
-  });
-}
-
 // Helper to get server status
 async function getStatus(projectId: string): Promise<DevServerStatus> {
   const now = Date.now();
@@ -436,13 +382,6 @@ export const POST = withAuth(
           );
         }
 
-        const packageManager = await detectPackageManager(sandbox, projectDir);
-        await ensureTailwindPostcssCompatibility(
-          sandbox,
-          projectDir,
-          packageManager,
-        );
-
         // Fragments-style flow: use template/autostart server when available and
         // return sandbox host URL directly when it's already live.
         const initialStatus = await checkDevServerStatus(sandbox);
@@ -469,7 +408,7 @@ export const POST = withAuth(
         if (!forceRestart) {
           const templatePort = await waitForRunningPort(
             sandbox,
-            4_000,
+            12_000,
             DEFAULT_WEB_PORT,
           );
           if (templatePort) {
@@ -505,13 +444,11 @@ export const POST = withAuth(
             ),
           ),
         );
-        if (forceRestart) {
-          await executeCommand(
-            sandbox,
-            `rm -rf "${projectDir}/.next" 2>/dev/null || true`,
-            { timeoutMs: 5000 },
-          );
-        }
+        await executeCommand(
+          sandbox,
+          `rm -rf "${projectDir}/.next" 2>/dev/null || true`,
+          { timeoutMs: 5000 },
+        );
         await new Promise((resolve) => setTimeout(resolve, 500));
 
         // Clear server log for fresh output (but preserve .next cache for faster rebuilds)
@@ -522,6 +459,7 @@ export const POST = withAuth(
         );
 
         // Start the dev server in background
+        const packageManager = await detectPackageManager(sandbox, projectDir);
         const devServerCommand = getDevServerCommand(packageManager);
         console.log(
           `[dev-server POST] Starting dev server with package manager: ${packageManager}`,
@@ -537,16 +475,17 @@ export const POST = withAuth(
         );
         console.log("[dev-server POST] Background process started");
 
-        // Keep startup window bounded so failures surface quickly.
-        const maxWaitMs = 90000;
+        // Extended wait for server startup (120 seconds max to account for slower environments and first-time builds)
+        const maxWaitMs = 120000;
         const pollInterval = 1000;
         const maxPolls = Math.ceil(maxWaitMs / pollInterval);
 
         let serverReady = false;
         let actualPort = 3000;
-        let fatalLogSnippet = "";
 
-        console.log("[dev-server POST] Polling for server readiness...");
+        console.log(
+          "[dev-server POST] Polling for server readiness (max 120s)...",
+        );
         // Adaptive polling: start fast, slow down over time
         const getInterval = (i: number) =>
           i < 5 ? 1000 : i < 15 ? 2000 : 3000;
@@ -554,11 +493,37 @@ export const POST = withAuth(
         for (let i = 0; i < maxPolls; i++) {
           await new Promise((resolve) => setTimeout(resolve, getInterval(i)));
 
-          // Fast path: trust listening socket first.
-          const portStatus = await checkDevServerStatus(sandbox, [
-            DEFAULT_WEB_PORT,
-            ...DEV_SERVER_PORTS.filter((p) => p !== DEFAULT_WEB_PORT),
-          ]);
+          // Combined check: look for "Ready in" AND port in logs with a single command
+          const logCheck = await executeCommand(
+            sandbox,
+            `grep -c "Ready in" /tmp/server.log 2>/dev/null && grep -oE "http://localhost:[0-9]+" /tmp/server.log 2>/dev/null | tail -1 | grep -oE "[0-9]+$" || echo ""`,
+            { timeoutMs: 5000 },
+          );
+          const lines = logCheck.stdout.trim().split("\n");
+          const readyCount = parseInt(lines[0] || "0", 10);
+          const logPort = parseInt(lines[1] || "", 10);
+
+          // Trust Next.js "Ready" signal + port as sufficient evidence
+          // No HTTP verification needed - the "Ready in" message means the server is accepting connections
+          if (readyCount > 0 && logPort > 0) {
+            // Verify the port is actually listening (fast kernel-level check)
+            const portCheck = await executeCommand(
+              sandbox,
+              `ss -tln 2>/dev/null | grep -q ":${logPort} " && echo "listening" || echo "closed"`,
+              { timeoutMs: 2000 },
+            );
+            if (portCheck.stdout.trim() === "listening") {
+              console.log(
+                `[dev-server POST] Server ready on port ${logPort} (Next.js Ready + port listening)`,
+              );
+              serverReady = true;
+              actualPort = logPort;
+              break;
+            }
+          }
+
+          // Fallback: Check all common ports for a listening socket
+          const portStatus = await checkDevServerStatus(sandbox);
           if (portStatus.isRunning && portStatus.port) {
             console.log(
               `[dev-server POST] Server detected on port ${portStatus.port}`,
@@ -568,46 +533,38 @@ export const POST = withAuth(
             break;
           }
 
-          // Secondary path: detect Next.js ready logs and resolve port.
-          const logCheck = await executeCommand(
-            sandbox,
-            `grep -c "Ready in" /tmp/server.log 2>/dev/null && grep -oE "http://localhost:[0-9]+" /tmp/server.log 2>/dev/null | tail -1 | grep -oE "[0-9]+$" || echo ""`,
-            { timeoutMs: 4000 },
-          );
-          const lines = logCheck.stdout.trim().split("\n");
-          const readyCount = parseInt(lines[0] || "0", 10);
-          const logPort = parseInt(lines[1] || "", 10);
-          if (readyCount > 0 && logPort > 0) {
-            const portCheck = await executeCommand(
-              sandbox,
-              `ss -tln 2>/dev/null | grep -q ":${logPort} " && echo "listening" || echo "closed"`,
-              { timeoutMs: 2000 },
-            );
-            if (portCheck.stdout.trim() === "listening") {
-              serverReady = true;
-              actualPort = logPort;
-              break;
-            }
-          }
-
-          // Check for fatal errors every ~3 polling iterations to fail fast.
-          if ((i + 1) % 3 === 0) {
-            const elapsed = Math.round(((i + 1) * pollInterval) / 1000);
+          // Log progress every 5 seconds
+          if ((i + 1) % 5 === 0) {
+            const elapsed = ((i + 1) * pollInterval) / 1000;
             console.log(
               `[dev-server POST] Still waiting... ${elapsed}s elapsed`,
             );
 
-            const fatalCheck = await executeCommand(
+            // Check for fatal errors in logs that indicate server won't recover
+            const errorCheck = await executeCommand(
               sandbox,
-              `tail -n 40 /tmp/server.log 2>/dev/null | grep -iE "EADDRINUSE|Cannot find module|SyntaxError|FATAL|ERR_MODULE_NOT_FOUND" || true`,
-              { timeoutMs: 3000 },
+              `tail -n 15 /tmp/server.log 2>/dev/null | grep -iE "error|failed|EADDRINUSE|FATAL" || echo ""`,
+              { timeoutMs: 5000 },
             );
-            if (fatalCheck.stdout.trim()) {
-              fatalLogSnippet = fatalCheck.stdout.trim();
-              console.error(
-                `[dev-server POST] Fatal startup errors detected, aborting wait`,
+            if (errorCheck.stdout.trim()) {
+              console.warn(
+                `[dev-server POST] Potential issues in logs:`,
+                errorCheck.stdout.trim(),
               );
-              break;
+
+              // Check for fatal errors that won't self-resolve
+              const fatalCheck = await executeCommand(
+                sandbox,
+                `tail -n 30 /tmp/server.log 2>/dev/null | grep -c "EADDRINUSE\\|Cannot find module\\|SyntaxError\\|FATAL" || echo "0"`,
+                { timeoutMs: 3000 },
+              );
+              const fatalCount = parseInt(fatalCheck.stdout.trim());
+              if (fatalCount > 0 && elapsed >= 15) {
+                console.error(
+                  `[dev-server POST] Fatal errors detected after ${elapsed}s, stopping wait`,
+                );
+                break;
+              }
             }
           }
         }
@@ -627,10 +584,8 @@ export const POST = withAuth(
 
           return NextResponse.json(
             {
-              error: fatalLogSnippet
-                ? "Dev server failed to start due to fatal build/runtime errors."
-                : "Dev server failed to start within 90 seconds. The server may still be starting up in the background.",
-              fatalLogs: fatalLogSnippet || undefined,
+              error:
+                "Dev server failed to start within 120 seconds. The server may still be starting up in the background.",
               logs: logsResult.stdout,
               hint: "Try refreshing the page in a few seconds, or check the server logs for errors.",
             },

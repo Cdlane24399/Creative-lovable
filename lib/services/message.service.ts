@@ -18,6 +18,7 @@ import {
 } from "@/lib/db/repositories"
 import { messagesCache } from "@/lib/cache"
 import type { Message, MessagePart } from "@/lib/db/types"
+import { logger } from "@/lib/logger"
 
 // =============================================================================
 // Types (AI SDK v6 Compatible)
@@ -249,8 +250,8 @@ export class MessageService {
       await messagesCache.invalidate(projectId)
       await messagesCache.set(projectId, saved)
       return saved
-    } catch {
-      // Fallback to full rewrite for correctness if incremental path fails.
+    } catch (err) {
+      logger.warn("Incremental conversation save failed, falling back to full rewrite", { projectId }, err)
       return rewriteConversation()
     }
   }

@@ -341,6 +341,9 @@ export class SyncManager {
     const saved = await this.saveSnapshotToDb(snapshot);
 
     if (!saved) {
+      console.warn(
+        `[SyncManager] saveSnapshotToDb returned false for project ${this.config.projectId} — snapshot with ${Object.keys(snapshot).length} files was NOT persisted`,
+      );
       errors.push({ path: "", error: "Failed to save snapshot to database" });
     }
 
@@ -441,6 +444,15 @@ export class SyncManager {
    */
   private async readSandboxFiles(): Promise<Map<string, FileEntry>> {
     const entries = new Map<string, FileEntry>();
+
+    // Validate projectDir to prevent command injection
+    const SAFE_PATH_RE = /^[a-zA-Z0-9_\-./]+$/;
+    if (!SAFE_PATH_RE.test(this.config.projectDir)) {
+      console.error(
+        `[SyncManager] Unsafe projectDir rejected: ${this.config.projectDir}`,
+      );
+      return entries;
+    }
 
     try {
       // Get list of files, excluding large directories and binary files at the find level

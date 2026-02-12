@@ -354,3 +354,10 @@ export function getMessageRepository(): MessageRepository {
   }
   return messageRepositoryInstance
 }
+
+/**
+ * Reset the singleton instance (for testing)
+ */
+export function resetMessageRepository(): void {
+  messageRepositoryInstance = null
+}

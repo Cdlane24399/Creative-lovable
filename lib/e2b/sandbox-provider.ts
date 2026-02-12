@@ -34,6 +34,10 @@ const sandboxStorage = new AsyncLocalStorage<SandboxContext>();
 // Keyed by projectId so concurrent requests don't collide.
 const activeSandboxContexts = new Map<string, SandboxContext>();
 
+// Track cleanup timeout handles per project to prevent race conditions
+// where multiple withSandbox calls for the same project create orphaned timers
+const cleanupTimeouts = new Map<string, NodeJS.Timeout>();
+
 function getActiveProjectIds(): string[] {
   return Array.from(activeSandboxContexts.keys());
 }
@@ -246,16 +250,25 @@ export async function withSandbox<T>(
     // NOTE: we intentionally do NOT remove synchronously — the stream is still
     // being consumed.  Instead, schedule cleanup after a generous delay to
     // cover the full streaming duration (maxDuration=300s).
-    setTimeout(
+    // Clear any previous cleanup timeout for this project to prevent
+    // race conditions where multiple withSandbox calls create orphaned timers
+    const previousTimeout = cleanupTimeouts.get(projectId);
+    if (previousTimeout) {
+      clearTimeout(previousTimeout);
+    }
+
+    const timeoutHandle = setTimeout(
       () => {
         const activeContext = activeSandboxContexts.get(projectId);
         // Do not remove a newer context for the same project.
         if (activeContext === context) {
           activeSandboxContexts.delete(projectId);
         }
+        cleanupTimeouts.delete(projectId);
       },
       5 * 60 * 1000,
     ); // 5 minutes — matches maxDuration
+    cleanupTimeouts.set(projectId, timeoutHandle);
   }
 }
 

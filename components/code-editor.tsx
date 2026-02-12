@@ -233,10 +233,12 @@ export const CodeEditor = React.memo(
       }
     }, [activeFile, filePaths, files, hasFiles]);
 
-    // Reset active file when files become empty — derived inline instead of effect
-    if (!hasFiles && activeFile) {
-      setActiveFile(null);
-    }
+    // Reset active file when files become empty
+    React.useEffect(() => {
+      if (!hasFiles && activeFile) {
+        setActiveFile(null);
+      }
+    }, [hasFiles, activeFile]);
 
     return (
       <div className="flex h-full w-full overflow-hidden bg-[#1e1e1e] rounded-xl border border-zinc-800">

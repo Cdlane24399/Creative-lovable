@@ -272,6 +272,33 @@ export const writeFileSchema = z.object({
 export type WriteFileRequest = z.infer<typeof writeFileSchema>
 
 // =============================================================================
+// Screenshot API Schemas
+// =============================================================================
+
+/**
+ * Screenshot capture request schema (POST /api/screenshot)
+ */
+export const screenshotRequestSchema = z.object({
+  url: z.string().url('A valid URL is required'),
+  projectName: z.string().max(200).optional(),
+  projectId: projectIdSchema.optional(),
+  width: z.number().int().min(320).max(3840).optional().default(1280),
+  height: z.number().int().min(240).max(2160).optional().default(800),
+})
+
+export type ScreenshotRequest = z.infer<typeof screenshotRequestSchema>
+
+/**
+ * Save screenshot request schema (POST /api/projects/[id]/screenshot)
+ */
+export const saveScreenshotRequestSchema = z.object({
+  screenshot_base64: z.string().min(1, 'screenshot_base64 is required'),
+  sandbox_url: z.string().url().optional(),
+})
+
+export type SaveScreenshotRequest = z.infer<typeof saveScreenshotRequestSchema>
+
+// =============================================================================
 // Improve Prompt API Schema
 // =============================================================================
 

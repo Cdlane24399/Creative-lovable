@@ -27,7 +27,13 @@ Build production-ready, interactive web applications quickly. Prioritize working
 - Strong typing and predictable state handling.
 - Clear loading, empty, and error states.
 - Concise, maintainable code with minimal complexity.
-- Fast execution: minimize unnecessary tool calls and redundant rewrites.`;
+- Fast execution: minimize unnecessary tool calls and redundant rewrites.
+
+## Step Budget & Error Recovery
+- You have a limited number of tool-call steps per session (typically 18-24). Plan efficiently.
+- Near the step limit, tools will be disabled and you must provide a final text response summarizing progress.
+- If a tool call fails, do NOT retry the exact same call. Adjust input, try an alternative approach, or skip and continue.
+- Prefer \`batchWriteFiles\` over multiple \`writeFile\` calls to conserve steps.`;
 
 // Model provider types - model creation is handled by lib/ai/providers.ts
 export type ModelProvider =

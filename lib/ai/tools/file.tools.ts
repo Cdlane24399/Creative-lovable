@@ -20,7 +20,6 @@ import {
   writeFile as writeFileToSandbox,
   readFile as readFileFromSandbox,
   fileExists,
-  directoryExists,
 } from "@/lib/e2b/sandbox";
 import { getProjectDir } from "@/lib/e2b/project-dir";
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
@@ -35,36 +34,6 @@ import { createErrorResult } from "../utils";
  */
 export function createFileTools(projectId: string) {
   const ctx = () => getAgentContext(projectId);
-  const projectDir = getProjectDir();
-  const appLayoutRef = { checked: false, runtimeAppDir: "app" as "app" | "src/app" };
-
-  const resolveRuntimeFilePath = async (
-    sandbox: ReturnType<typeof getCurrentSandbox>,
-    filePath: string,
-  ): Promise<string> => {
-    const normalized = filePath.replace(/^\/+/, "");
-
-    if (!appLayoutRef.checked) {
-      const [hasSrcApp, hasRootApp] = await Promise.all([
-        directoryExists(sandbox, `${projectDir}/src/app`),
-        directoryExists(sandbox, `${projectDir}/app`),
-      ]);
-      appLayoutRef.runtimeAppDir =
-        hasSrcApp && !hasRootApp ? "src/app" : "app";
-      appLayoutRef.checked = true;
-    }
-
-    if (appLayoutRef.runtimeAppDir === "src/app") {
-      if (normalized === "app") return "src/app";
-      if (normalized.startsWith("app/")) return `src/${normalized}`;
-    } else {
-      if (normalized === "src/app") return "app";
-      if (normalized.startsWith("src/app/"))
-        return normalized.replace(/^src\//, "");
-    }
-
-    return normalized;
-  };
 
   return {
     /**
@@ -82,12 +51,12 @@ export function createFileTools(projectId: string) {
       execute: async ({ path: filePath, content }) => {
         const startTime = new Date();
         const context = ctx();
+        const projectDir = getProjectDir();
+        const fullPath = `${projectDir}/${filePath}`;
 
         try {
           // Get sandbox from infrastructure context
           const sandbox = getCurrentSandbox();
-          const resolvedPath = await resolveRuntimeFilePath(sandbox, filePath);
-          const fullPath = `${projectDir}/${resolvedPath}`;
 
           // Ensure parent directory exists
           const dir = fullPath.substring(0, fullPath.lastIndexOf("/"));
@@ -96,10 +65,10 @@ export function createFileTools(projectId: string) {
           await writeFileToSandbox(sandbox, fullPath, content);
 
           // Track file state
-          const isNew = !context.files.has(resolvedPath);
+          const isNew = !context.files.has(filePath);
           updateFileInContext(
             projectId,
-            resolvedPath,
+            filePath,
             content,
             isNew ? "created" : "updated",
           );
@@ -107,14 +76,14 @@ export function createFileTools(projectId: string) {
           // Persist just this file to the database (incremental, not full sync)
           // Full project sync is deferred to syncProject/batchWriteFiles for efficiency
           console.log(
-            `[writeFile] Persisting file ${resolvedPath} to database for project ${projectId}`,
+            `[writeFile] Persisting file ${filePath} to database for project ${projectId}`,
           );
           try {
             const { getProjectRepository } = await import("@/lib/db/repositories");
             const repo = getProjectRepository();
-            await repo.saveSingleFile(projectId, resolvedPath, content);
+            await repo.saveSingleFile(projectId, filePath, content);
             console.log(
-              `[writeFile] File persisted: ${resolvedPath}`,
+              `[writeFile] File persisted: ${filePath}`,
             );
           } catch (syncError) {
             console.warn("[writeFile] Failed to persist file to database:", syncError);
@@ -129,7 +98,7 @@ export function createFileTools(projectId: string) {
           // should signal filesReady to prevent premature dev server start
           const result = {
             success: true as const,
-            path: resolvedPath,
+            path: filePath,
             action: isNew ? ("created" as const) : ("updated" as const),
             bytes: content.length,
             filesReady: false,
@@ -140,7 +109,7 @@ export function createFileTools(projectId: string) {
           recordToolExecution(
             projectId,
             "writeFile",
-            { path: resolvedPath },
+            { path: filePath },
             result,
             true,
             undefined,
@@ -179,21 +148,21 @@ export function createFileTools(projectId: string) {
       execute: async ({ path: filePath }) => {
         const startTime = new Date();
         const context = ctx();
+        const projectDir = getProjectDir();
+        const fullPath = `${projectDir}/${filePath}`;
 
         try {
           // Get sandbox from infrastructure context
           const sandbox = getCurrentSandbox();
-          const resolvedPath = await resolveRuntimeFilePath(sandbox, filePath);
-          const fullPath = `${projectDir}/${resolvedPath}`;
 
           // Check if file exists first to provide a clearer error message
           const exists = await fileExists(sandbox, fullPath);
           if (!exists) {
-            const error = `File not found: ${resolvedPath}. The file may not have been created yet. Use getProjectStructure to see what files exist.`;
+            const error = `File not found: ${filePath}. The file may not have been created yet. Use getProjectStructure to see what files exist.`;
             recordToolExecution(
               projectId,
               "readFile",
-              { path: resolvedPath },
+              { path: filePath },
               undefined,
               false,
               error,
@@ -202,7 +171,7 @@ export function createFileTools(projectId: string) {
             return {
               success: false as const,
               error,
-              path: resolvedPath,
+              path: filePath,
               hint: "Use getProjectStructure to see what files currently exist in the project.",
             };
           }
@@ -210,11 +179,11 @@ export function createFileTools(projectId: string) {
           const result = await readFileFromSandbox(sandbox, fullPath);
 
           // Cache in context
-          updateFileInContext(projectId, resolvedPath, result.content);
+          updateFileInContext(projectId, filePath, result.content);
 
           const successResult = {
             success: true as const,
-            path: resolvedPath,
+            path: filePath,
             content: result.content,
             length: result.content.length,
             lines: result.content.split("\n").length,
@@ -223,7 +192,7 @@ export function createFileTools(projectId: string) {
           recordToolExecution(
             projectId,
             "readFile",
-            { path: resolvedPath },
+            { path: filePath },
             { success: true, length: result.content.length },
             true,
             undefined,
@@ -272,21 +241,21 @@ export function createFileTools(projectId: string) {
       execute: async ({ path: filePath, search, replace }) => {
         const startTime = new Date();
         const context = ctx();
+        const projectDir = getProjectDir();
+        const fullPath = `${projectDir}/${filePath}`;
 
         try {
           // Get sandbox from infrastructure context
           const sandbox = getCurrentSandbox();
-          const resolvedPath = await resolveRuntimeFilePath(sandbox, filePath);
-          const fullPath = `${projectDir}/${resolvedPath}`;
 
           // Check if file exists first
           const exists = await fileExists(sandbox, fullPath);
           if (!exists) {
-            const error = `Cannot edit: file not found at ${resolvedPath}. Use writeFile to create it first, or use getProjectStructure to verify existing files.`;
+            const error = `Cannot edit: file not found at ${filePath}. Use writeFile to create it first, or use getProjectStructure to verify existing files.`;
             recordToolExecution(
               projectId,
               "editFile",
-              { path: resolvedPath, search },
+              { path: filePath, search },
               undefined,
               false,
               error,
@@ -295,7 +264,7 @@ export function createFileTools(projectId: string) {
             return {
               success: false as const,
               error,
-              path: resolvedPath,
+              path: filePath,
               hint: "The file doesn't exist. Use writeFile to create it, or check getProjectStructure for existing files.",
             };
           }
@@ -307,31 +276,31 @@ export function createFileTools(projectId: string) {
           const occurrences = content.split(search).length - 1;
 
           if (occurrences === 0) {
-            const error = `Search text not found in ${resolvedPath}`;
+            const error = `Search text not found in ${filePath}`;
             recordToolExecution(
               projectId,
               "editFile",
-              { path: resolvedPath, search },
+              { path: filePath, search },
               undefined,
               false,
               error,
               startTime,
             );
-            return { success: false, error, path: resolvedPath };
+            return { success: false, error, path: filePath };
           }
 
           if (occurrences > 1) {
-            const error = `Search text appears ${occurrences} times in ${resolvedPath}. It must be unique. Add more context to your search string.`;
+            const error = `Search text appears ${occurrences} times in ${filePath}. It must be unique. Add more context to your search string.`;
             recordToolExecution(
               projectId,
               "editFile",
-              { path: resolvedPath, search },
+              { path: filePath, search },
               undefined,
               false,
               error,
               startTime,
             );
-            return { success: false, error, path: resolvedPath };
+            return { success: false, error, path: filePath };
           }
 
           // Perform replacement
@@ -339,18 +308,18 @@ export function createFileTools(projectId: string) {
           await writeFileToSandbox(sandbox, fullPath, newContent);
 
           // Update context
-          updateFileInContext(projectId, resolvedPath, newContent, "updated");
+          updateFileInContext(projectId, filePath, newContent, "updated");
 
           // Persist just this file to the database (incremental, not full sync)
           console.log(
-            `[editFile] Persisting file ${resolvedPath} to database for project ${projectId}`,
+            `[editFile] Persisting file ${filePath} to database for project ${projectId}`,
           );
           try {
             const { getProjectRepository } = await import("@/lib/db/repositories");
             const repo = getProjectRepository();
-            await repo.saveSingleFile(projectId, resolvedPath, newContent);
+            await repo.saveSingleFile(projectId, filePath, newContent);
             console.log(
-              `[editFile] File persisted: ${resolvedPath}`,
+              `[editFile] File persisted: ${filePath}`,
             );
           } catch (syncError) {
             console.warn("[editFile] Failed to persist file to database:", syncError);
@@ -363,7 +332,7 @@ export function createFileTools(projectId: string) {
 
           const result = {
             success: true as const,
-            path: resolvedPath,
+            path: filePath,
             linesChanged:
               Math.abs(
                 search.split("\n").length - replace.split("\n").length,
@@ -376,7 +345,7 @@ export function createFileTools(projectId: string) {
           recordToolExecution(
             projectId,
             "editFile",
-            { path: resolvedPath, search },
+            { path: filePath, search },
             result,
             true,
             undefined,

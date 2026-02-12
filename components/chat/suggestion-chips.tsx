@@ -40,6 +40,7 @@ export function SuggestionChips({ suggestions, onSelect, className }: Suggestion
                     <button
                         key={`${suggestion}-${index}`}
                         onClick={() => onSelect(suggestion)}
+                        aria-label={`Suggestion: ${suggestion}`}
                         className={cn(
                             "inline-flex items-center gap-1.5",
                             "bg-zinc-800 hover:bg-zinc-700",

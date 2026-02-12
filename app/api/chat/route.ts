@@ -111,8 +111,18 @@ const FILE_MUTATION_TOOLS = new Set([
 
 function getToolOutputSuccess(output: unknown): boolean | undefined {
   if (!output || typeof output !== "object") return undefined;
-  if (!("success" in output)) return undefined;
-  return Boolean((output as { success?: boolean }).success);
+  const obj = output as Record<string, unknown>;
+
+  // Explicit success field takes priority
+  if ("success" in obj) return Boolean(obj.success);
+
+  // Treat an 'error' field as failure
+  if ("error" in obj && obj.error) return false;
+
+  // 'filesReady' signals a successful file operation
+  if ("filesReady" in obj) return Boolean(obj.filesReady);
+
+  return undefined;
 }
 
 // Export type for the chat messages
@@ -248,6 +258,7 @@ export const POST = withAuth(async (req: Request) => {
 
     // AI SDK v6 best practice: Track steps for debugging and monitoring
     let currentStepNumber = 0;
+    let cumulativeTokens = 0;
 
     // Wrap streaming in sandbox context for infrastructure-level lifecycle management
     // This ensures all tools share the same sandbox instance
@@ -416,6 +427,17 @@ export const POST = withAuth(async (req: Request) => {
               maxOutputTokens: modelSettings.maxTokens,
             }),
 
+            // AI SDK v6: onError for stream-level error logging
+            onError: ({ error }) => {
+              log.error("streamText error", {
+                projectId,
+                provider,
+                model: executionModel,
+                step: currentStepNumber,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            },
+
             // AI SDK v6: onStepFinish callback for step tracking
             onStepFinish: async ({
               text,
@@ -465,6 +487,22 @@ export const POST = withAuth(async (req: Request) => {
                     hasUnsyncedChanges = false;
                   }
                 }
+              }
+
+              // Track cumulative token usage and warn when approaching budget
+              const stepTokens = usage?.totalTokens || 0;
+              cumulativeTokens += stepTokens;
+              const maxSteps = modelSettings.maxSteps || 50;
+              const TOKEN_WARNING_THRESHOLD = 800_000;
+
+              if (cumulativeTokens > TOKEN_WARNING_THRESHOLD) {
+                log.warn("Approaching token budget", {
+                  projectId,
+                  step: currentStepNumber,
+                  maxSteps,
+                  cumulativeTokens,
+                  threshold: TOKEN_WARNING_THRESHOLD,
+                });
               }
 
               // Collect token usage and flush in batch on finish.
@@ -533,34 +571,49 @@ export const POST = withAuth(async (req: Request) => {
               // Force the model to synthesize a final response near the loop limit.
               if (stepNumber >= Math.max(1, maxSteps - 2)) {
                 config.activeTools = [];
+                log.debug("prepareStep: near step limit, disabling tools", {
+                  stepNumber,
+                  maxSteps,
+                  activeTools: [],
+                  reason: "step_limit",
+                });
                 return config;
               }
 
               // AI SDK v6: Dynamic activeTools based on context
               // This optimizes token usage by only including relevant tools
+              let toolSelectionReason = "default";
               if (stepNumber === 0) {
                 // First step: keep scope tight for reliable bootstrap behavior.
                 // Prioritize batch writes to reduce tool-call count and latency.
                 config.activeTools = BOOTSTRAP_ACTIVE_TOOLS;
-                console.log(
-                  `[Step ${stepNumber}] Bootstrap tool set active (batch-first)`,
-                );
+                toolSelectionReason = "bootstrap";
               } else if (context.buildStatus?.hasErrors) {
                 // Build errors: Focus on debugging and file operations
                 config.activeTools = [
                   ...FILE_TOOLS,
                   ...BUILD_TOOLS,
                 ] as ToolName[];
-                console.log(
-                  `[Step ${stepNumber}] Build errors detected, focusing on debugging tools`,
-                );
+                toolSelectionReason = "build_errors";
               } else if (context.serverState?.isRunning && context.taskGraph) {
                 // Server running with active task graph: Focus on file operations
                 config.activeTools = [
                   ...FILE_TOOLS,
                   ...BUILD_TOOLS,
                 ] as ToolName[];
+                toolSelectionReason = "active_task_graph";
               }
+
+              log.debug("prepareStep: tool selection", {
+                stepNumber,
+                maxSteps,
+                activeToolCount: config.activeTools?.length ?? 0,
+                activeTools: config.activeTools,
+                reason: toolSelectionReason,
+                hasErrors: !!context.buildStatus?.hasErrors,
+                serverRunning: !!context.serverState?.isRunning,
+                hasTaskGraph: !!context.taskGraph,
+              });
 
               // Return empty object if no modifications needed
               return Object.keys(config).length > 0 ? config : {};

@@ -398,3 +398,10 @@ export function getContextRepository(): ContextRepository {
   }
   return contextRepositoryInstance
 }
+
+/**
+ * Reset the singleton instance (for testing)
+ */
+export function resetContextRepository(): void {
+  contextRepositoryInstance = null
+}
