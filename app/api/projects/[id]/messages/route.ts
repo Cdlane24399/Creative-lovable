@@ -2,16 +2,92 @@ import { NextRequest, NextResponse } from "next/server"
 import { withAuth } from "@/lib/auth"
 import { asyncErrorHandler } from "@/lib/errors"
 import { getMessageService } from "@/lib/services"
-import { 
-  validateRequest, 
-  saveMessagesSchema, 
+import {
+  validateRequest,
+  saveMessagesSchema,
   saveMessageSchema,
+  type SaveMessage,
   ValidationError,
   createValidationErrorResponse,
 } from "@/lib/validations"
+import type { MessagePart } from "@/lib/db/types"
 
 interface RouteContext {
   params: Promise<{ id: string }>
+}
+
+interface ValidationSuccess {
+  success: true
+  data: SaveMessage
+}
+
+interface ValidationFailure {
+  success: false
+  error: string
+}
+
+type SingleMessageValidationResult = ValidationSuccess | ValidationFailure
+type MessageValidationResult =
+  | { ok: true; messages: SaveMessage[] }
+  | { ok: false; response: Response }
+
+function isValidationSuccess(
+  result: SingleMessageValidationResult
+): result is ValidationSuccess {
+  return result.success
+}
+
+function validateMessagesForSave(messages: unknown[]): MessageValidationResult {
+  try {
+    const validatedBatch = validateRequest(saveMessagesSchema, {
+      messages,
+    })
+    return { ok: true, messages: validatedBatch.messages }
+  } catch (batchError) {
+    if (!(batchError instanceof ValidationError)) {
+      throw batchError
+    }
+
+    const results = messages.map<SingleMessageValidationResult>((message, index) => {
+      try {
+        return {
+          success: true,
+          data: validateRequest(saveMessageSchema, message),
+        }
+      } catch (error) {
+        if (error instanceof ValidationError) {
+          return {
+            success: false,
+            error: `Message ${index + 1}: ${error.message}`,
+          }
+        }
+        return {
+          success: false,
+          error: `Message ${index + 1}: Unknown error`,
+        }
+      }
+    })
+
+    const failedResults = results.filter((result) => !result.success)
+    if (failedResults.length > 0) {
+      return {
+        ok: false,
+        response: createValidationErrorResponse(
+          new ValidationError(
+            failedResults.map((result) => result.error).join(", "),
+            []
+          )
+        ),
+      }
+    }
+
+    return {
+      ok: true,
+      messages: results
+        .filter(isValidationSuccess)
+        .map((result) => result.data),
+    }
+  }
 }
 
 /**
@@ -48,50 +124,19 @@ export const POST = withAuth(asyncErrorHandler(async (request: NextRequest, cont
   // Support both single message and batch messages
   const messagesToInsert = Array.isArray(body) ? body : [body]
 
-  // Validate messages using saveMessageSchema
-  let validatedMessages: { id?: string; role: "user" | "assistant" | "system"; content?: string; parts?: any[]; model?: string }[]
-  
-  try {
-    // Try batch validation first
-    validatedMessages = validateRequest(saveMessagesSchema, { messages: messagesToInsert }).messages
-  } catch (batchError) {
-    if (batchError instanceof ValidationError) {
-      // Try individual message validation for better error messages
-      const results = messagesToInsert.map((msg, index) => {
-        try {
-          return { success: true, data: validateRequest(saveMessageSchema, msg), index }
-        } catch (error) {
-          if (error instanceof ValidationError) {
-            return { success: false, error: `Message ${index + 1}: ${error.message}`, index }
-          }
-          return { success: false, error: `Message ${index + 1}: Unknown error`, index }
-        }
-      })
-
-      const failures = results.filter(r => !r.success)
-      if (failures.length > 0) {
-        return createValidationErrorResponse(
-          new ValidationError(
-            failures.map(f => (f as { success: false; error: string }).error).join(', '),
-            []
-          )
-        )
-      }
-
-      validatedMessages = results.filter(r => r.success).map(r => (r as { success: true; data: any }).data)
-    } else {
-      throw batchError
-    }
+  const validationResult = validateMessagesForSave(messagesToInsert)
+  if (!validationResult.ok) {
+    return validationResult.response
   }
 
   // Use appendMessages for adding to existing conversation
   const savedMessages = await messageService.appendMessages(
     id,
-    validatedMessages.map((msg) => ({
+    validationResult.messages.map((msg) => ({
       id: msg.id,
       role: msg.role,
       content: msg.content,
-      parts: msg.parts,
+      parts: msg.parts as MessagePart[] | undefined,
       model: msg.model,
     }))
   )

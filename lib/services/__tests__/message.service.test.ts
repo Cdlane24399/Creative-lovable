@@ -213,7 +213,7 @@ describe('MessageService', () => {
         id: 'msg-1',
         role: 'user',
         content: 'Hello',
-        parts: undefined,
+        parts: [{ type: 'text', text: 'Hello' }],
         createdAt: expect.any(Date),
       })
     })

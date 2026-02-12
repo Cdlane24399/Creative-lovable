@@ -30,6 +30,52 @@ const VALID_MODEL_KEYS = new Set<ModelProvider>([
   "glm",
 ]);
 
+const FILE_WRITE_TOOL_TYPES = new Set([
+  "tool-writeFile",
+  "tool-editFile",
+  "tool-batchWriteFiles",
+  "tool-initializeProject",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isOutputAvailableToolPart(part: unknown): part is Record<string, unknown> {
+  if (!isRecord(part)) return false;
+  return (
+    typeof part.type === "string" &&
+    part.type.startsWith("tool-") &&
+    part.state === "output-available"
+  );
+}
+
+function hasFileWriteOutput(part: unknown): boolean {
+  return (
+    isOutputAvailableToolPart(part) &&
+    typeof part.type === "string" &&
+    FILE_WRITE_TOOL_TYPES.has(part.type)
+  );
+}
+
+function getProjectNameFromToolPart(part: unknown): string | undefined {
+  if (!isOutputAvailableToolPart(part)) return undefined;
+  if (!isRecord(part.output)) return undefined;
+  const projectName = part.output.projectName;
+  return typeof projectName === "string" && projectName.length > 0
+    ? projectName
+    : undefined;
+}
+
+function getFallbackProjectName(messages: Array<{ parts?: unknown[] }>): string {
+  const projectNames = messages.flatMap((message) =>
+    (message.parts || [])
+      .map((part) => getProjectNameFromToolPart(part))
+      .filter((projectName): projectName is string => Boolean(projectName)),
+  );
+  return projectNames.pop() || "project";
+}
+
 // Exported handle type for programmatic control
 export interface ChatPanelHandle {
   sendMessage: (text: string) => void;
@@ -253,35 +299,14 @@ export function ChatPanel({ ref }: ChatPanelProps) {
         const hasFileWrites = messages.some(
           (m) =>
             m.role === "assistant" &&
-            m.parts?.some(
-              (p: any) =>
-                (p.type === "tool-writeFile" ||
-                  p.type === "tool-editFile" ||
-                  p.type === "tool-batchWriteFiles" ||
-                  p.type === "tool-initializeProject") &&
-                p.state === "output-available",
-            ),
+            m.parts?.some((part) => hasFileWriteOutput(part)),
         );
 
         if (hasFileWrites && !filesReadyInfo) {
           console.log(
             "[ChatPanel] Chat completed with file writes but no filesReady signal, triggering fallback dev server start",
           );
-          // Extract project name from any tool output
-          const projectName =
-            messages
-              .flatMap((m) =>
-                (m.parts || [])
-                  .filter(
-                    (p: any) =>
-                      p.type?.startsWith("tool-") &&
-                      p.state === "output-available" &&
-                      p.output?.projectName,
-                  )
-                  .map((p: any) => p.output?.projectName),
-              )
-              .filter(Boolean)
-              .pop() || "project";
+          const projectName = getFallbackProjectName(messages);
           actions.handleFilesReady(projectName);
         }
       }

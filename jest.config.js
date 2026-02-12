@@ -50,6 +50,7 @@ module.exports = {
     '<rootDir>/node_modules/',
     '<rootDir>/coverage/',
     '<rootDir>/.vercel/',
+    '<rootDir>/e2e/', // Playwright specs run via pnpm test:e2e, not Jest
     '<rootDir>/lib/e2b/__tests__', // Skip E2B integration tests (require E2B_API_KEY)
     '<rootDir>/lib/ai/__tests__/e2e', // Skip E2E agent tests (require API keys)
   ],

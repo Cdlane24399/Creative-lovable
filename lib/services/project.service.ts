@@ -61,6 +61,27 @@ export class ProjectService {
   private readonly messageRepo = getMessageRepository();
   private readonly contextRepo = getContextRepository();
 
+  private getCachedProjectEntry(cachedValue: unknown): Project | null {
+    if (!cachedValue || typeof cachedValue !== "object") {
+      return null;
+    }
+
+    const project =
+      "project" in cachedValue
+        ? (cachedValue as { project?: unknown }).project
+        : null;
+
+    if (!project || typeof project !== "object") {
+      return null;
+    }
+
+    if (!("id" in project) || !("name" in project)) {
+      return null;
+    }
+
+    return project as Project;
+  }
+
   /**
    * If a project has an active sandbox but no persisted files snapshot,
    * attempt a best-effort sync from sandbox -> database so Code view can load.
@@ -145,8 +166,8 @@ export class ProjectService {
   async getProject(id: string): Promise<Project> {
     // Try cache first
     const cached = await projectCache.get(id);
-    if (cached && (cached as any).project) {
-      const cachedProject = (cached as any).project as Project;
+    const cachedProject = this.getCachedProjectEntry(cached);
+    if (cachedProject) {
       const cachedFileCount = Object.keys(cachedProject.files_snapshot || {}).length;
       // Avoid serving stale empty snapshots for active sandbox projects.
       if (cachedFileCount > 0 || !cachedProject.sandbox_id) {

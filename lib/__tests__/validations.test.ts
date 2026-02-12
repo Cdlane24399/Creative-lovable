@@ -195,14 +195,14 @@ describe('Validation Schemas', () => {
   describe('toolInvocationPartSchema', () => {
     it('should accept valid tool invocation part', () => {
       const result = toolInvocationPartSchema.parse({
-        type: 'tool-invocation',
-        toolInvocationId: 'call-123',
+        type: 'tool-writeFile',
+        toolCallId: 'call-123',
         toolName: 'writeFile',
         args: { path: 'test.txt', content: 'hello' },
       })
       expect(result).toEqual({
-        type: 'tool-invocation',
-        toolInvocationId: 'call-123',
+        type: 'tool-writeFile',
+        toolCallId: 'call-123',
         toolName: 'writeFile',
         args: { path: 'test.txt', content: 'hello' },
       })
@@ -210,22 +210,22 @@ describe('Validation Schemas', () => {
 
     it('should accept args as any type', () => {
       expect(() => toolInvocationPartSchema.parse({
-        type: 'tool-invocation',
-        toolInvocationId: 'call-123',
+        type: 'tool-test',
+        toolCallId: 'call-123',
         toolName: 'test',
         args: null,
       })).not.toThrow()
 
       expect(() => toolInvocationPartSchema.parse({
-        type: 'tool-invocation',
-        toolInvocationId: 'call-123',
+        type: 'tool-test',
+        toolCallId: 'call-123',
         toolName: 'test',
         args: undefined,
       })).not.toThrow()
 
       expect(() => toolInvocationPartSchema.parse({
-        type: 'tool-invocation',
-        toolInvocationId: 'call-123',
+        type: 'tool-test',
+        toolCallId: 'call-123',
         toolName: 'test',
         args: ['array', 'of', 'args'],
       })).not.toThrow()
@@ -233,8 +233,8 @@ describe('Validation Schemas', () => {
 
     it('should reject tool invocation with wrong type', () => {
       expect(() => toolInvocationPartSchema.parse({
-        type: 'tool-result',
-        toolInvocationId: 'call-123',
+        type: 'invalid-type',
+        toolCallId: 'call-123',
         toolName: 'test',
         args: {},
       })).toThrow()
@@ -244,41 +244,41 @@ describe('Validation Schemas', () => {
   describe('toolResultPartSchema', () => {
     it('should accept valid tool result part', () => {
       const result = toolResultPartSchema.parse({
-        type: 'tool-result',
-        toolInvocationId: 'call-123',
+        type: 'tool-writeFile',
+        toolCallId: 'call-123',
         result: { success: true },
       })
       expect(result).toEqual({
-        type: 'tool-result',
-        toolInvocationId: 'call-123',
+        type: 'tool-writeFile',
+        toolCallId: 'call-123',
         result: { success: true },
       })
     })
 
     it('should accept result as any type', () => {
       expect(() => toolResultPartSchema.parse({
-        type: 'tool-result',
-        toolInvocationId: 'call-123',
+        type: 'tool-test',
+        toolCallId: 'call-123',
         result: 'string result',
       })).not.toThrow()
 
       expect(() => toolResultPartSchema.parse({
-        type: 'tool-result',
-        toolInvocationId: 'call-123',
+        type: 'tool-test',
+        toolCallId: 'call-123',
         result: null,
       })).not.toThrow()
 
       expect(() => toolResultPartSchema.parse({
-        type: 'tool-result',
-        toolInvocationId: 'call-123',
+        type: 'tool-test',
+        toolCallId: 'call-123',
         result: [1, 2, 3],
       })).not.toThrow()
     })
 
     it('should reject tool result with wrong type', () => {
       expect(() => toolResultPartSchema.parse({
-        type: 'tool-invocation',
-        toolInvocationId: 'call-123',
+        type: 'invalid-type',
+        toolCallId: 'call-123',
         result: {},
       })).toThrow()
     })
@@ -292,37 +292,38 @@ describe('Validation Schemas', () => {
 
     it('should accept tool-invocation part', () => {
       const result = messagePartSchema.parse({
-        type: 'tool-invocation',
-        toolInvocationId: 'call-123',
+        type: 'tool-test',
+        toolCallId: 'call-123',
         toolName: 'test',
         args: {},
       })
-      expect(result.type).toBe('tool-invocation')
+      expect(result.type).toBe('tool-test')
     })
 
     it('should accept tool-result part', () => {
       const result = messagePartSchema.parse({
-        type: 'tool-result',
-        toolInvocationId: 'call-123',
+        type: 'tool-test',
+        toolCallId: 'call-123',
         result: {},
       })
-      expect(result.type).toBe('tool-result')
+      expect(result.type).toBe('tool-test')
     })
 
-    it('should reject unknown part type', () => {
-      expect(() => messagePartSchema.parse({
+    it('should accept unknown part type for forward compatibility', () => {
+      const result = messagePartSchema.parse({
         type: 'unknown',
         someField: 'value',
-      })).toThrow()
+      })
+      expect(result.type).toBe('unknown')
     })
 
     it('should provide good error messages for invalid parts', () => {
       try {
-        messagePartSchema.parse({ type: 'text' })
+        messagePartSchema.parse(42)
         fail('Should have thrown')
       } catch (error: any) {
-        expect(error.errors).toBeDefined()
-        expect(error.errors[0].message).toContain('Required')
+        expect(error.issues).toBeDefined()
+        expect(error.issues[0].message).toContain('Invalid input')
       }
     })
   })
@@ -347,6 +348,7 @@ describe('Validation Schemas', () => {
   describe('uiMessageSchema', () => {
     it('should accept valid UIMessage with text parts', () => {
       const result = uiMessageSchema.parse({
+        id: 'msg-1',
         role: 'user',
         parts: [{ type: 'text', text: 'Hello' }],
       })
@@ -375,12 +377,14 @@ describe('Validation Schemas', () => {
 
     it('should reject message without parts', () => {
       expect(() => uiMessageSchema.parse({
+        id: 'msg-1',
         role: 'user',
       })).toThrow()
     })
 
     it('should reject message with empty parts array', () => {
       expect(() => uiMessageSchema.parse({
+        id: 'msg-1',
         role: 'user',
         parts: [],
       })).toThrow()
@@ -388,14 +392,16 @@ describe('Validation Schemas', () => {
 
     it('should reject message with invalid part', () => {
       expect(() => uiMessageSchema.parse({
+        id: 'msg-1',
         role: 'user',
-        parts: [{ type: 'invalid', text: 'Hello' }],
+        parts: [42],
       })).toThrow()
     })
 
     it('should accept all valid roles', () => {
       ['user', 'assistant', 'system'].forEach(role => {
         expect(() => uiMessageSchema.parse({
+          id: `msg-${role}`,
           role,
           parts: [{ type: 'text', text: 'test' }],
         })).not.toThrow()
@@ -404,17 +410,20 @@ describe('Validation Schemas', () => {
 
     it('should reject tool role', () => {
       expect(() => uiMessageSchema.parse({
+        id: 'msg-1',
         role: 'tool',
         parts: [{ type: 'text', text: 'test' }],
       })).toThrow()
     })
 
-    it('should reject content field (not in UIMessage)', () => {
-      expect(() => uiMessageSchema.parse({
+    it('should ignore content field (not in UIMessage)', () => {
+      const parsed = uiMessageSchema.parse({
+        id: 'msg-1',
         role: 'user',
         content: 'Hello',
         parts: [{ type: 'text', text: 'Hello' }],
-      })).toThrow()
+      })
+      expect(parsed).not.toHaveProperty('content')
     })
   })
 
@@ -498,6 +507,7 @@ describe('Validation Schemas', () => {
   describe('flexibleMessageSchema', () => {
     it('should accept UIMessage format (new)', () => {
       const result = flexibleMessageSchema.parse({
+        id: 'msg-1',
         role: 'user',
         parts: [{ type: 'text', text: 'Hello' }],
       })

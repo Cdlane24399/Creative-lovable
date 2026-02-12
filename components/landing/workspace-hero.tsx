@@ -48,7 +48,7 @@ export function WorkspaceHero({ onSubmit, userName }: WorkspaceHeroProps) {
       y: 0,
       transition: {
         duration: 0.6,
-        ease: [0.22, 1, 0.36, 1],
+        ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
       },
     },
   };
@@ -127,7 +127,7 @@ export function WorkspaceHero({ onSubmit, userName }: WorkspaceHeroProps) {
                 <div className="flex items-center gap-2">
                   <ModelSelector
                     selectedModel={selectedModel}
-                    onSelect={setSelectedModel}
+                    onModelChange={setSelectedModel}
                   />
                 </div>
 

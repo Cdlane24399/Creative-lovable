@@ -32,7 +32,8 @@ import type { Message, MessagePart } from "@/lib/db/types"
 export interface UIMessage {
   id?: string
   role: "user" | "assistant" | "system"
-  parts: UIMessagePart[]
+  content?: string
+  parts: MessagePart[]
   createdAt?: Date
   metadata?: Record<string, unknown>
 }
@@ -58,7 +59,7 @@ export interface MessageToSave {
   id?: string
   role: "user" | "assistant" | "system"
   content?: string // Optional, extracted from parts if not provided
-  parts?: UIMessagePart[]
+  parts?: MessagePart[]
   model?: string
 }
 
@@ -68,6 +69,42 @@ export interface MessageToSave {
 
 export class MessageService {
   private readonly messageRepo = getMessageRepository()
+
+  private isTextPart(
+    part: MessagePart
+  ): part is MessagePart & { type: "text"; text: string } {
+    return part.type === "text" && typeof part.text === "string"
+  }
+
+  private buildPersistedMessage(message: MessageToSave): {
+    id?: string
+    role: "user" | "assistant" | "system"
+    content: string
+    parts?: MessagePart[]
+    model?: string
+  } {
+    return {
+      id: message.id,
+      role: message.role,
+      content: message.content ?? this.extractTextFromParts(message.parts),
+      parts: message.parts,
+      model: message.model,
+    }
+  }
+
+  private buildCreateMessageData(
+    projectId: string,
+    message: MessageToSave
+  ): CreateMessageData {
+    const persistedMessage = this.buildPersistedMessage(message)
+    return {
+      projectId,
+      role: persistedMessage.role,
+      content: persistedMessage.content,
+      parts: persistedMessage.parts,
+      model: persistedMessage.model,
+    }
+  }
 
   /**
    * Get all messages for a project
@@ -111,21 +148,9 @@ export class MessageService {
     projectId: string,
     message: MessageToSave
   ): Promise<Message> {
-    // Extract content from parts if not provided
-    const content = message.content ||
-      message.parts
-        ?.filter((p) => p.type === "text")
-        .map((p) => (p as { type: "text"; text: string }).text)
-        .join("") ||
-      ""
-
-    const saved = await this.messageRepo.create({
-      projectId,
-      role: message.role,
-      content,
-      parts: message.parts as MessagePart[] | undefined,
-      model: message.model,
-    })
+    const saved = await this.messageRepo.create(
+      this.buildCreateMessageData(projectId, message)
+    )
 
     // Invalidate cache
     await messagesCache.invalidate(projectId)
@@ -151,18 +176,7 @@ export class MessageService {
     // Save all messages (replaces existing)
     const saved = await this.messageRepo.saveConversation(
       projectId,
-      messages.map((m) => ({
-        id: m.id,
-        role: m.role,
-        content: m.content ||
-          m.parts
-            ?.filter((p) => p.type === "text")
-            .map((p) => (p as { type: "text"; text: string }).text)
-            .join("") ||
-          "",
-        parts: m.parts as MessagePart[] | undefined,
-        model: m.model,
-      }))
+      messages.map((message) => this.buildPersistedMessage(message))
     )
 
     // Invalidate and update cache
@@ -186,19 +200,7 @@ export class MessageService {
 
     const saved = await this.messageRepo.createBatch({
       projectId,
-      messages: messages.map((m) => ({
-        id: m.id,
-        role: m.role,
-        content:
-          m.content ||
-          m.parts
-            ?.filter((p) => p.type === "text")
-            .map((p) => (p as { type: "text"; text: string }).text)
-            .join("") ||
-          "",
-        parts: m.parts as MessagePart[] | undefined,
-        model: m.model,
-      })),
+      messages: messages.map((message) => this.buildPersistedMessage(message)),
     })
 
     // Invalidate cache
@@ -215,7 +217,8 @@ export class MessageService {
     return messages.map((m) => ({
       id: m.id,
       role: m.role,
-      parts: (m.parts as UIMessagePart[]) || [{ type: "text", text: m.content }],
+      content: m.content,
+      parts: m.parts || [{ type: "text", text: m.content }],
       createdAt: new Date(m.created_at),
     }))
   }
@@ -269,12 +272,12 @@ export class MessageService {
   /**
    * Utility: Extract text content from UIMessage parts
    */
-  extractTextFromParts(parts: UIMessagePart[] | undefined): string {
+  extractTextFromParts(parts: MessagePart[] | undefined): string {
     if (!parts || parts.length === 0) {
       return ""
     }
     return parts
-      .filter((p): p is { type: "text"; text: string } => p.type === "text")
+      .filter((p) => this.isTextPart(p))
       .map((p) => p.text)
       .join("")
   }
@@ -282,22 +285,8 @@ export class MessageService {
   /**
    * Utility: Convert UIMessage to database format
    */
-  toDatabaseFormat(message: MessageToSave): CreateMessageData {
-    const content =
-      message.content ||
-      message.parts
-        ?.filter((p) => p.type === "text")
-        .map((p) => (p as { type: "text"; text: string }).text)
-        .join("") ||
-      ""
-
-    return {
-      projectId: "", // Will be set by caller
-      role: message.role,
-      content,
-      parts: message.parts as MessagePart[] | undefined,
-      model: message.model,
-    }
+  toDatabaseFormat(message: MessageToSave, projectId: string = ""): CreateMessageData {
+    return this.buildCreateMessageData(projectId, message)
   }
 }
 
