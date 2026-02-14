@@ -49,8 +49,9 @@ import {
   ValidationError,
   createValidationErrorResponse,
 } from "@/lib/validations";
-import { withSandbox } from "@/lib/e2b/sandbox-provider";
+import { withSandbox, getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
 import { getProjectDir } from "@/lib/e2b/project-dir";
+import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager";
 
 export const maxDuration = 300;
 
@@ -85,12 +86,15 @@ const DEFAULT_ACTIVE_TOOLS: ToolName[] = [
   ...CODE_TOOLS,
 ];
 
-// New-system bootstrap: keep first step focused on planning + project scan + batch writes.
+// New-system bootstrap: keep first step focused on planning + project scan + file writes.
+// Includes writeFile/editFile to avoid error-retry waste when the model needs single-file ops.
 const BOOTSTRAP_ACTIVE_TOOLS: ToolName[] = [
   "analyzeProjectState",
   "planChanges",
   "getProjectStructure",
   "readFile",
+  "writeFile",
+  "editFile",
   "batchWriteFiles",
   "installPackage",
   "getBuildStatus",
@@ -130,7 +134,7 @@ export const POST = withAuth(
     const log = logger.child({ requestId, operation: "chat" });
 
     // Check rate limit for chat endpoint
-    const rateLimit = checkChatRateLimit(req);
+    const rateLimit = await checkChatRateLimit(req);
     if (!rateLimit.allowed) {
       const retryAfter = Math.ceil((rateLimit.resetTime - Date.now()) / 1000);
       log.warn("Rate limit exceeded", { retryAfter });
@@ -235,7 +239,7 @@ export const POST = withAuth(
               .ensureProjectExists(projectId, defaultProjectName)
               .then(() => undefined)
               .catch((dbError) => {
-                console.warn("Failed to ensure project exists:", dbError);
+                log.warn("Failed to ensure project exists", { projectId }, dbError);
               })
           : Promise.resolve();
 
@@ -269,8 +273,6 @@ export const POST = withAuth(
         async () => {
           // Capture sandbox reference for onFinish callback (which runs after
           // AsyncLocalStorage context has exited)
-          const { getCurrentSandbox } =
-            await import("@/lib/e2b/sandbox-provider");
           const sandboxRef = getCurrentSandbox();
           let hasUnsyncedChanges = false;
           const pendingTokenUsage: Array<{
@@ -327,11 +329,9 @@ export const POST = withAuth(
                   messagesToSave,
                 );
 
-                console.log(
-                  `[Chat] Saved ${messagesToSave.length} messages for project ${projectId}`,
-                );
+                log.info("Messages saved", { projectId, count: messagesToSave.length });
               } catch (dbError) {
-                console.error("Failed to save messages:", dbError);
+                log.error("Failed to save messages", { projectId }, dbError);
               }
 
               // Flush token usage as a single batch write to reduce DB write pressure.
@@ -378,46 +378,32 @@ export const POST = withAuth(
               // Auto-sync project files to database at session end (safety net),
               // but skip if no unsynced file mutations were detected.
               if (sandboxRef && hasUnsyncedChanges) {
-                try {
-                  const { quickSyncToDatabaseWithRetry } =
-                    await import("@/lib/e2b/sync-manager");
-                  quickSyncToDatabaseWithRetry(sandboxRef, projectId)
-                    .then(() => {
-                      hasUnsyncedChanges = false;
-                      console.log(
-                        `[Chat] Auto-synced project files for ${projectId}`,
-                      );
-                    })
-                    .catch((syncError) =>
-                      console.warn(
-                        "[Chat] Session-end sync failed:",
-                        syncError,
-                      ),
-                    );
-                } catch (syncError) {
-                  console.warn("[Chat] Session-end sync failed:", syncError);
-                }
+                quickSyncToDatabaseWithRetry(sandboxRef, projectId)
+                  .then(() => {
+                    hasUnsyncedChanges = false;
+                    log.info("Auto-synced project files", { projectId });
+                  })
+                  .catch((syncError) =>
+                    log.warn("Session-end sync failed", { projectId }, syncError),
+                  );
               } else if (!hasUnsyncedChanges) {
-                console.log(
-                  `[Chat] Skipped final sync for ${projectId} (no unsynced changes)`,
-                );
+                log.debug("Skipped final sync (no unsynced changes)", { projectId });
               }
 
               try {
                 await flushContext(projectId);
               } catch (flushError) {
-                console.warn(
-                  "[Chat] Failed to flush agent context:",
-                  flushError,
-                );
+                log.warn("Failed to flush agent context", { projectId }, flushError);
               }
             }
 
             // Log completion summary with context
             const context = getAgentContext(projectId);
-            console.log(
-              `[Chat Complete] Project: ${projectId}, Steps: ${currentStepNumber}, Server: ${context.serverState?.isRunning ? "Running" : "Stopped"}`,
-            );
+            log.info("Chat complete", {
+              projectId,
+              steps: currentStepNumber,
+              serverRunning: !!context.serverState?.isRunning,
+            });
           };
 
           const streamResponseOptions = {
@@ -469,7 +455,9 @@ export const POST = withAuth(
                 currentStepNumber++;
 
                 // Log step completion for debugging
-                console.log(`[Step ${currentStepNumber}] Finished:`, {
+                log.debug("Step finished", {
+                  projectId,
+                  step: currentStepNumber,
                   provider,
                   finishReason,
                   toolCallsCount: toolCalls?.length || 0,
@@ -512,16 +500,12 @@ export const POST = withAuth(
                 // Track cumulative token usage and warn when approaching budget
                 const stepTokens = usage?.totalTokens || 0;
                 cumulativeTokens += stepTokens;
-                const maxSteps = modelSettings.maxSteps || 50;
-                const TOKEN_WARNING_THRESHOLD = 800_000;
 
-                if (cumulativeTokens > TOKEN_WARNING_THRESHOLD) {
+                if (cumulativeTokens > 500_000) {
                   log.warn("Approaching token budget", {
                     projectId,
                     step: currentStepNumber,
-                    maxSteps,
                     cumulativeTokens,
-                    threshold: TOKEN_WARNING_THRESHOLD,
                   });
                 }
 
@@ -554,7 +538,19 @@ export const POST = withAuth(
                   messages?: typeof stepMessages;
                   activeTools?: ToolName[];
                 } = {};
-                config.activeTools = DEFAULT_ACTIVE_TOOLS;
+
+                // Token budget enforcement: force graceful completion when approaching limits
+                const TOKEN_HARD_CAP = 600_000;
+                if (cumulativeTokens > TOKEN_HARD_CAP) {
+                  config.activeTools = [];
+                  log.warn("Token hard cap reached, disabling tools for graceful completion", {
+                    projectId,
+                    stepNumber,
+                    cumulativeTokens,
+                    cap: TOKEN_HARD_CAP,
+                  });
+                  return config;
+                }
 
                 // Model-aware compression thresholds
                 // Keep multi-step loops cost-bounded even on large-context models.
@@ -583,9 +579,14 @@ export const POST = withAuth(
                       ? [stepMessages[0], ...prunedMessages]
                       : prunedMessages;
 
-                  console.log(
-                    `[Step ${stepNumber}] Pruned from ${stepMessages.length} to ${config.messages.length} messages (window: ${keepWindow}, model: ${executionModel})`,
-                  );
+                  log.debug("Message pruning", {
+                    projectId,
+                    stepNumber,
+                    originalCount: stepMessages.length,
+                    prunedCount: config.messages.length,
+                    keepWindow,
+                    model: executionModel,
+                  });
                 }
 
                 // Force the model to synthesize a final response near the loop limit.
@@ -600,12 +601,23 @@ export const POST = withAuth(
                   return config;
                 }
 
+                // Soft token budget: restrict to essential tools to wrap up efficiently
+                const TOKEN_SOFT_CAP = 500_000;
+                const isTokenConstrained = cumulativeTokens > TOKEN_SOFT_CAP;
+
                 // AI SDK v6: Dynamic activeTools based on context
                 // This optimizes token usage by only including relevant tools
                 let toolSelectionReason = "default";
-                if (stepNumber === 0) {
+                if (isTokenConstrained) {
+                  // Near token budget: only allow file ops + sync to finish up
+                  config.activeTools = [
+                    ...FILE_TOOLS,
+                    ...BUILD_TOOLS,
+                    ...SYNC_TOOLS,
+                  ] as ToolName[];
+                  toolSelectionReason = "token_constrained";
+                } else if (stepNumber === 0) {
                   // First step: keep scope tight for reliable bootstrap behavior.
-                  // Prioritize batch writes to reduce tool-call count and latency.
                   config.activeTools = BOOTSTRAP_ACTIVE_TOOLS;
                   toolSelectionReason = "bootstrap";
                 } else if (context.buildStatus?.hasErrors) {
@@ -625,6 +637,8 @@ export const POST = withAuth(
                     ...BUILD_TOOLS,
                   ] as ToolName[];
                   toolSelectionReason = "active_task_graph";
+                } else {
+                  config.activeTools = DEFAULT_ACTIVE_TOOLS;
                 }
 
                 log.debug("prepareStep: tool selection", {
@@ -638,25 +652,20 @@ export const POST = withAuth(
                   hasTaskGraph: !!context.taskGraph,
                 });
 
-                // Return empty object if no modifications needed
-                return Object.keys(config).length > 0 ? config : {};
+                return config;
               },
 
               // AI SDK v6: Tool call repair for better error recovery
               experimental_repairToolCall: async ({ toolCall, error }) => {
                 // Don't try to repair unknown tools
                 if (NoSuchToolError.isInstance(error)) {
-                  console.warn(
-                    `[Tool Repair] Unknown tool: ${toolCall.toolName}`,
-                  );
+                  log.warn("Tool repair: unknown tool", { projectId, tool: toolCall.toolName });
                   return null;
                 }
 
                 // For invalid inputs, try to fix common issues
                 if (InvalidToolInputError.isInstance(error)) {
-                  console.log(
-                    `[Tool Repair] Attempting to fix invalid input for: ${toolCall.toolName}`,
-                  );
+                  log.debug("Tool repair: fixing invalid input", { projectId, tool: toolCall.toolName });
 
                   // LanguageModelV3ToolCall.input is a JSON string
                   try {
@@ -741,7 +750,7 @@ export const POST = withAuth(
         },
       );
     } catch (error) {
-      console.error("Chat API error:", error);
+      log.error("Chat API error", { projectId: "unknown" }, error);
 
       // AI SDK v6 best practice: Provide detailed error responses
       const errorMessage =

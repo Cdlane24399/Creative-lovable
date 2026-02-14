@@ -212,10 +212,8 @@ Tool factories in `lib/ai/tools/`, barrel export at `lib/ai/tools/index.ts`.
 | `createSyncTools` | Database persistence with retry logic |
 | `createBuildTools` | Building and bundling applications |
 | `createCodeTools` | Code analysis and transformation |
-| `createSuggestionTools` | Suggestion generation for follow-ups |
-| `createWebsiteTools` | **DEPRECATED**: Use `createProjectInitTools` + `createBatchFileTools` + `createSyncTools` |
 
-**Key tools:** `initializeProject`, `batchWriteFiles`, `syncProject`, `writeFile`, `editFile`, `readFile`, `getProjectStructure`, `installPackage`, `getBuildStatus`, `runCommand`, `executeCode`, `generateSuggestions`.
+**Key tools:** `initializeProject`, `batchWriteFiles`, `syncProject`, `writeFile`, `editFile`, `readFile`, `getProjectStructure`, `installPackage`, `getBuildStatus`, `runCommand`, `executeCode`.
 
 ---
 

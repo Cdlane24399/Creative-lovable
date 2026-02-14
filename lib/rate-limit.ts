@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCacheManager } from "@/lib/cache/cache-manager";
+import { logger } from "@/lib/logger";
 
 // Rate limit configuration
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+// Both general and chat limits share the same window; only max requests differ.
+const RATE_LIMIT_WINDOW_S = 60; // 1 minute
+const RATE_LIMIT_WINDOW_MS = RATE_LIMIT_WINDOW_S * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 100; // 100 requests per minute
 
 // Chat-specific rate limiting (more restrictive for AI endpoints)
-const CHAT_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
 const CHAT_RATE_LIMIT_MAX_REQUESTS = 20; // 20 chat requests per minute
 
-// In-memory store for rate limiting (in production, use Redis)
+// In-memory store for rate limiting (fallback when Redis unavailable)
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
 const RATE_LIMIT_MAX_STORE_SIZE = 10_000;
+
+const REDIS_RL_PREFIX = "rl:";
 
 /**
  * Clean up expired rate limit entries
@@ -55,70 +60,67 @@ function getClientIdentifier(request: NextRequest): string {
   return getClientIdentifierFromHeaders(request.headers);
 }
 
-/**
- * Check if request is within rate limits
- */
-export function checkRateLimit(request: NextRequest): {
+// ---------------------------------------------------------------------------
+// Redis-backed rate limiting (atomic INCR + EXPIRE)
+// Falls back to in-memory when Redis is unavailable.
+// ---------------------------------------------------------------------------
+
+interface RateLimitResult {
   allowed: boolean;
   remaining: number;
   resetTime: number;
-} {
-  const clientId = getClientIdentifier(request);
-  const now = Date.now();
-
-  // Evict if store is at capacity (safety valve)
-  if (rateLimitStore.size >= RATE_LIMIT_MAX_STORE_SIZE) {
-    cleanupExpiredEntries();
-  }
-
-  let clientData = rateLimitStore.get(clientId);
-
-  if (!clientData || now > clientData.resetTime) {
-    // First request or window expired
-    clientData = {
-      count: 1,
-      resetTime: now + RATE_LIMIT_WINDOW_MS,
-    };
-    rateLimitStore.set(clientId, clientData);
-    return {
-      allowed: true,
-      remaining: RATE_LIMIT_MAX_REQUESTS - 1,
-      resetTime: clientData.resetTime,
-    };
-  }
-
-  if (clientData.count >= RATE_LIMIT_MAX_REQUESTS) {
-    return {
-      allowed: false,
-      remaining: 0,
-      resetTime: clientData.resetTime,
-    };
-  }
-
-  // Increment counter
-  clientData.count++;
-  rateLimitStore.set(clientId, clientData);
-
-  return {
-    allowed: true,
-    remaining: RATE_LIMIT_MAX_REQUESTS - clientData.count,
-    resetTime: clientData.resetTime,
-  };
 }
 
 /**
- * Check rate limit for chat endpoints (more restrictive)
- * Works with standard Request type for streaming endpoints
+ * Try to perform the rate-limit check via Redis.
+ * Returns `null` when Redis is not configured or the command fails,
+ * signalling the caller to fall through to the in-memory path.
  */
-export function checkChatRateLimit(request: Request): {
-  allowed: boolean;
-  remaining: number;
-  resetTime: number;
-} {
-  const clientId = `chat:${getClientIdentifierFromHeaders(request.headers)}`;
+async function checkRateLimitRedis(
+  key: string,
+  windowS: number,
+  maxRequests: number,
+): Promise<RateLimitResult | null> {
+  const cache = getCacheManager();
+  if (!cache.enabled) return null;
+
+  try {
+    const redis = cache.getRedisClientForAtomicOps();
+    if (!redis) return null;
+
+    const redisKey = `${REDIS_RL_PREFIX}${key}`;
+    const count: number = await redis.incr(redisKey);
+
+    if (count === 1) {
+      // First request in this window – set the TTL.
+      await redis.expire(redisKey, windowS);
+    }
+
+    // Approximate resetTime from the TTL value.
+    const ttl: number = await redis.ttl(redisKey);
+    const resetTime = Date.now() + (ttl > 0 ? ttl * 1000 : windowS * 1000);
+
+    return {
+      allowed: count <= maxRequests,
+      remaining: Math.max(0, maxRequests - count),
+      resetTime,
+    };
+  } catch (error) {
+    logger.warn("Redis rate-limit check failed, falling back to in-memory", {}, error);
+    return null;
+  }
+}
+
+/**
+ * In-memory rate-limit check (synchronous fallback).
+ */
+function checkRateLimitMemory(
+  clientId: string,
+  windowMs: number,
+  maxRequests: number,
+): RateLimitResult {
   const now = Date.now();
 
-  // Evict if store is at capacity (safety valve)
   if (rateLimitStore.size >= RATE_LIMIT_MAX_STORE_SIZE) {
     cleanupExpiredEntries();
   }
@@ -126,45 +128,55 @@ export function checkChatRateLimit(request: Request): {
   let clientData = rateLimitStore.get(clientId);
 
   if (!clientData || now > clientData.resetTime) {
-    clientData = {
-      count: 1,
-      resetTime: now + CHAT_RATE_LIMIT_WINDOW_MS,
-    };
+    clientData = { count: 1, resetTime: now + windowMs };
     rateLimitStore.set(clientId, clientData);
-    return {
-      allowed: true,
-      remaining: CHAT_RATE_LIMIT_MAX_REQUESTS - 1,
-      resetTime: clientData.resetTime,
-    };
+    return { allowed: true, remaining: maxRequests - 1, resetTime: clientData.resetTime };
   }
 
-  if (clientData.count >= CHAT_RATE_LIMIT_MAX_REQUESTS) {
-    return {
-      allowed: false,
-      remaining: 0,
-      resetTime: clientData.resetTime,
-    };
+  if (clientData.count >= maxRequests) {
+    return { allowed: false, remaining: 0, resetTime: clientData.resetTime };
   }
 
   clientData.count++;
   rateLimitStore.set(clientId, clientData);
+  return { allowed: true, remaining: maxRequests - clientData.count, resetTime: clientData.resetTime };
+}
 
-  return {
-    allowed: true,
-    remaining: CHAT_RATE_LIMIT_MAX_REQUESTS - clientData.count,
-    resetTime: clientData.resetTime,
-  };
+/**
+ * Check if request is within rate limits.
+ * Tries Redis first, falls back to in-memory.
+ */
+export async function checkRateLimit(request: NextRequest): Promise<RateLimitResult> {
+  const clientId = getClientIdentifier(request);
+
+  const redisResult = await checkRateLimitRedis(clientId, RATE_LIMIT_WINDOW_S, RATE_LIMIT_MAX_REQUESTS);
+  if (redisResult) return redisResult;
+
+  return checkRateLimitMemory(clientId, RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX_REQUESTS);
+}
+
+/**
+ * Check rate limit for chat endpoints (more restrictive).
+ * Tries Redis first, falls back to in-memory.
+ */
+export async function checkChatRateLimit(request: Request): Promise<RateLimitResult> {
+  const clientId = `chat:${getClientIdentifierFromHeaders(request.headers)}`;
+
+  const redisResult = await checkRateLimitRedis(clientId, RATE_LIMIT_WINDOW_S, CHAT_RATE_LIMIT_MAX_REQUESTS);
+  if (redisResult) return redisResult;
+
+  return checkRateLimitMemory(clientId, RATE_LIMIT_WINDOW_MS, CHAT_RATE_LIMIT_MAX_REQUESTS);
 }
 
 /**
  * Rate limiting middleware for API routes
  */
-export function withRateLimit<T extends any[]>(
+export function withRateLimit<T extends unknown[]>(
   handler: (...args: T) => Promise<NextResponse> | NextResponse,
 ) {
   return async (...args: T): Promise<NextResponse> => {
     const request = args[0] as NextRequest;
-    const rateLimit = checkRateLimit(request);
+    const rateLimit = await checkRateLimit(request);
 
     if (!rateLimit.allowed) {
       return NextResponse.json(
@@ -224,7 +236,7 @@ export function getRateLimitStats() {
     storeSize: rateLimitStore.size,
     windowMs: RATE_LIMIT_WINDOW_MS,
     maxRequests: RATE_LIMIT_MAX_REQUESTS,
-    chatWindowMs: CHAT_RATE_LIMIT_WINDOW_MS,
+    chatWindowMs: RATE_LIMIT_WINDOW_MS,
     chatMaxRequests: CHAT_RATE_LIMIT_MAX_REQUESTS,
   };
 }

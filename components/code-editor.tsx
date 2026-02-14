@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
+import { loader } from "@monaco-editor/react";
 import {
   File,
   Folder,
@@ -14,6 +15,23 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+let monacoLoaderPromise: Promise<void> | null = null;
+
+function ensureMonacoLoaderConfigured(): Promise<void> {
+  if (!monacoLoaderPromise) {
+    monacoLoaderPromise = import("monaco-editor")
+      .then((monaco) => {
+        loader.config({ monaco });
+      })
+      .catch((error) => {
+        monacoLoaderPromise = null;
+        throw error;
+      });
+  }
+
+  return monacoLoaderPromise;
+}
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
@@ -203,6 +221,8 @@ export const CodeEditor = React.memo(
   }: CodeEditorProps) {
     // Store only the selected path — derive content from files to avoid stale data
     const [selectedPath, setSelectedPath] = React.useState<string | null>(null);
+    const [isMonacoReady, setIsMonacoReady] = React.useState(false);
+    const [monacoLoadFailed, setMonacoLoadFailed] = React.useState(false);
     const filePaths = React.useMemo(() => Object.keys(files), [files]);
     const fileTree = React.useMemo(() => buildFileTree(files), [files]);
     const hasFiles = filePaths.length > 0;
@@ -247,6 +267,29 @@ export const CodeEditor = React.memo(
     // Wrap setActiveFile to just store the path
     const handleFileSelect = React.useCallback((node: FileNode) => {
       setSelectedPath(node.path);
+    }, []);
+
+    React.useEffect(() => {
+      let isDisposed = false;
+
+      ensureMonacoLoaderConfigured()
+        .then(() => {
+          if (!isDisposed) {
+            setIsMonacoReady(true);
+            setMonacoLoadFailed(false);
+          }
+        })
+        .catch((error) => {
+          console.error("[CodeEditor] Monaco initialization failed:", error);
+          if (!isDisposed) {
+            setIsMonacoReady(false);
+            setMonacoLoadFailed(true);
+          }
+        });
+
+      return () => {
+        isDisposed = true;
+      };
     }, []);
 
     return (
@@ -308,23 +351,31 @@ export const CodeEditor = React.memo(
           {/* Monaco Editor */}
           <div className="flex-1 relative">
             {activeFile ? (
-              <MonacoEditor
-                height="100%"
-                defaultLanguage="typescript"
-                language={getLanguageFromPath(activeFile.path)}
-                value={activeFile.content}
-                theme="vs-dark"
-                options={{
-                  readOnly: readOnly,
-                  minimap: { enabled: false },
-                  fontSize: 13,
-                  padding: { top: 16 },
-                  scrollBeyondLastLine: false,
-                  fontFamily:
-                    "'JetBrains Mono', 'Fira Code', 'Monaco', monospace",
-                  lineHeight: 20,
-                }}
-              />
+              isMonacoReady ? (
+                <MonacoEditor
+                  height="100%"
+                  defaultLanguage="typescript"
+                  language={getLanguageFromPath(activeFile.path)}
+                  value={activeFile.content}
+                  theme="vs-dark"
+                  options={{
+                    readOnly: readOnly,
+                    minimap: { enabled: false },
+                    fontSize: 13,
+                    padding: { top: 16 },
+                    scrollBeyondLastLine: false,
+                    fontFamily:
+                      "'JetBrains Mono', 'Fira Code', 'Monaco', monospace",
+                    lineHeight: 20,
+                  }}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-zinc-500 text-sm">
+                  {monacoLoadFailed
+                    ? "Editor failed to initialize"
+                    : "Initializing editor..."}
+                </div>
+              )
             ) : (
               <div className="flex h-full items-center justify-center text-zinc-500 text-sm">
                 Select a file to view code

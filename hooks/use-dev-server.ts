@@ -47,6 +47,11 @@ export interface UseDevServerReturn {
   getLogs: () => Promise<string[]>
 }
 
+type JsonResponseParseResult<T> = {
+  data: T | null
+  rawText: string
+}
+
 const createDefaultStatus = (): DevServerStatus => ({
   isRunning: false,
   port: null,
@@ -55,6 +60,42 @@ const createDefaultStatus = (): DevServerStatus => ({
   errors: [],
   lastChecked: new Date().toISOString(),
 })
+
+async function parseJsonResponseSafe<T>(response: Response): Promise<JsonResponseParseResult<T>> {
+  const rawText = await response.text()
+  if (!rawText) {
+    return { data: null, rawText: "" }
+  }
+
+  try {
+    return { data: JSON.parse(rawText) as T, rawText }
+  } catch {
+    return { data: null, rawText }
+  }
+}
+
+function extractErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null
+  const error = (payload as { error?: unknown }).error
+  return typeof error === "string" ? error : null
+}
+
+function buildResponseErrorMessage(
+  fallback: string,
+  status: number,
+  payload: unknown,
+  rawText: string,
+): string {
+  const payloadError = extractErrorMessage(payload)
+  if (payloadError) return payloadError
+
+  const compactText = rawText.trim().replace(/\s+/g, " ")
+  if (compactText) {
+    return compactText.slice(0, 240)
+  }
+
+  return `${fallback} (HTTP ${status})`
+}
 
 export function useDevServer({
   projectId,
@@ -71,6 +112,7 @@ export function useDevServer({
   const [isStarting, setIsStarting] = useState(false)
   const [isStopping, setIsStopping] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const encodedProjectId = projectId ? encodeURIComponent(projectId) : null
 
   // Track polling state
   const pollRef = useRef<NodeJS.Timeout | null>(null)
@@ -132,14 +174,14 @@ export function useDevServer({
 
   // Fetch current status with abort control and retry logic
   const fetchStatus = useCallback(async (): Promise<DevServerStatus | null> => {
-    if (!projectId) return null
+    if (!encodedProjectId) return null
 
     // Create new abort controller for this request
     const abortController = new AbortController()
     abortControllerRef.current = abortController
 
     try {
-      const response = await fetch(`/api/sandbox/${projectId}/dev-server`, {
+      const response = await fetch(`/api/sandbox/${encodedProjectId}/dev-server`, {
         cache: "no-store",
         signal: abortController.signal,
         headers: {
@@ -164,11 +206,17 @@ export function useDevServer({
         }
         return null
       }
-      
-      consecutiveFailuresRef.current = 0
+      const { data } = await parseJsonResponseSafe<DevServerStatus>(response)
+      if (!data) {
+        consecutiveFailuresRef.current++
+        if (consecutiveFailuresRef.current > 3) {
+          console.warn(`[useDevServer] Invalid JSON status response (${consecutiveFailuresRef.current} consecutive)`)
+        }
+        return null
+      }
 
-      const data = await response.json()
-      return data as DevServerStatus
+      consecutiveFailuresRef.current = 0
+      return data
     } catch (err) {
       // Don't count aborted requests as failures
       if (err instanceof Error && err.name === 'AbortError') {
@@ -183,7 +231,7 @@ export function useDevServer({
       }
       return null
     }
-  }, [projectId, stopPolling])
+  }, [encodedProjectId, stopPolling])
 
   // Update status and trigger callbacks
   const updateStatus = useCallback((nextStatus: DevServerStatus | ((prev: DevServerStatus) => DevServerStatus)) => {
@@ -276,7 +324,7 @@ export function useDevServer({
 
   // Start the dev server
   const start = useCallback(async (forceRestart = false) => {
-    if (!projectId || !projectName) {
+    if (!encodedProjectId || !projectName) {
       console.error("[useDevServer] Missing projectId or projectName")
       setError("No project to start")
       return
@@ -289,28 +337,43 @@ export function useDevServer({
     onReadyCalledRef.current = false
 
     try {
-      const response = await fetch(`/api/sandbox/${projectId}/dev-server`, {
+      const response = await fetch(`/api/sandbox/${encodedProjectId}/dev-server`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectName, sandboxId, forceRestart }),
       })
 
-      const data = await response.json()
+      const { data, rawText } = await parseJsonResponseSafe<{
+        error?: string
+        url?: string | null
+        port?: number | null
+      }>(response)
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to start dev server")
+        throw new Error(
+          buildResponseErrorMessage(
+            "Failed to start dev server",
+            response.status,
+            data,
+            rawText,
+          ),
+        )
+      }
+
+      if (!data || typeof data !== "object") {
+        throw new Error("Invalid response from dev server start endpoint")
       }
 
       // Update status with new URL
       updateStatus((prevStatus) => ({
         ...prevStatus,
         isRunning: true,
-        url: data.url,
-        port: data.port,
+        url: typeof data.url === "string" ? data.url : null,
+        port: typeof data.port === "number" ? data.port : null,
         lastChecked: new Date().toISOString(),
       }))
 
-      if (data.url) {
+      if (typeof data.url === "string" && data.url) {
         // Server is ready with URL - stop polling
         stopPolling()
       } else {
@@ -326,11 +389,11 @@ export function useDevServer({
     } finally {
       setIsStarting(false)
     }
-  }, [projectId, projectName, sandboxId, stopPolling, updateStatus, startPolling, startingPollInterval])
+  }, [encodedProjectId, projectName, sandboxId, stopPolling, updateStatus, startPolling, startingPollInterval])
 
   // Stop the dev server
   const stop = useCallback(async () => {
-    if (!projectId) return
+    if (!encodedProjectId) return
 
     setIsStopping(true)
     setError(null)
@@ -338,13 +401,20 @@ export function useDevServer({
     onReadyCalledRef.current = false
 
     try {
-      const response = await fetch(`/api/sandbox/${projectId}/dev-server`, {
+      const response = await fetch(`/api/sandbox/${encodedProjectId}/dev-server`, {
         method: "DELETE",
       })
 
       if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || "Failed to stop dev server")
+        const { data, rawText } = await parseJsonResponseSafe<{ error?: string }>(response)
+        throw new Error(
+          buildResponseErrorMessage(
+            "Failed to stop dev server",
+            response.status,
+            data,
+            rawText,
+          ),
+        )
       }
 
       setStatus(prev => ({
@@ -360,7 +430,7 @@ export function useDevServer({
     } finally {
       setIsStopping(false)
     }
-  }, [projectId, stopPolling])
+  }, [encodedProjectId, stopPolling])
 
   // Restart the dev server
   const restart = useCallback(async () => {

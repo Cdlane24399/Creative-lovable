@@ -1,3 +1,5 @@
+import { logger } from "@/lib/logger";
+
 /**
  * Base application error class
  */
@@ -34,13 +36,16 @@ export class AuthorizationError extends AppError {
 
 /**
  * Validation errors
+ *
+ * Accepts either a Record<string, string[]> (manual) or ZodIssue[] (Zod validation).
+ * This is the single canonical ValidationError for the entire codebase.
  */
 export class ValidationError extends AppError {
-  public readonly errors: Record<string, string[]>;
+  public readonly errors: Record<string, string[]> | Array<{ path: PropertyKey[]; message: string; code: string }>;
 
   constructor(
     message: string = "Validation failed",
-    errors: Record<string, string[]> = {},
+    errors: Record<string, string[]> | Array<{ path: PropertyKey[]; message: string; code: string }> = {},
   ) {
     super(message, 400, "VALIDATION_ERROR");
     this.errors = errors;
@@ -136,7 +141,7 @@ export class TimeoutError extends AppError {
 export function formatErrorResponse(error: Error): {
   error: string;
   code?: string;
-  details?: any;
+  details?: Record<string, string[]> | Array<{ path: PropertyKey[]; message: string; code: string }>;
   timestamp: string;
 } {
   const baseResponse = {
@@ -164,7 +169,7 @@ export function formatErrorResponse(error: Error): {
 /**
  * Error logging utility — uses structured logger instead of raw console.*
  */
-export function logError(error: Error, context?: Record<string, any>): void {
+export function logError(error: Error, context?: Record<string, unknown>): void {
   // Lazy import to avoid circular dependency
   const logData = {
     name: error.name,
@@ -180,28 +185,17 @@ export function logError(error: Error, context?: Record<string, any>): void {
   };
 
   if (error instanceof AppError && error.isOperational) {
-    // Use logger if available, fall back to console
-    try {
-      const { logger } = require("@/lib/logger");
-      logger.warn("Operational error", logData);
-    } catch {
-      console.warn("Operational error:", logData);
-    }
+    logger.warn("Operational error", logData);
   } else {
-    try {
-      const { logger } = require("@/lib/logger");
-      logger.error("Programming error", logData);
-    } catch {
-      console.error("Programming error:", logData);
-    }
+    logger.error("Programming error", logData);
   }
 }
 
 /**
  * Async error wrapper for API routes
  */
-export function asyncErrorHandler<T extends any[]>(
-  fn: (...args: T) => Promise<any>,
+export function asyncErrorHandler<T extends unknown[]>(
+  fn: (...args: T) => Promise<Response>,
 ) {
   return async (...args: T) => {
     try {
@@ -213,9 +207,10 @@ export function asyncErrorHandler<T extends any[]>(
           ? error
           : new Error(String(error), { cause: error });
 
+      const req = args[0] as { url?: string; method?: string } | undefined;
       logError(normalizedError, {
-        route: args[0]?.url || "unknown",
-        method: args[0]?.method || "unknown",
+        route: req?.url || "unknown",
+        method: req?.method || "unknown",
       });
 
       if (error instanceof AppError) {

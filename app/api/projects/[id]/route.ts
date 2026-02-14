@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
-import type { UpdateProjectRequest } from "@/lib/db/types"
 import { withAuth } from "@/lib/auth"
 import { asyncErrorHandler, NotFoundError } from "@/lib/errors"
 import { getProjectService } from "@/lib/services"
+import {
+  validateRequest,
+  updateProjectSchema,
+  ValidationError,
+  createValidationErrorResponse,
+} from "@/lib/validations"
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -39,12 +44,23 @@ export const GET = withAuth(asyncErrorHandler(async (request: NextRequest, conte
 export const PATCH = withAuth(asyncErrorHandler(async (request: NextRequest, context: RouteContext) => {
   const [{ id }, body] = await Promise.all([
     context.params,
-    request.json() as Promise<UpdateProjectRequest>,
+    request.json(),
   ])
   const projectService = getProjectService()
 
-  // Update project (service handles validation, cache invalidation)
-  const project = await projectService.updateProject(id, body)
+  // Validate request body with Zod schema
+  let validatedBody: ReturnType<typeof updateProjectSchema.parse>
+  try {
+    validatedBody = validateRequest(updateProjectSchema, body)
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      return createValidationErrorResponse(error)
+    }
+    throw error
+  }
+
+  // Update project (service handles business logic, cache invalidation)
+  const project = await projectService.updateProject(id, validatedBody)
 
   return NextResponse.json({ project })
 }))

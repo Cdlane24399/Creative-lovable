@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 /**
  * Unified Cache Manager
  *
@@ -223,7 +224,7 @@ export class CacheManager {
       try {
         handler(fullEvent);
       } catch (e) {
-        console.warn("[CacheManager] Event handler error:", e);
+        logger.warn("[CacheManager] Event handler error", {}, e);
       }
     });
   }
@@ -238,6 +239,19 @@ export class CacheManager {
     }
 
     return this.redisClient;
+  }
+
+  /**
+   * Get the raw Redis client for atomic operations (e.g. INCR for rate limiting).
+   * Returns null when Redis is not configured.
+   */
+  getRedisClientForAtomicOps(): Redis | null {
+    if (!this.isConfigured) return null;
+    try {
+      return this.getRedisClient();
+    } catch {
+      return null;
+    }
   }
 
   // ===========================================================================
@@ -258,10 +272,7 @@ export class CacheManager {
           return data as T;
         }
       } catch (error) {
-        console.warn(
-          `[CacheManager] Redis get failed for ${key}, using LRU fallback:`,
-          error,
-        );
+        logger.warn("[CacheManager] Redis get failed, using LRU fallback", { key }, error);
       }
     }
 
@@ -285,7 +296,7 @@ export class CacheManager {
         await redis.set(key, value, { ex: ttl });
         this.emit({ type: "set", key, success: true });
       } catch (error) {
-        console.warn(`[CacheManager] Redis set failed for ${key}:`, error);
+        logger.warn("[CacheManager] Redis set failed", { key }, error);
         this.emit({ type: "set", key, success: false });
       }
     } else {
@@ -307,7 +318,7 @@ export class CacheManager {
         await redis.del(key);
         this.emit({ type: "delete", key, success: true });
       } catch (error) {
-        console.warn(`[CacheManager] Redis delete failed for ${key}:`, error);
+        logger.warn("[CacheManager] Redis delete failed", { key }, error);
         this.emit({ type: "delete", key, success: false });
       }
     } else {
@@ -332,12 +343,11 @@ export class CacheManager {
 
         // Use SCAN with cursor iteration instead of KEYS (which blocks Redis)
         do {
-          const result = await redis.scan(cursor, {
+          const [nextCursor, keys] = await redis.scan(cursor, {
             match: pattern,
             count: 100,
           });
-          cursor = result[0];
-          const keys = result[1];
+          cursor = typeof nextCursor === "string" ? parseInt(nextCursor, 10) : nextCursor;
           if (keys.length > 0) {
             await redis.del(...keys);
             totalDeleted += keys.length;
@@ -346,10 +356,7 @@ export class CacheManager {
 
         return Math.max(totalDeleted, lruCount);
       } catch (error) {
-        console.warn(
-          `[CacheManager] Redis delete pattern failed for ${pattern}:`,
-          error,
-        );
+        logger.warn("[CacheManager] Redis delete pattern failed", { pattern }, error);
         return lruCount;
       }
     }
@@ -512,9 +519,7 @@ export class CacheManager {
       this.invalidateProjectsListCache(),
     ]);
 
-    console.log(
-      `[CacheManager] Invalidated all caches for project ${projectId}`,
-    );
+    logger.info("[CacheManager] Invalidated all caches for project", { projectId });
   }
 
   /**
@@ -530,9 +535,9 @@ export class CacheManager {
         this.deletePattern(`${CACHE_KEYS.MESSAGES}*`),
         this.deletePattern(`${CACHE_KEYS.CONTEXT}*`),
       ]);
-      console.log("[CacheManager] Cleared all caches");
+      logger.info("[CacheManager] Cleared all caches");
     } catch (error) {
-      console.error("[CacheManager] Failed to clear all caches:", error);
+      logger.error("[CacheManager] Failed to clear all caches", {}, error);
     }
   }
 
@@ -596,7 +601,7 @@ export const projectCache = {
   async get(projectId: string) {
     return getCacheManager().getProject(projectId);
   },
-  async set(projectId: string, data: any) {
+  async set(projectId: string, data: { project: unknown }) {
     await getCacheManager().setProject(projectId, data);
   },
   async invalidate(projectId: string) {
@@ -610,7 +615,7 @@ export const projectsListCache = {
   },
   async set(
     filters: { starred?: boolean; limit?: number; offset?: number },
-    data: any,
+    data: { projects: unknown[] },
   ) {
     await getCacheManager().setProjectsList(filters, data);
   },
@@ -623,7 +628,7 @@ export const messagesCache = {
   async get(projectId: string) {
     return getCacheManager().getMessages(projectId);
   },
-  async set(projectId: string, data: any) {
+  async set(projectId: string, data: unknown[]) {
     await getCacheManager().setMessages(projectId, data);
   },
   async invalidate(projectId: string) {

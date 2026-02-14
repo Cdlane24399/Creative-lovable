@@ -113,7 +113,7 @@ export async function captureSandboxScreenshot(
     return null;
   }
 
-  let sandbox: any;
+  let sandbox: Sandbox | undefined;
   try {
     // Only capture from an existing/reconnectable sandbox. Do not create a
     // brand-new sandbox for screenshots because that produces mismatched previews.

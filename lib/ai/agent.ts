@@ -52,6 +52,7 @@ export type ModelProvider =
   | "google"
   | "googlePro"
   | "openai"
+  | "haiku"
   | "minimax"
   | "moonshot"
   | "glm";
@@ -69,6 +70,7 @@ export const MODEL_SETTINGS: Record<
   google: { maxSteps: 18, maxTokens: 8192 },
   googlePro: { maxSteps: 24, maxTokens: 8192 },
   openai: { maxSteps: 24 },
+  haiku: { maxSteps: 18, maxTokens: 8192 },
   minimax: { maxSteps: 24 },
   moonshot: { maxSteps: 24 },
   glm: { maxSteps: 24 },
@@ -80,6 +82,7 @@ export const MODEL_DISPLAY_NAMES = {
   google: "Gemini 3 Flash",
   googlePro: "Gemini 3 Pro",
   openai: "GPT-5.2",
+  haiku: "Claude 3.5 Haiku",
   minimax: "MiniMax M2.1",
   moonshot: "Kimi K2.5",
   glm: "GLM-5",
@@ -91,6 +94,7 @@ export const MODEL_DESCRIPTIONS = {
   google: "Fast, great for tool use",
   googlePro: "Best multimodal understanding",
   openai: "Latest OpenAI model",
+  haiku: "Fast & lightweight, good for simple tasks",
   minimax: "Advanced Chinese LLM with strong reasoning",
   moonshot: "Long context specialist",
   glm: "General Language Model from Zhipu AI",

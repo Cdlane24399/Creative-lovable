@@ -574,25 +574,25 @@ export function addDependencies(
  * @deprecated Use setTaskGraph instead for proper task management
  * Set current plan (legacy format - string array)
  */
-export function setCurrentPlan(projectId: string, steps: string[]): void {
+export async function setCurrentPlan(projectId: string, steps: string[]): Promise<void> {
   const context = getAgentContext(projectId)
   
   // Convert to TaskGraph for unified handling
-  const { createTaskGraph, createTask } = require("./planning/task-graph")
-  
+  const { createTaskGraph, createTask } = await import("./planning/task-graph")
+
   const tasks = steps.map((step, index) => createTask({
     description: step,
     dependencies: index > 0 ? [`task-${index - 1}`] : [],
   }))
-  
+
   // Override IDs for predictable referencing
-  tasks.forEach((task: any, index: number) => {
+  tasks.forEach((task: { id: string }, index: number) => {
     task.id = `task-${index}`
   })
-  
+
   const taskGraph = createTaskGraph({
     goal: "Plan execution",
-    tasks: tasks.map((t: any) => ({
+    tasks: tasks.map((t: { description: string; dependencies: string[] }) => ({
       description: t.description,
       dependencies: t.dependencies,
     })),

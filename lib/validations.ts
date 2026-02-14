@@ -157,16 +157,6 @@ export const chatRequestSchema = z.object({
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>
 
-/**
- * Legacy chat request schema (backward compatibility)
- * @deprecated Use chatRequestSchema for new implementations
- */
-export const legacyChatRequestSchema = z.object({
-  messages: z.array(chatMessageSchema).min(1, 'At least one message required').max(100, 'Too many messages'),
-  projectId: projectIdSchema.optional().default('default'),
-  model: modelProviderSchema,
-})
-
 // =============================================================================
 // Save Message Schemas
 // =============================================================================
@@ -206,14 +196,6 @@ export const generateTitleSchema = z.object({
 })
 
 export type GenerateTitleRequest = z.infer<typeof generateTitleSchema>
-
-/**
- * Legacy generate title schema (backward compatibility)
- * @deprecated Use generateTitleSchema for new implementations
- */
-export const legacyGenerateTitleSchema = z.object({
-  messages: z.array(chatMessageSchema).min(1).max(50),
-})
 
 // =============================================================================
 // Project API Schemas
@@ -313,6 +295,13 @@ export type ImprovePromptRequest = z.infer<typeof improvePromptSchema>
 // Validation Helper
 // =============================================================================
 
+// Re-export the canonical ValidationError from lib/errors.ts
+// This ensures instanceof checks work consistently across the codebase.
+export { ValidationError } from './errors'
+
+// Import for use in functions below (avoids circular: errors.ts has no dep on validations.ts)
+import { ValidationError as _ValidationError } from './errors'
+
 /**
  * Validate request body against a Zod schema
  * Returns the parsed data or throws a validation error
@@ -321,37 +310,33 @@ export function validateRequest<T>(schema: z.ZodSchema<T>, data: unknown): T {
   const result = schema.safeParse(data)
   if (!result.success) {
     const errors = result.error.issues.map((e: z.ZodIssue) => `${e.path.join('.')}: ${e.message}`).join(', ')
-    throw new ValidationError(`Invalid request: ${errors}`, result.error.issues)
+    throw new _ValidationError(`Invalid request: ${errors}`, result.error.issues)
   }
   return result.data
 }
 
 /**
- * Validation error with structured error details
- */
-export class ValidationError extends Error {
-  public readonly errors: z.ZodIssue[]
-  
-  constructor(message: string, errors: z.ZodIssue[]) {
-    super(message)
-    this.name = 'ValidationError'
-    this.errors = errors
-  }
-}
-
-/**
  * Create a JSON response for validation errors
  */
-export function createValidationErrorResponse(error: ValidationError): Response {
+export function createValidationErrorResponse(error: _ValidationError): Response {
+  // Handle both ZodIssue[] (array) and Record<string, string[]> (object) error formats
+  const details = Array.isArray(error.errors)
+    ? error.errors.map((e: { path: PropertyKey[]; message: string; code: string }) => ({
+        path: e.path.map(String).join('.'),
+        message: e.message,
+        code: e.code,
+      }))
+    : Object.entries(error.errors).map(([field, messages]) => ({
+        path: field,
+        message: (messages as string[]).join(', '),
+        code: 'custom',
+      }))
+
   return Response.json(
     {
       error: 'Validation Error',
       message: error.message,
-      details: error.errors.map((e: z.ZodIssue) => ({
-        path: e.path.join('.'),
-        message: e.message,
-        code: e.code,
-      })),
+      details,
     },
     { status: 400 }
   )

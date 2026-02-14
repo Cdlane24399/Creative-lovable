@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   ChevronDown,
   Home,
@@ -26,13 +26,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { useRouter } from "next/navigation";
 import { useEditor } from "@/components/contexts/editor-context";
 
 export type EditorView = "preview" | "code" | "settings";
 
 export function EditorHeader() {
   // Consume shared state from EditorContext (no prop drilling)
-  const { state, actions, meta } = useEditor();
+  const { state, actions } = useEditor();
+  const router = useRouter();
   const {
     currentView,
     projectName,
@@ -42,11 +44,11 @@ export function EditorHeader() {
     isDevServerStarting,
   } = state;
   const { setCurrentView, handleRefresh, saveProject } = actions;
-  const { onNavigateHome } = meta;
 
   const isRefreshing = isPreviewLoading || isDevServerStarting;
   const [urlExpanded, setUrlExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const urlBarRef = useRef<HTMLDivElement>(null);
 
   // Copy URL to clipboard
   const handleCopyUrl = () => {
@@ -57,13 +59,16 @@ export function EditorHeader() {
     }
   };
 
-  // Close URL bar when clicking outside
+  // Close URL bar when clicking outside (ref-based detection)
   useEffect(() => {
-    if (urlExpanded) {
-      const handleClickOutside = () => setUrlExpanded(false);
-      document.addEventListener("click", handleClickOutside);
-      return () => document.removeEventListener("click", handleClickOutside);
-    }
+    if (!urlExpanded) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (urlBarRef.current && !urlBarRef.current.contains(e.target as Node)) {
+        setUrlExpanded(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [urlExpanded]);
 
   return (
@@ -93,7 +98,7 @@ export function EditorHeader() {
             className="w-48 rounded-xl border-zinc-800 bg-zinc-900 p-1"
           >
             <DropdownMenuItem
-              onClick={onNavigateHome}
+              onClick={() => router.push("/")}
               className="gap-2 rounded-lg text-zinc-300 focus:bg-zinc-800 focus:text-zinc-100 cursor-pointer"
             >
               <Home className="h-4 w-4" />
@@ -180,7 +185,7 @@ export function EditorHeader() {
         </div>
 
         {/* Expandable URL bar */}
-        <div className="relative ml-4" onClick={(e) => e.stopPropagation()}>
+        <div className="relative ml-4" ref={urlBarRef}>
           <AnimatePresence mode="wait">
             {urlExpanded && sandboxUrl ? (
               <motion.div
@@ -193,10 +198,7 @@ export function EditorHeader() {
               >
                 {/* Refresh button */}
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRefresh();
-                  }}
+                  onClick={handleRefresh}
                   disabled={!!isRefreshing}
                   className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all disabled:opacity-50"
                   title="Refresh"
@@ -215,10 +217,7 @@ export function EditorHeader() {
 
                 {/* Copy button */}
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleCopyUrl();
-                  }}
+                  onClick={handleCopyUrl}
                   className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
                   title="Copy URL"
                 >
@@ -231,10 +230,7 @@ export function EditorHeader() {
 
                 {/* Open external */}
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.open(sandboxUrl, "_blank");
-                  }}
+                  onClick={() => window.open(sandboxUrl, "_blank")}
                   className="flex items-center justify-center h-6 w-6 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
                   title="Open in new tab"
                 >
@@ -271,27 +267,36 @@ export function EditorHeader() {
 
       {/* Right - Profile & GitHub */}
       <div className="flex items-center gap-2">
+        {/* TODO: Implement GitHub integration */}
         <Button
           variant="ghost"
           size="icon"
           className="h-9 w-9 rounded-full text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-300"
+          disabled
+          title="GitHub integration (coming soon)"
+          aria-label="GitHub integration (coming soon)"
         >
           <Github className="h-4 w-4" />
         </Button>
 
-        {/* Share button */}
+        {/* TODO: Implement share functionality */}
         <Button
           variant="ghost"
           size="icon"
           className="h-9 w-9 rounded-full text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-300"
+          disabled
+          title="Share (coming soon)"
+          aria-label="Share (coming soon)"
         >
           <Share2 className="h-4 w-4" />
         </Button>
 
-        {/* Upgrade button */}
+        {/* TODO: Implement upgrade/billing flow */}
         <Button
           variant="ghost"
           className="h-9 gap-1.5 rounded-full px-3 hover:bg-zinc-800/70"
+          disabled
+          title="Upgrade (coming soon)"
         >
           <Zap className="h-4 w-4 text-amber-400" />
           <span className="text-sm font-medium bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">
@@ -299,8 +304,12 @@ export function EditorHeader() {
           </span>
         </Button>
 
-        {/* Publish button */}
-        <Button className="h-9 gap-1.5 rounded-full px-4 bg-emerald-500 hover:bg-emerald-400 text-black font-medium">
+        {/* TODO: Implement publish/deploy functionality */}
+        <Button
+          className="h-9 gap-1.5 rounded-full px-4 bg-emerald-500 hover:bg-emerald-400 text-black font-medium"
+          disabled
+          title="Publish (coming soon)"
+        >
           Publish
         </Button>
 

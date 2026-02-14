@@ -33,7 +33,7 @@ export function createPlanningTools(projectId: string) {
         const startTime = new Date()
 
         try {
-          setCurrentPlan(projectId, steps)
+          await setCurrentPlan(projectId, steps)
 
           recordToolExecution(
             projectId,

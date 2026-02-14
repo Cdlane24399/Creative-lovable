@@ -3,6 +3,7 @@
 import { ChatPanel } from "./chat-panel";
 import { PreviewPanel } from "./preview-panel";
 import { EditorHeader } from "./editor-header";
+import { ErrorBoundary } from "./error-boundary";
 import {
   EditorProvider,
   useEditor,
@@ -10,14 +11,12 @@ import {
 import { type ModelProvider } from "@/lib/ai/agent";
 
 interface EditorLayoutProps {
-  onNavigateHome?: () => void;
   projectId?: string;
   initialPrompt?: string | null;
   initialModel?: ModelProvider;
 }
 
 export function EditorLayout({
-  onNavigateHome,
   projectId,
   initialPrompt,
   initialModel,
@@ -27,7 +26,6 @@ export function EditorLayout({
       projectId={projectId}
       initialPrompt={initialPrompt}
       initialModel={initialModel}
-      onNavigateHome={onNavigateHome}
     >
       <EditorLayoutShell />
     </EditorProvider>
@@ -38,6 +36,9 @@ export function EditorLayout({
  * Thin layout shell -- all state comes from EditorContext.
  * Children (EditorHeader, ChatPanel, PreviewPanel) consume
  * context directly via useEditor(), eliminating prop drilling.
+ *
+ * Each panel is wrapped in its own ErrorBoundary so a crash in one
+ * does not take down the entire editor.
  */
 function EditorLayoutShell() {
   const { meta } = useEditor();
@@ -50,12 +51,28 @@ function EditorLayoutShell() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left Panel - Chat UI */}
         <div className="flex w-[450px] flex-shrink-0 flex-col">
-          <ChatPanel ref={meta.chatRef} />
+          <ErrorBoundary
+            fallback={
+              <div className="flex flex-1 items-center justify-center p-4 text-zinc-400 text-sm">
+                Chat panel crashed. Click &ldquo;Try again&rdquo; to recover.
+              </div>
+            }
+          >
+            <ChatPanel ref={meta.chatRef} />
+          </ErrorBoundary>
         </div>
 
         {/* Right Panel - Preview */}
         <div className="flex-1">
-          <PreviewPanel ref={meta.previewRef} />
+          <ErrorBoundary
+            fallback={
+              <div className="flex flex-1 items-center justify-center p-4 text-zinc-400 text-sm">
+                Preview panel crashed. Click &ldquo;Try again&rdquo; to recover.
+              </div>
+            }
+          >
+            <PreviewPanel ref={meta.previewRef} />
+          </ErrorBoundary>
         </div>
       </div>
     </div>

@@ -99,7 +99,6 @@ export function ChatPanel({ ref }: ChatPanelProps) {
   } = meta;
 
   const [inputValue, setInputValue] = useState("");
-  const [isChatEnabled, _setIsChatEnabled] = useState(true);
   const [selectedModel, setSelectedModel] = useState<ModelProvider>(
     initialModel || "anthropic",
   );
@@ -146,7 +145,6 @@ export function ChatPanel({ ref }: ChatPanelProps) {
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!isChatEnabled) return;
       if (!inputValue.trim()) return;
 
       const content = inputValue.trim();
@@ -155,7 +153,7 @@ export function ChatPanel({ ref }: ChatPanelProps) {
 
       await sendMessage({ text: content });
     },
-    [inputValue, isChatEnabled, sendMessage],
+    [inputValue, sendMessage],
   );
 
   const handleRetry = useCallback(() => {
@@ -261,7 +259,7 @@ export function ChatPanel({ ref }: ChatPanelProps) {
     );
 
     if (latestPreviewUrl) {
-      console.log("[ChatPanel] Got previewUrl from tool:", latestPreviewUrl);
+      if (process.env.NODE_ENV === "development") console.log("[ChatPanel] Got previewUrl from tool:", latestPreviewUrl);
       actions.handleSandboxUrlUpdate(latestPreviewUrl);
     }
 
@@ -343,7 +341,12 @@ export function ChatPanel({ ref }: ChatPanelProps) {
   }, [isWorking, actions]);
 
   // Extract plan state from messages for the floating checklist
-  const planState = useMemo(() => extractPlanState(messages), [messages])
+  // Cast needed: AI SDK UIMessagePart includes types (e.g. ReasoningUIPart) not
+  // in our local MessagePart union, but extractPlanState only inspects tool-* parts.
+  const planState = useMemo(
+    () => extractPlanState(messages as Array<{ role: string; parts?: MessagePart[] }>),
+    [messages],
+  )
 
   return (
     <div className="flex h-full flex-col bg-[#111111]">
@@ -380,9 +383,7 @@ export function ChatPanel({ ref }: ChatPanelProps) {
               ? "working"
               : isImproving
                 ? "improving"
-                : !isChatEnabled
-                  ? "disabled"
-                  : ("idle" as PromptInputStatus)
+                : ("idle" as PromptInputStatus)
           }
           selectedModel={selectedModel}
           setSelectedModel={setSelectedModel}

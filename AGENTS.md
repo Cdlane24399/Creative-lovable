@@ -95,9 +95,9 @@ All models are configured in `lib/ai/providers.ts` using `createGateway()` from 
 | `haiku`     | Claude 3.5 Haiku  | `anthropic/claude-3-5-haiku-20241022` | anthropic, vertex | (Not in MODEL_SETTINGS, used elsewhere) |
 | `minimax`   | MiniMax M2.1      | `minimax/minimax-m2.1`                | minimax           |                                         |
 | `moonshot`  | Kimi K2.5         | `moonshotai/kimi-k2.5`                | moonshotai        | Long context                            |
-| `glm`       | GLM-4.7           | `zai/glm-4.7`                         | zai               | Zhipu AI                                |
+| `glm`       | GLM-5             | `zai/glm-5`                           | zai               | Zhipu AI                                |
 
-Model settings are in `lib/ai/agent.ts` (`MODEL_SETTINGS`). Default `maxSteps` is 50 (40 for `google`).
+Model settings are in `lib/ai/agent.ts` (`MODEL_SETTINGS`). Default `maxSteps` is 24 (18 for `google`).
 
 ---
 
@@ -114,18 +114,17 @@ Tools are implemented as factory functions in `lib/ai/tools/`, each taking a `pr
 | Project      | `createProjectTools`     | `project.tools.ts`      | `getProjectStructure`                                              | Project introspection                                |
 | Project Init | `createProjectInitTools` | `project-init.tools.ts` | `initializeProject`                                                | Template-based scaffolding                           |
 | Sync         | `createSyncTools`        | `sync.tools.ts`         | `syncProject`                                                      | Database persistence with retry                      |
-| Build        | `createBuildTools`       | `build.tools.ts`        | `runCommand`, `installPackage`, `getBuildStatus`, `startDevServer` | Build and dev server                                 |
-| Website      | `createWebsiteTools`     | `website.tools.ts`      | `createWebsite`                                                    | **DEPRECATED** -- use ProjectInit + BatchFile + Sync |
+| Build        | `createBuildTools`       | `build.tools.ts`        | `runCommand`, `installPackage`, `getBuildStatus`                   | Build and dev server                                 |
 | Code         | `createCodeTools`        | `code.tools.ts`         | `executeCode`                                                      | Code analysis and execution                          |
-| Suggestion   | `createSuggestionTools`  | `suggestion.tools.ts`   | `generateSuggestions`                                              | Follow-up suggestions                                |
 
 ### Dynamic Tool Activation (prepareStep)
 
 The chat route uses AI SDK v6 `prepareStep` to dynamically select active tools per step:
 
-- **Step 0**: Planning + Creation (`initializeProject`, `batchWriteFiles`, `syncProject`) + File + Build + Suggestions
-- **Build errors detected**: File + BatchFile + Build + Suggestions
-- **Server running with task graph**: File + BatchFile + Build + `markStepComplete` + `syncProject` + Suggestions
+- **Step 0**: Planning + Project scan + BatchFile + Build + Sync (bootstrap)
+- **Build errors detected**: File + BatchFile + Build
+- **Server running with task graph**: File + BatchFile + Build
+- **Near step limit (maxSteps - 2)**: Tools disabled, model synthesises final text
 - **Otherwise (step 1+)**: All tools available (no restriction)
 
 ---
@@ -155,6 +154,7 @@ Creative-lovable/
 │   ├── shared/                   # Shared components (icons, model-selector)
 │   └── layout/                   # Layout components
 ├── hooks/
+│   ├── use-auth.ts               # Reactive Supabase auth hook
 │   ├── use-chat-with-tools.ts    # Chat hook with tool support
 │   ├── use-projects.ts           # Project management hook
 │   └── use-dev-server.ts         # Dev server status hook
@@ -198,7 +198,8 @@ Creative-lovable/
 │   │   └── index.ts                      # getCacheManager()
 │   ├── errors.ts                         # Error class hierarchy + asyncErrorHandler
 │   ├── validations.ts                    # Zod schemas for API validation
-│   ├── rate-limit.ts                     # In-memory rate limiting (100/min general, 20/min chat)
+│   ├── rate-limit.ts                     # Redis-backed rate limiting with in-memory fallback (100/min general, 20/min chat)
+│   ├── env.ts                            # Validated environment variable getters
 │   ├── auth.ts                           # withAuth middleware
 │   └── logger.ts                         # Structured logger
 ├── styles/                       # Global CSS styles
@@ -266,11 +267,11 @@ Creative-lovable/
 - Use `validateRequest(schema, data)` helper.
 - AI SDK v6 messages use `UIMessage` format with `parts` array (not `content` string).
 
-### 8.7 Rate Limiting
+## 8.7 Rate Limiting
 
 - General: 100 requests/minute per client.
 - Chat endpoint: 20 requests/minute per client.
-- In-memory store (production should use Redis).
+- Redis-backed via Upstash when configured, with automatic in-memory LRU fallback.
 
 ### 8.8 Caching
 

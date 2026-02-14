@@ -182,15 +182,15 @@ export async function cleanupExpiredSandboxes(): Promise<void> {
 const CLEANUP_INTERVAL_KEY = "e2b_sandbox_cleanup_interval";
 
 export function startCleanupInterval(): void {
-  const globalAny = globalThis as any;
+  const globalRecord = globalThis as unknown as Record<string, NodeJS.Timeout | undefined>;
 
-  if (globalAny[CLEANUP_INTERVAL_KEY]) {
+  if (globalRecord[CLEANUP_INTERVAL_KEY]) {
     // Interval already running, don't start another one
     return;
   }
 
   // Start new interval (silently - logging on every HMR reload is too noisy)
-  globalAny[CLEANUP_INTERVAL_KEY] = setInterval(
+  globalRecord[CLEANUP_INTERVAL_KEY] = setInterval(
     cleanupExpiredSandboxes,
     CLEANUP_INTERVAL_MS,
   );

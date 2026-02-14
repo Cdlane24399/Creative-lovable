@@ -121,39 +121,3 @@ function truncateText(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength - 3) + "...";
 }
-
-// Capture a DOM element as an image (works for non-iframe content)
-export async function captureElement(
-  element: HTMLElement,
-  options: { scale?: number; quality?: number } = {},
-): Promise<string | null> {
-  const { scale = 2, quality = 0.9 } = options;
-
-  try {
-    // Dynamically import html2canvas (client-side only)
-    const html2canvas = (await import("html2canvas")).default;
-
-    const canvas = await html2canvas(element, {
-      scale,
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: "#111111",
-      logging: false,
-    });
-
-    return canvas.toDataURL("image/png", quality);
-  } catch (error) {
-    console.error("Error capturing element:", error);
-    return null;
-  }
-}
-
-// Check if a URL is accessible for screenshot capture
-export async function isUrlAccessible(url: string): Promise<boolean> {
-  try {
-    const response = await fetch(url, { method: "HEAD", mode: "no-cors" });
-    return true;
-  } catch {
-    return false;
-  }
-}

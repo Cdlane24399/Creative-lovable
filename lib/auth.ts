@@ -121,7 +121,7 @@ function createErrorResponse(
 }
 
 // Higher-order function to wrap API route handlers with authentication
-export function withAuth<T extends any[]>(
+export function withAuth<T extends unknown[]>(
   handler: (
     ...args: T
   ) => Promise<NextResponse | Response> | NextResponse | Response,
@@ -137,7 +137,7 @@ export function withAuth<T extends any[]>(
       resetTime: number;
     } | null = null;
     if (!options?.skipRateLimit && request instanceof NextRequest) {
-      rateLimitResult = checkRateLimit(request);
+      rateLimitResult = await checkRateLimit(request);
       if (!rateLimitResult.allowed) {
         const error = new RateLimitError(
           "Rate limit exceeded",

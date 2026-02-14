@@ -1,8 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
-    // TODO: Enable once type errors are fixed (Phase 6.1)
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   images: {
     // TODO: Enable optimization once CDN is configured (Phase 4)
@@ -24,10 +23,6 @@ const nextConfig = {
     optimizePackageImports: [
       "lucide-react",
       "framer-motion",
-      "recharts",
-      "date-fns",
-      "react-day-picker",
-      "@radix-ui/react-icons",
     ],
   },
 
@@ -65,6 +60,19 @@ const nextConfig = {
           {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
+          },
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com",
+              "worker-src 'self' blob:",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob: https://avatar.vercel.sh",
+              "font-src 'self' https://fonts.gstatic.com",
+              "frame-src 'self' https://*.e2b.dev https://*.e2b-echo.dev https://*.e2b.app",
+              "connect-src 'self' https://*.supabase.co https://*.e2b.dev https://*.e2b.app wss://*.supabase.co",
+            ].join("; "),
           },
         ],
       },

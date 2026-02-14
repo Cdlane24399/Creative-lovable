@@ -109,7 +109,7 @@ export async function executeCode(
   // If it's a CodeInterpreter instance and language is Python, use runCode for better output
   if ("runCode" in sandbox && language === "python") {
     try {
-      const execution = await (sandbox as any).runCode(code);
+      const execution = await (sandbox as CodeInterpreterSandbox).runCode(code);
       return {
         logs: {
           stdout: execution.logs.stdout,

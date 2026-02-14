@@ -51,9 +51,9 @@ export class ProjectRepository extends BaseRepository<Project> {
    * Transform database row to Project type
    * Handles JSONB field parsing
    */
-  private transformRow(row: any): Project {
+  private transformRow(row: Record<string, unknown>): Project {
     return {
-      ...row,
+      ...(row as unknown as Project),
       files_snapshot: parseJsonSafe<Record<string, string>>(
         row.files_snapshot,
         {},
@@ -247,7 +247,7 @@ export class ProjectRepository extends BaseRepository<Project> {
     try {
       const client = await this.getClient();
 
-      const updateData: any = { updated_at: new Date().toISOString() };
+      const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (data.name !== undefined) updateData.name = data.name.trim();
       if (data.description !== undefined)
         updateData.description = data.description;
@@ -292,8 +292,8 @@ export class ProjectRepository extends BaseRepository<Project> {
     sandboxUrl?: string | null,
   ): Promise<void> {
     await this.update(id, {
-      sandbox_id: sandboxId as any,
-      sandbox_url: sandboxUrl as any,
+      sandbox_id: sandboxId,
+      sandbox_url: sandboxUrl,
     });
   }
 

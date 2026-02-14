@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
-import type { CreateProjectRequest } from "@/lib/db/types"
 import { withAuth } from "@/lib/auth"
 import { asyncErrorHandler } from "@/lib/errors"
 import { getProjectService } from "@/lib/services"
+import {
+  validateRequest,
+  createProjectSchema,
+  ValidationError,
+  createValidationErrorResponse,
+} from "@/lib/validations"
 
 /**
  * GET /api/projects - List all projects
@@ -51,10 +56,21 @@ export const GET = withAuth(asyncErrorHandler(async (request: NextRequest) => {
  */
 export const POST = withAuth(asyncErrorHandler(async (request: NextRequest) => {
   const projectService = getProjectService()
-  const body: CreateProjectRequest & { id?: string } = await request.json()
+  const body = await request.json()
 
-  // Create project (service handles validation)
-  const project = await projectService.createProject(body)
+  // Validate request body with Zod schema
+  let validatedBody: ReturnType<typeof createProjectSchema.parse> & { id?: string }
+  try {
+    validatedBody = { ...validateRequest(createProjectSchema, body), id: body.id }
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      return createValidationErrorResponse(error)
+    }
+    throw error
+  }
+
+  // Create project (service handles business logic)
+  const project = await projectService.createProject(validatedBody)
 
   return NextResponse.json({ project }, { status: 201 })
 }))

@@ -52,7 +52,7 @@ export function isValidScreenshotPayload(value: string): boolean {
  * - sandbox_url?: string - Optional sandbox preview URL
  */
 export const POST = withAuth(asyncErrorHandler(async (request: NextRequest, context: RouteContext) => {
-  const rateLimit = checkChatRateLimit(request)
+  const rateLimit = await checkChatRateLimit(request)
   if (!rateLimit.allowed) {
     const retryAfter = Math.ceil((rateLimit.resetTime - Date.now()) / 1000)
     return NextResponse.json(

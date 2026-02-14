@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { type User } from "@supabase/supabase-js";
+import { useCallback } from "react";
+import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { LandingBackground } from "./landing-background";
 import { Header, HeroSectionV3 as HeroSection, Footer } from "./landing";
+import { useAuth } from "@/hooks/use-auth";
+import { type ModelProvider } from "@/lib/ai/agent";
 
 // Dynamic import below-fold sections — not needed for initial paint
 const FeaturesSection = dynamic(() =>
@@ -29,39 +30,21 @@ const WorkspaceView = dynamic(() =>
   import("./landing/workspace-view").then((m) => m.WorkspaceView),
 );
 
-import { type ModelProvider } from "@/lib/ai/agent";
+export function LandingPage() {
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
 
-interface LandingPageProps {
-  onNavigateToEditor: (
-    projectId?: string,
-    prompt?: string,
-    model?: ModelProvider,
-  ) => void;
-}
-
-export function LandingPage({ onNavigateToEditor }: LandingPageProps) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const supabase = createClient();
-
-    // Check active session
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
-      setIsLoading(false);
-    });
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setIsLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  const onNavigateToEditor = useCallback(
+    (projectId?: string, prompt?: string, model?: ModelProvider) => {
+      const id = projectId || crypto.randomUUID();
+      const params = new URLSearchParams();
+      if (prompt) params.set("prompt", prompt);
+      if (model && model !== "anthropic") params.set("model", model);
+      const qs = params.toString();
+      router.push(`/project/${id}${qs ? `?${qs}` : ""}`);
+    },
+    [router],
+  );
 
   // Show a loading state or just render standard layour while loading to avoid flicker?
   // Rendering standard layout might flicker if they are logged in.

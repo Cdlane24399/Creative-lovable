@@ -16,7 +16,7 @@ export const maxDuration = 60
  * Falls back to SVG placeholder if screenshot fails.
  */
 export const POST = withAuth(asyncErrorHandler(async (req: NextRequest) => {
-    const rateLimit = checkChatRateLimit(req)
+    const rateLimit = await checkChatRateLimit(req)
     if (!rateLimit.allowed) {
       const retryAfter = Math.ceil((rateLimit.resetTime - Date.now()) / 1000)
       return NextResponse.json(
