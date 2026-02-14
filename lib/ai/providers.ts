@@ -37,7 +37,7 @@ const MODEL_CONFIG = {
     providerOrder: ['anthropic', 'vertex', 'openrouter'] as const,
   },
   minimax: {
-    gatewayId: 'minimax/minimax-m2.1',
+    gatewayId: 'minimax/minimax-m2.5',
     providerOrder: ['minimax'] as const,
   },
   moonshot: {

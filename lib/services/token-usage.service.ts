@@ -58,7 +58,7 @@ const COST_RATES: Record<string, { input: number; output: number }> = {
   "claude-4-opus": { input: 15.0, output: 75.0 },
 
   // MiniMax
-  "minimax-m2.1": { input: 1.0, output: 3.0 },
+  "minimax-m2.5": { input: 1.0, output: 3.0 },
 
   // Moonshot (Kimi)
   "kimi-k2.5": { input: 1.0, output: 3.0 },
@@ -117,7 +117,7 @@ const MODEL_MAPPINGS: Record<string, string> = {
   opus: "claude-4-opus",
 
   // MiniMax
-  minimax: "minimax-m2.1",
+  minimax: "minimax-m2.5",
 
   // Moonshot (Kimi)
   moonshot: "kimi-k2.5",

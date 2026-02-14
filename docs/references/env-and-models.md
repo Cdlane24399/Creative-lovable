@@ -34,7 +34,7 @@ Defined in `lib/ai/providers.ts` via `MODEL_CONFIG`.
 | `googlePro` | Gemini 3 Pro Preview | Best multimodal understanding |
 | `openai` | GPT-5.2 | Latest OpenAI model |
 | `haiku` | Claude 3.5 Haiku | Title generation |
-| `minimax` | MiniMax M2.1 | Advanced Chinese LLM with strong reasoning |
+| `minimax` | MiniMax M2.5 | Advanced Chinese LLM with strong reasoning |
 | `moonshot` | Kimi K2.5 | Long context specialist |
 | `glm` | GLM-4.7 | General Language Model from Zhipu AI |
 

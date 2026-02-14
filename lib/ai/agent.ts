@@ -83,7 +83,7 @@ export const MODEL_DISPLAY_NAMES = {
   googlePro: "Gemini 3 Pro",
   openai: "GPT-5.2",
   haiku: "Claude 3.5 Haiku",
-  minimax: "MiniMax M2.1",
+  minimax: "MiniMax M2.5",
   moonshot: "Kimi K2.5",
   glm: "GLM-5",
 } as const;
