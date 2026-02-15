@@ -55,17 +55,18 @@ describe('Authentication', () => {
       expect(result.error?.status).toBe(403)
     })
 
-    it('should reject when API_KEY not set in production mode', async () => {
+    it('should reject with unauthorized when API_KEY not set in production mode', async () => {
       delete process.env.API_KEY
       // Use Object.defineProperty to override read-only NODE_ENV
       Object.defineProperty(process.env, 'NODE_ENV', { value: 'production', writable: true })
       const request = new NextRequest('http://localhost:3000/api/test')
 
       const result = await authenticateRequest(request)
-      // SECURITY: In production, must reject when API_KEY not configured
+      // In production without API_KEY, auth should fall back to session auth.
+      // Without a valid session, the request is unauthorized.
       expect(result.isAuthenticated).toBe(false)
       expect(result.error).toBeDefined()
-      expect(result.error?.status).toBe(500)
+      expect(result.error?.status).toBe(401)
     })
 
     it('should allow requests in development mode when API_KEY not set', async () => {

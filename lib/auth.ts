@@ -33,7 +33,7 @@ export async function authenticateRequest(
     return { isAuthenticated: true };
   }
 
-  // 2. Handle missing API key configuration first (fast path in local dev)
+  // 2. Handle missing API key configuration
   if (!expectedApiKey) {
     // In development, allow requests without API key (with warning)
     if (isDevelopment()) {
@@ -46,20 +46,14 @@ export async function authenticateRequest(
       return { isAuthenticated: true };
     }
 
-    // SECURITY: In production, fail closed - reject all requests
-    console.error(
-      "[auth] CRITICAL: API_KEY not configured in production - rejecting request",
-    );
-    const error = new AuthenticationError(
-      "Server authentication not configured",
-    );
-    const errorResponse = createErrorResponse(
-      request,
-      error.message,
-      error.code,
-      500,
-    );
-    return { isAuthenticated: false, error: errorResponse };
+    // In production, continue to Supabase auth so browser sessions still work.
+    // API key auth remains unavailable until API_KEY is configured.
+    if (!authWarningLogged) {
+      console.warn(
+        "[auth] API_KEY not configured in production - falling back to Supabase session auth only",
+      );
+      authWarningLogged = true;
+    }
   }
 
   // 3. Try Supabase Auth (Cookies) — slower path, requires network
