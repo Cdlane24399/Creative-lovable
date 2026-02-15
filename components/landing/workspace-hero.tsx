@@ -102,13 +102,13 @@ export function WorkspaceHero({ onSubmit, userName }: WorkspaceHeroProps) {
 
           <div
             className={cn(
-              "relative bg-[#121214] border border-white/10 rounded-2xl shadow-xl transition-all duration-300 overflow-hidden ring-1 ring-white/5",
+              "relative bg-[#0a0a0c]/80 backdrop-blur-xl border border-white/10 rounded-[2rem] shadow-xl transition-all duration-300 overflow-hidden ring-1 ring-white/5",
               isFocused
                 ? "border-emerald-500/30 shadow-emerald-500/10 ring-emerald-500/20"
                 : "hover:border-white/20",
             )}
           >
-            <div className="p-6">
+            <div className="p-5">
               <textarea
                 id="workspace-prompt-input"
                 name="workspacePrompt"
@@ -123,7 +123,7 @@ export function WorkspaceHero({ onSubmit, userName }: WorkspaceHeroProps) {
                 style={{ lineHeight: "1.5" }}
               />
 
-              <div className="flex items-center justify-between mt-6">
+              <div className="flex items-center justify-between mt-4">
                 <div className="flex items-center gap-2">
                   <ModelSelector
                     selectedModel={selectedModel}

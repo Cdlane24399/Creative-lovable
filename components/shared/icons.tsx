@@ -119,18 +119,38 @@ export const GoogleLogo = ({ className }: { className?: string }) => (
 
 export const LumiLogo = ({ className }: { className?: string }) => (
   <svg
-    viewBox="0 0 24 24"
+    viewBox="0 0 128 128"
     fill="none"
     className={className}
     xmlns="http://www.w3.org/2000/svg"
   >
+    <defs>
+      <linearGradient
+        id="lumi-vivid-grad"
+        x1="0"
+        y1="0"
+        x2="128"
+        y2="128"
+        gradientUnits="userSpaceOnUse"
+      >
+        <stop offset="0%" stopColor="#F59E0B" />
+        <stop offset="25%" stopColor="#EF4444" />
+        <stop offset="50%" stopColor="#EC4899" />
+        <stop offset="75%" stopColor="#8B5CF6" />
+        <stop offset="100%" stopColor="#3B82F6" />
+      </linearGradient>
+      <filter id="lumi-glow">
+        <feGaussianBlur stdDeviation="3" result="blur" />
+        <feMerge>
+          <feMergeNode in="blur" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
+    </defs>
     <path
-      d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z"
-      fill="currentColor"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      d="M64 0 C68 44 68 44 128 56 C84 64 84 64 68 68 C64 84 64 84 64 128 C60 84 60 84 0 72 C44 64 44 64 60 60 C64 44 64 44 64 0Z"
+      fill="url(#lumi-vivid-grad)"
+      filter="url(#lumi-glow)"
     />
   </svg>
 );
@@ -156,5 +176,11 @@ export const MoonshotIcon = ({ className }: { className?: string }) => (
 );
 
 export const GLMIcon = ({ className }: { className?: string }) => (
-  <Image src="/zai.svg" alt="Z.ai GLM" width={24} height={24} className={className} />
+  <Image
+    src="/zai.svg"
+    alt="Z.ai GLM"
+    width={24}
+    height={24}
+    className={className}
+  />
 );

@@ -52,7 +52,7 @@ export function LandingPage() {
   // Let's render the background at least.
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#09090B]">
+      <div className="min-h-screen bg-[#111111]">
         <div className="fixed inset-0 z-0 pointer-events-none">
           <LandingBackground />
         </div>
@@ -60,8 +60,16 @@ export function LandingPage() {
     );
   }
 
+  if (user) {
+    return (
+      <div className="min-h-screen bg-[#111111] text-white font-sans selection:bg-blue-500/30">
+        <WorkspaceView onNavigateToEditor={onNavigateToEditor} user={user} />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#09090B] text-white overflow-x-hidden font-sans selection:bg-emerald-500/30">
+    <div className="min-h-screen bg-[#111111] text-white overflow-x-hidden font-sans selection:bg-blue-500/30">
       {/* Background */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <LandingBackground />
@@ -72,44 +80,37 @@ export function LandingPage() {
         <Header />
 
         <main>
-          {user ? (
-            <WorkspaceView
-              onNavigateToEditor={onNavigateToEditor}
-              user={user}
+          <>
+            <HeroSection
+              onSubmit={(prompt, model) =>
+                onNavigateToEditor(undefined, prompt, model)
+              }
             />
-          ) : (
-            <>
-              <HeroSection
-                onSubmit={(prompt, model) =>
-                  onNavigateToEditor(undefined, prompt, model)
-                }
-              />
 
-              <div className="relative">
-                {/* Gradient Divider */}
-                <div className="h-px bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent max-w-5xl mx-auto" />
+            <div className="relative">
+              {/* Gradient Divider */}
+              <div className="h-px bg-gradient-to-r from-transparent via-blue-500/20 to-transparent max-w-5xl mx-auto" />
 
-                <div id="features">
-                  <FeaturesSection />
-                </div>
+              <div id="features">
+                <FeaturesSection />
               </div>
+            </div>
 
-              <div id="how-it-works">
-                <HowItWorksSection />
-              </div>
+            <div id="how-it-works">
+              <HowItWorksSection />
+            </div>
 
-              <ProjectsSection onNavigateToEditor={onNavigateToEditor} />
+            <ProjectsSection onNavigateToEditor={onNavigateToEditor} />
 
-              <TestimonialsSection />
+            <TestimonialsSection />
 
-              <div id="pricing">
-                <CTASection onNavigateToEditor={() => onNavigateToEditor()} />
-              </div>
-            </>
-          )}
+            <div id="pricing">
+              <CTASection onNavigateToEditor={() => onNavigateToEditor()} />
+            </div>
+          </>
         </main>
 
-        {!user && <Footer />}
+        <Footer />
       </div>
     </div>
   );

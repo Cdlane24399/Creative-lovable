@@ -285,7 +285,6 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
                   <ModelSelector
                     selectedModel={selectedModel}
                     onModelChange={setSelectedModel}
-                    showDescriptions={true}
                     disabled={isImproving}
                     triggerClassName="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800"
                   />

@@ -15,7 +15,7 @@ export default function ProjectError({
   }, [error])
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4 bg-[#09090B]">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4 bg-[#111111]">
       <div className="max-w-md text-center space-y-4">
         <h2 className="text-2xl font-bold tracking-tight text-zinc-100">
           Failed to load project

@@ -113,7 +113,7 @@ function createSvgPlaceholderDataUrl(projectName: string): string {
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#18181B" />
-      <stop offset="100%" stop-color="#09090B" />
+      <stop offset="100%" stop-color="#111111" />
     </linearGradient>
   </defs>
   <rect width="1200" height="630" fill="url(#bg)" />

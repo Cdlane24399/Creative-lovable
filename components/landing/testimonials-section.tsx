@@ -56,7 +56,7 @@ const testimonials = [
 
 export function TestimonialsSection() {
   return (
-    <section className="relative py-24 sm:py-32 overflow-hidden bg-[#09090B]">
+    <section className="relative py-24 sm:py-32 overflow-hidden bg-[#111111]">
       {/* Subtle background gradient */}
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-amber-500/[0.02] to-transparent pointer-events-none" />
       

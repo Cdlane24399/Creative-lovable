@@ -70,7 +70,7 @@ export function generatePlaceholderImage(
   // Background gradient
   const gradient = ctx.createLinearGradient(0, 0, width, height);
   gradient.addColorStop(0, "#18181B");
-  gradient.addColorStop(1, "#09090B");
+  gradient.addColorStop(1, "#111111");
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
 

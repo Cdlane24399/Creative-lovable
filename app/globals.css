@@ -5,7 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: oklch(0.067 0 0);
+  --background: oklch(0.178 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.1 0 0);
   --card-foreground: oklch(0.985 0 0);
@@ -41,7 +41,7 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
+  --background: oklch(0.178 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.145 0 0);
   --card-foreground: oklch(0.985 0 0);
@@ -150,7 +150,8 @@
 
 /* Custom pulse animation for hero text */
 @keyframes pulse-subtle {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -160,7 +161,8 @@
 
 /* Floating animation for cards */
 @keyframes float {
-  0%, 100% {
+  0%,
+  100% {
     transform: translateY(0px);
   }
   50% {
@@ -170,7 +172,8 @@
 
 /* Glow animation */
 @keyframes glow {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
   }
   50% {
@@ -244,7 +247,8 @@
 
 /* Preview loading — block breathing pulse */
 @keyframes preview-breathe {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.6;
   }
   50% {

@@ -9,7 +9,7 @@ interface CTASectionProps {
 
 export function CTASection({ onNavigateToEditor }: CTASectionProps) {
   return (
-    <section className="relative py-24 sm:py-32 overflow-hidden bg-[#09090B]">
+    <section className="relative py-24 sm:py-32 overflow-hidden bg-[#111111]">
       {/* Gradient border on top */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-500/30 to-transparent" />
       

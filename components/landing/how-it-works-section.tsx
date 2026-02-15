@@ -95,7 +95,7 @@ const steps = [
 
 export function HowItWorksSection() {
   return (
-    <section className="relative py-24 sm:py-32 bg-[#09090B] overflow-hidden">
+    <section className="relative py-24 sm:py-32 bg-[#111111] overflow-hidden">
       {/* Gradient accent */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-zinc-800 to-transparent" />
       <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-zinc-800 to-transparent" />

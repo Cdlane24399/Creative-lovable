@@ -302,12 +302,12 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
   };
 
   return (
-    <section className="relative py-12 sm:py-16 bg-[#09090B]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <section className="relative py-8 sm:py-10 bg-[#111111]">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header with tabs */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           {/* Tabs */}
-          <div className="flex items-center gap-1 bg-[#18181B] border border-zinc-800 p-1 rounded-xl overflow-x-auto">
+          <div className="flex items-center gap-1 bg-[#0a0a0c]/80 backdrop-blur-sm border border-white/10 p-1 rounded-2xl overflow-x-auto">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -411,7 +411,7 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
             >
               {currentProjects.map((project, index) => (
                 <motion.div
@@ -432,7 +432,7 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                     tabIndex={0}
                     className="w-full text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/50 rounded-2xl"
                   >
-                    <div className="relative rounded-2xl overflow-hidden bg-[#18181B] border border-zinc-800 hover:border-zinc-700 transition-all duration-300 hover:shadow-lg hover:shadow-black/20">
+                    <div className="relative rounded-3xl overflow-hidden bg-[#0a0a0c]/80 backdrop-blur-sm border border-white/10 hover:border-white/20 transition-all duration-300 hover:shadow-lg hover:shadow-black/20">
                       {/* Image */}
 
                       <AnimatePresence>
@@ -445,7 +445,7 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                           />
                         )}
                       </AnimatePresence>
-                      <div className="relative aspect-[16/10] overflow-hidden bg-zinc-900">
+                      <div className="relative aspect-[16/9] overflow-hidden bg-zinc-900">
                         {project.image ? (
                           <img
                             src={project.image}
@@ -469,8 +469,8 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
 
                         {/* Starred badge */}
                         {project.starred ? (
-                          <div className="absolute top-3 right-3">
-                            <div className="w-7 h-7 rounded-full bg-[#18181B] border border-zinc-700 flex items-center justify-center shadow-sm">
+                          <div className="absolute top-2 right-2">
+                            <div className="w-7 h-7 rounded-full bg-[#0a0a0c]/80 backdrop-blur-sm border border-white/20 flex items-center justify-center shadow-sm">
                               <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
                             </div>
                           </div>
@@ -479,8 +479,8 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                         {/* Category badge for templates */}
                         {"category" in project &&
                         (project as { category?: string }).category ? (
-                          <div className="absolute top-3 left-3">
-                            <span className="px-2 py-1 text-[10px] font-medium text-zinc-200 bg-[#18181B] rounded-md border border-zinc-700 shadow-sm">
+                          <div className="absolute top-2 left-2">
+                            <span className="px-2 py-1 text-[10px] font-medium text-zinc-200 bg-[#0a0a0c]/80 backdrop-blur-sm rounded-md border border-white/20 shadow-sm">
                               {(project as { category?: string }).category}
                             </span>
                           </div>
@@ -491,7 +491,7 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                           <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                             <button
                               onClick={(e) => handleToggleStar(e, project.id)}
-                              className="p-2 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 transition-colors"
+                              className="p-2 rounded-xl bg-[#0a0a0c]/80 backdrop-blur-sm border border-white/20 hover:bg-zinc-700 transition-colors"
                               title={project.starred ? "Unstar" : "Star"}
                             >
                               <Star
@@ -512,7 +512,7 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                                     project.sandboxUrl,
                                   )
                                 }
-                                className="p-2 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 transition-colors"
+                                className="p-2 rounded-xl bg-[#0a0a0c]/80 backdrop-blur-sm border border-white/20 hover:bg-zinc-700 transition-colors"
                                 title="Open preview"
                               >
                                 <ExternalLink className="w-4 h-4 text-zinc-300" />
@@ -522,7 +522,7 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                               onClick={(e) =>
                                 handleDeleteProject(e, project.id)
                               }
-                              className="p-2 rounded-lg bg-zinc-800/80 hover:bg-red-600 transition-colors"
+                              className="p-2 rounded-xl bg-[#0a0a0c]/80 backdrop-blur-sm border border-white/20 hover:bg-red-600 transition-colors"
                               title="Delete project"
                             >
                               <Trash2 className="w-4 h-4 text-zinc-300" />
@@ -532,11 +532,11 @@ export function ProjectsSection({ onNavigateToEditor }: ProjectsSectionProps) {
                       </div>
 
                       {/* Content */}
-                      <div className="p-4 border-t border-zinc-800/50">
+                      <div className="p-3 border-t border-white/10">
                         <h3 className="font-medium text-zinc-200 group-hover:text-emerald-400 transition-colors truncate">
                           {project.title}
                         </h3>
-                        <p className="text-xs text-zinc-500 mt-1 flex items-center gap-1.5">
+                        <p className="text-xs text-zinc-500 mt-0.5 flex items-center gap-1.5">
                           <Clock className="w-3 h-3" />
                           {project.lastEdited}
                         </p>

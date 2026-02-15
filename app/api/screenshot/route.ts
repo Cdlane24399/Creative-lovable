@@ -159,7 +159,7 @@ function generateWebsitePreviewSVG(
     <defs>
       <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" style="stop-color:#18181B"/>
-        <stop offset="100%" style="stop-color:#09090B"/>
+        <stop offset="100%" style="stop-color:#111111"/>
       </linearGradient>
       <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" style="stop-color:${color.primary}"/>
@@ -184,7 +184,7 @@ function generateWebsitePreviewSVG(
     <rect x="140" y="47" width="${width - 280}" height="16" rx="4" fill="#3F3F46"/>
 
     <!-- Preview window -->
-    <rect x="60" y="70" width="${width - 120}" height="${height - 130}" rx="0 0 8 8" fill="#09090B" stroke="#27272A"/>
+    <rect x="60" y="70" width="${width - 120}" height="${height - 130}" rx="0 0 8 8" fill="#111111" stroke="#27272A"/>
 
     <!-- Content simulation -->
     <!-- Hero section -->

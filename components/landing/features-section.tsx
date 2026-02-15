@@ -78,7 +78,7 @@ const techStack = [
 
 export function FeaturesSection() {
   return (
-    <section className="relative py-24 sm:py-32 bg-[#09090B]">
+    <section className="relative py-24 sm:py-32 bg-[#111111]">
       {/* Subtle gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/[0.02] to-transparent pointer-events-none" />
       

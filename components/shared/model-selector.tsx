@@ -1,119 +1,127 @@
-"use client"
+"use client";
 
-import { Check, ChevronDown } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-  DropdownMenuLabel,
-} from "@/components/ui/dropdown-menu"
-import { cn } from "@/lib/utils"
-import { MODEL_DISPLAY_NAMES, MODEL_DESCRIPTIONS, type ModelProvider } from "@/lib/ai/agent"
-import { AnthropicIcon, GoogleIcon, OpenAIIcon, MiniMaxIcon, MoonshotIcon, GLMIcon } from "./icons"
+  MODEL_DISPLAY_NAMES,
+  MODEL_DESCRIPTIONS,
+  type ModelProvider,
+} from "@/lib/ai/agent";
+import {
+  ModelSelector as AIModelSelector,
+  ModelSelectorContent,
+  ModelSelectorTrigger,
+  ModelSelectorInput,
+  ModelSelectorList,
+  ModelSelectorEmpty,
+  ModelSelectorGroup,
+  ModelSelectorItem,
+  ModelSelectorLogo,
+  ModelSelectorName,
+} from "@/components/ai-elements/model-selector";
+import { Check } from "lucide-react";
 
 interface ModelSelectorProps {
-  selectedModel: ModelProvider
-  onModelChange: (model: ModelProvider) => void
-  showDescriptions?: boolean
-  className?: string
-  triggerClassName?: string
-  disabled?: boolean
+  selectedModel: ModelProvider;
+  onModelChange: (model: ModelProvider) => void;
+  className?: string;
+  triggerClassName?: string;
+  disabled?: boolean;
 }
+
+const MODELS: {
+  key: ModelProvider;
+  provider: string;
+}[] = [
+  { key: "anthropic", provider: "anthropic" },
+  { key: "opus", provider: "anthropic" },
+  { key: "google", provider: "google" },
+  { key: "googlePro", provider: "google" },
+  { key: "openai", provider: "openai" },
+  { key: "haiku", provider: "anthropic" },
+  { key: "minimax", provider: "deepinfra" },
+  { key: "moonshot", provider: "moonshotai" },
+  { key: "glm", provider: "zai" },
+];
 
 export function ModelSelector({
   selectedModel,
   onModelChange,
-  showDescriptions = false,
   className,
   triggerClassName,
   disabled,
 }: ModelSelectorProps) {
-  const getIcon = (model: ModelProvider, className?: string) => {
-    switch (model) {
-      case "anthropic":
-      case "opus":
-        return <AnthropicIcon className={className} />
-      case "google":
-      case "googlePro":
-        return <GoogleIcon className={className} />
-      case "openai":
-        return <OpenAIIcon className={className} />
-      case "minimax":
-        return <MiniMaxIcon className={className} />
-      case "moonshot":
-        return <MoonshotIcon className={className} />
-      case "glm":
-        return <GLMIcon className={className} />
-    }
-  }
+  const [open, setOpen] = useState(false);
 
-  const models: ModelProvider[] = ["anthropic", "opus", "google", "googlePro", "openai", "minimax", "moonshot", "glm"]
+  const selected = MODELS.find((m) => m.key === selectedModel);
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={disabled}
-          className={cn(
-            "h-9 gap-2 rounded-xl px-3 text-zinc-400 hover:bg-white/10 hover:text-zinc-200 transition-colors border border-transparent hover:border-white/5",
-            triggerClassName
-          )}
-        >
-          {getIcon(selectedModel, "h-4 w-4")}
-          <span className="text-sm hidden sm:inline">{MODEL_DISPLAY_NAMES[selectedModel]}</span>
-          <ChevronDown className="h-3 w-3 opacity-50" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent 
-        align="start" 
-        className={cn(
-          "bg-[#18181B] border-zinc-800 shadow-xl",
-          showDescriptions ? "w-72" : "w-56",
-          className
-        )}
-      >
-        <DropdownMenuLabel className="text-xs text-zinc-500 font-normal px-2 py-1.5">
-          Select Model
-        </DropdownMenuLabel>
-        
-        {models.map((model) => (
-          <DropdownMenuItem
-            key={model}
-            onClick={() => onModelChange(model)}
+    <div className={className}>
+      <AIModelSelector open={open} onOpenChange={setOpen}>
+        <ModelSelectorTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={disabled}
             className={cn(
-              "relative text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer py-2.5 focus:bg-zinc-800 focus:text-zinc-100 pr-8",
-              selectedModel === model && "bg-zinc-800 text-zinc-100",
+              "h-8 gap-2 rounded-lg px-2.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors",
+              triggerClassName,
             )}
           >
-            <div className="flex items-start gap-3 w-full">
-              <div className="mt-0.5 shrink-0">
-                {getIcon(model, "h-5 w-5")}
-              </div>
-              <div className="flex-1 space-y-0.5">
-                <div className="font-medium text-sm leading-none flex items-center justify-between">
-                  {MODEL_DISPLAY_NAMES[model]}
-                </div>
-                {showDescriptions && (
-                  <div className="text-xs text-zinc-500 leading-snug">
-                    {MODEL_DESCRIPTIONS[model]}
-                  </div>
-                )}
-              </div>
-              {selectedModel === model && (
-                <div className="absolute right-2 top-2.5 text-emerald-500">
-                  <Check className="h-4 w-4" />
-                </div>
-              )}
-            </div>
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
+            {selected && (
+              <ModelSelectorLogo
+                provider={selected.provider as "anthropic"}
+                className="size-4"
+              />
+            )}
+            <span className="text-sm hidden sm:inline">
+              {MODEL_DISPLAY_NAMES[selectedModel]}
+            </span>
+            <ChevronDown size={14} className="opacity-50" />
+          </Button>
+        </ModelSelectorTrigger>
+        <ModelSelectorContent title="Choose Model">
+          <ModelSelectorInput placeholder="Search models..." />
+          <ModelSelectorList>
+            <ModelSelectorEmpty>No models found.</ModelSelectorEmpty>
+            <ModelSelectorGroup>
+              {MODELS.map((model) => {
+                const isSelected = selectedModel === model.key;
+                return (
+                  <ModelSelectorItem
+                    key={model.key}
+                    value={model.key}
+                    onSelect={() => {
+                      onModelChange(model.key);
+                      setOpen(false);
+                    }}
+                    className="flex items-center gap-3 py-2.5"
+                  >
+                    <ModelSelectorLogo
+                      provider={model.provider as "anthropic"}
+                      className="size-4"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <ModelSelectorName>
+                        {MODEL_DISPLAY_NAMES[model.key]}
+                      </ModelSelectorName>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {MODEL_DESCRIPTIONS[model.key]}
+                      </p>
+                    </div>
+                    {isSelected && (
+                      <Check className="size-4 text-primary shrink-0" />
+                    )}
+                  </ModelSelectorItem>
+                );
+              })}
+            </ModelSelectorGroup>
+          </ModelSelectorList>
+        </ModelSelectorContent>
+      </AIModelSelector>
+    </div>
+  );
 }

@@ -53,7 +53,7 @@ export function Header() {
   return (
     <header className="fixed top-0 left-0 right-0 z-50">
       {/* Gradient background with glassmorphism */}
-      <div className="absolute inset-0 bg-[#09090B]/90 backdrop-blur-xl border-b border-zinc-800/50" />
+      <div className="absolute inset-0 bg-[#111111]/90 backdrop-blur-xl border-b border-zinc-800/50" />
 
       {/* Subtle gradient accent on top */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent" />
@@ -188,7 +188,7 @@ export function Header() {
 
           {/* Mobile Nav Panel */}
           {mobileMenuOpen ? (
-            <div className="md:hidden border-t border-zinc-800 py-4 bg-[#09090B]">
+            <div className="md:hidden border-t border-zinc-800 py-4 bg-[#111111]">
               <div className="space-y-1">
                 {navLinks.map((link) => (
                   <a

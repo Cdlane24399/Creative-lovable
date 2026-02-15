@@ -9,7 +9,7 @@ const EditorLayout = dynamic(
   () => import("@/components/editor-layout").then((mod) => mod.EditorLayout),
   {
     ssr: false,
-    loading: () => <div className="min-h-screen bg-[#09090B]" />,
+    loading: () => <div className="min-h-screen bg-[#111111]" />,
   },
 )
 

@@ -20,7 +20,7 @@ const navigation = {
 
 export function Footer() {
   return (
-    <footer className="relative bg-[#09090B]">
+    <footer className="relative bg-[#111111]">
       {/* Gradient border on top */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
 

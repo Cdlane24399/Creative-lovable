@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, useState } from "react";
 import { Loader2, Wand2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -14,15 +14,23 @@ import {
   PromptInputSubmit,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { MODEL_DISPLAY_NAMES, type ModelProvider } from "@/lib/ai/agent";
 import { MiniMaxIcon, MoonshotIcon, GLMIcon } from "@/components/shared/icons";
+import {
+  ModelSelector as AIModelSelector,
+  ModelSelectorContent,
+  ModelSelectorTrigger,
+  ModelSelectorInput,
+  ModelSelectorList,
+  ModelSelectorEmpty,
+  ModelSelectorGroup,
+  ModelSelectorItem,
+  ModelSelectorLogo,
+  ModelSelectorName,
+} from "@/components/ai-elements/model-selector";
+import { MODEL_DESCRIPTIONS } from "@/lib/ai/agent";
+import { Check } from "lucide-react";
 import type { ChatStatus } from "ai";
 
 // Icons (reusing from existing chat-panel or definition here for portability)
@@ -114,6 +122,18 @@ const GoogleIcon = ({ className }: { className?: string }) => (
 
 export type PromptInputStatus = "idle" | "disabled" | "working" | "improving";
 
+const MODEL_ENTRIES: { key: ModelProvider; provider: string }[] = [
+  { key: "anthropic", provider: "anthropic" },
+  { key: "opus", provider: "anthropic" },
+  { key: "google", provider: "google" },
+  { key: "googlePro", provider: "google" },
+  { key: "openai", provider: "openai" },
+  { key: "haiku", provider: "anthropic" },
+  { key: "minimax", provider: "deepinfra" },
+  { key: "moonshot", provider: "moonshotai" },
+  { key: "glm", provider: "zai" },
+];
+
 interface PromptInputProps {
   inputValue: string;
   setInputValue: (value: string) => void;
@@ -140,6 +160,7 @@ export function PromptInput({
   inputRef,
 }: PromptInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
 
   // Merge refs
   React.useImperativeHandle(inputRef, () => textareaRef.current!);
@@ -233,8 +254,8 @@ export function PromptInput({
       <PromptInputFooter>
         <PromptInputTools>
           {/* Model Selector */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          <AIModelSelector open={modelPickerOpen} onOpenChange={setModelPickerOpen}>
+            <ModelSelectorTrigger asChild>
               <PromptInputButton
                 disabled={!isIdle}
                 size="sm"
@@ -242,29 +263,43 @@ export function PromptInput({
                 <ModelIcon model={selectedModel} className="h-3.5 w-3.5" />
                 <span>{MODEL_DISPLAY_NAMES[selectedModel]}</span>
               </PromptInputButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="w-[200px] bg-[#1A1A1A] border-zinc-800 p-1"
-            >
-              {Object.entries(MODEL_DISPLAY_NAMES).map(([key, name]) => (
-                <DropdownMenuItem
-                  key={key}
-                  onClick={() => setSelectedModel(key as ModelProvider)}
-                  className={cn(
-                    "flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-400 rounded-sm cursor-pointer hover:bg-zinc-800 hover:text-zinc-100",
-                    selectedModel === key && "bg-zinc-800 text-zinc-100",
-                  )}
-                >
-                  <ModelIcon
-                    model={key as ModelProvider}
-                    className="h-3.5 w-3.5"
-                  />
-                  {name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            </ModelSelectorTrigger>
+            <ModelSelectorContent title="Choose Model">
+              <ModelSelectorInput placeholder="Search models..." />
+              <ModelSelectorList>
+                <ModelSelectorEmpty>No models found.</ModelSelectorEmpty>
+                <ModelSelectorGroup>
+                  {MODEL_ENTRIES.map((m) => (
+                    <ModelSelectorItem
+                      key={m.key}
+                      value={m.key}
+                      onSelect={() => {
+                        setSelectedModel(m.key);
+                        setModelPickerOpen(false);
+                      }}
+                      className="flex items-center gap-3 py-2.5"
+                    >
+                      <ModelSelectorLogo
+                        provider={m.provider as "anthropic"}
+                        className="size-4"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <ModelSelectorName>
+                          {MODEL_DISPLAY_NAMES[m.key]}
+                        </ModelSelectorName>
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                          {MODEL_DESCRIPTIONS[m.key]}
+                        </p>
+                      </div>
+                      {selectedModel === m.key && (
+                        <Check className="size-4 text-primary shrink-0" />
+                      )}
+                    </ModelSelectorItem>
+                  ))}
+                </ModelSelectorGroup>
+              </ModelSelectorList>
+            </ModelSelectorContent>
+          </AIModelSelector>
 
           {/* Improve Prompt - only visible when there's text */}
           {inputValue.trim() && (
