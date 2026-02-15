@@ -9,9 +9,7 @@ const navigation = {
     { name: "Features", href: "#features" },
     { name: "Pricing", href: "#pricing" },
   ],
-  resources: [
-    { name: "How it Works", href: "#how-it-works" },
-  ],
+  resources: [{ name: "How it Works", href: "#how-it-works" }],
   legal: [
     { name: "Privacy", href: "/privacy" },
     { name: "Terms", href: "/terms" },

@@ -6,5 +6,5 @@ export default function Loading() {
         <p className="text-sm text-zinc-500">Loading...</p>
       </div>
     </div>
-  )
+  );
 }

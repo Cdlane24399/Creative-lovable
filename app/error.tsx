@@ -1,17 +1,17 @@
-"use client"
+"use client";
 
-import { useEffect } from "react"
+import { useEffect } from "react";
 
 export default function Error({
   error,
   reset,
 }: {
-  error: Error & { digest?: string }
-  reset: () => void
+  error: Error & { digest?: string };
+  reset: () => void;
 }) {
   useEffect(() => {
-    console.error("App error boundary caught:", error)
-  }, [error])
+    console.error("App error boundary caught:", error);
+  }, [error]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4 bg-[#111111]">
@@ -35,5 +35,5 @@ export default function Error({
         </button>
       </div>
     </div>
-  )
+  );
 }

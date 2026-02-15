@@ -1,14 +1,15 @@
-"use client"
+"use client";
 
-import { motion } from "framer-motion"
-import { MessageSquare, Cpu, Eye, Repeat } from "lucide-react"
+import { motion } from "framer-motion";
+import { MessageSquare, Cpu, Eye, Repeat } from "lucide-react";
 
 const steps = [
   {
     number: "01",
     icon: MessageSquare,
     title: "Describe Your Vision",
-    description: "Tell the AI what you want to build using natural language. Be as detailed or simple as you want - the AI understands context.",
+    description:
+      "Tell the AI what you want to build using natural language. Be as detailed or simple as you want - the AI understands context.",
     visual: (
       <div className="bg-[#18181B] rounded-xl p-4 border border-zinc-800">
         <div className="flex items-start gap-3">
@@ -28,14 +29,17 @@ const steps = [
     number: "02",
     icon: Cpu,
     title: "AI Generates Code",
-    description: "Advanced AI models analyze your request and generate production-quality Next.js code with proper structure, styling, and best practices.",
+    description:
+      "Advanced AI models analyze your request and generate production-quality Next.js code with proper structure, styling, and best practices.",
     visual: (
       <div className="bg-[#18181B] rounded-xl p-4 border border-zinc-800 font-mono text-xs shadow-sm">
         <div className="space-y-1.5">
           <div className="text-emerald-500">{"// page.tsx"}</div>
-          <div className="text-zinc-500">{"export default function Page() {"}</div>
+          <div className="text-zinc-500">
+            {"export default function Page() {"}
+          </div>
           <div className="text-zinc-500 pl-4">{"return ("}</div>
-          <div className="text-cyan-500 pl-8">{"<main className=\"...\">"}</div>
+          <div className="text-cyan-500 pl-8">{'<main className="...">'}</div>
           <div className="text-amber-500 pl-12 animate-pulse">{"..."}</div>
           <div className="text-cyan-500 pl-8">{"</main>"}</div>
           <div className="text-zinc-500 pl-4">{")"}</div>
@@ -48,7 +52,8 @@ const steps = [
     number: "03",
     icon: Eye,
     title: "Live Preview Ready",
-    description: "Your application spins up instantly in an E2B sandbox. Get a shareable HTTPS URL within seconds to preview and share your creation.",
+    description:
+      "Your application spins up instantly in an E2B sandbox. Get a shareable HTTPS URL within seconds to preview and share your creation.",
     visual: (
       <div className="bg-[#18181B] rounded-xl overflow-hidden border border-zinc-800 shadow-sm">
         <div className="bg-zinc-800/50 px-3 py-2 border-b border-zinc-800 flex items-center gap-2">
@@ -74,7 +79,8 @@ const steps = [
     number: "04",
     icon: Repeat,
     title: "Iterate & Refine",
-    description: "Ask for changes in plain English. Add features, tweak styling, fix bugs - the AI understands context and maintains your project state.",
+    description:
+      "Ask for changes in plain English. Add features, tweak styling, fix bugs - the AI understands context and maintains your project state.",
     visual: (
       <div className="space-y-2">
         <div className="bg-[#18181B] rounded-xl p-3 border border-zinc-800 text-xs text-zinc-400">
@@ -82,7 +88,10 @@ const steps = [
         </div>
         <div className="flex items-center justify-center">
           <div className="w-6 h-6 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
-            <Repeat className="w-3 h-3 text-emerald-500 animate-spin" style={{ animationDuration: '3s' }} />
+            <Repeat
+              className="w-3 h-3 text-emerald-500 animate-spin"
+              style={{ animationDuration: "3s" }}
+            />
           </div>
         </div>
         <div className="bg-emerald-500/5 rounded-xl p-3 border border-emerald-500/20 text-xs text-emerald-500 font-medium">
@@ -91,7 +100,7 @@ const steps = [
       </div>
     ),
   },
-]
+];
 
 export function HowItWorksSection() {
   return (
@@ -99,15 +108,17 @@ export function HowItWorksSection() {
       {/* Gradient accent */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-zinc-800 to-transparent" />
       <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-zinc-800 to-transparent" />
-      
+
       {/* Subtle background pattern */}
-      <div className="absolute inset-0 opacity-[0.015] pointer-events-none" 
-        style={{ 
-          backgroundImage: 'radial-gradient(circle at 1px 1px, #fff 1px, transparent 0)', 
-          backgroundSize: '40px 40px' 
-        }} 
+      <div
+        className="absolute inset-0 opacity-[0.015] pointer-events-none"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 1px 1px, #fff 1px, transparent 0)",
+          backgroundSize: "40px 40px",
+        }}
       />
-      
+
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="text-center mb-16">
@@ -123,10 +134,13 @@ export function HowItWorksSection() {
             </span>
             <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
               From idea to{" "}
-              <span className="bg-gradient-to-r from-violet-400 to-purple-400 bg-clip-text text-transparent">deployment</span>
+              <span className="bg-gradient-to-r from-violet-400 to-purple-400 bg-clip-text text-transparent">
+                deployment
+              </span>
             </h2>
             <p className="text-lg text-zinc-400 max-w-2xl mx-auto font-light">
-              Four simple steps to transform your concepts into working web applications.
+              Four simple steps to transform your concepts into working web
+              applications.
             </p>
           </motion.div>
         </div>
@@ -150,7 +164,9 @@ export function HowItWorksSection() {
                       <step.icon className="w-6 h-6 text-zinc-400 group-hover:text-emerald-400 transition-colors duration-300" />
                     </div>
                     <div className="absolute -top-2 -right-2 w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/25">
-                      <span className="text-[10px] font-bold text-white">{step.number}</span>
+                      <span className="text-[10px] font-bold text-white">
+                        {step.number}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -174,5 +190,5 @@ export function HowItWorksSection() {
         </div>
       </div>
     </section>
-  )
+  );
 }

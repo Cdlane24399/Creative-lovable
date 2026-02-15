@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import { motion } from "framer-motion"
+import { motion } from "framer-motion";
 import {
   Zap,
   Code2,
@@ -13,59 +13,65 @@ import {
   Palette,
   GitBranch,
   Box,
-  Cpu
-} from "lucide-react"
+  Cpu,
+} from "lucide-react";
 
 const features = [
   {
     icon: Zap,
     title: "Lightning Fast",
-    description: "Go from idea to working website in under 30 seconds. Our optimized E2B sandbox environment starts instantly.",
+    description:
+      "Go from idea to working website in under 30 seconds. Our optimized E2B sandbox environment starts instantly.",
     color: "text-amber-500",
     bgColor: "bg-amber-500/10",
-    borderColor: "border-amber-500/20"
+    borderColor: "border-amber-500/20",
   },
   {
     icon: Code2,
     title: "Production-Ready Code",
-    description: "Generated code follows best practices with TypeScript, React 19, and modern Next.js 15 patterns.",
+    description:
+      "Generated code follows best practices with TypeScript, React 19, and modern Next.js 15 patterns.",
     color: "text-emerald-500",
     bgColor: "bg-emerald-500/10",
-    borderColor: "border-emerald-500/20"
+    borderColor: "border-emerald-500/20",
   },
   {
     icon: Layers,
     title: "Full Stack Ready",
-    description: "Build complete applications with database integration, authentication, and API routes included.",
+    description:
+      "Build complete applications with database integration, authentication, and API routes included.",
     color: "text-violet-500",
     bgColor: "bg-violet-500/10",
-    borderColor: "border-violet-500/20"
+    borderColor: "border-violet-500/20",
   },
   {
     icon: RefreshCw,
     title: "Iterative Development",
-    description: "Refine your creation with natural language. Ask for changes and watch them happen in real-time.",
+    description:
+      "Refine your creation with natural language. Ask for changes and watch them happen in real-time.",
     color: "text-cyan-500",
     bgColor: "bg-cyan-500/10",
-    borderColor: "border-cyan-500/20"
+    borderColor: "border-cyan-500/20",
   },
   {
     icon: Palette,
     title: "Beautiful UI Components",
-    description: "Access 40+ pre-built shadcn/ui components. Build stunning interfaces without writing CSS.",
+    description:
+      "Access 40+ pre-built shadcn/ui components. Build stunning interfaces without writing CSS.",
     color: "text-pink-500",
     bgColor: "bg-pink-500/10",
-    borderColor: "border-pink-500/20"
+    borderColor: "border-pink-500/20",
   },
   {
     icon: Globe,
     title: "Instant Preview",
-    description: "Every generation includes a live HTTPS preview URL you can share with anyone, anywhere.",
+    description:
+      "Every generation includes a live HTTPS preview URL you can share with anyone, anywhere.",
     color: "text-teal-500",
     bgColor: "bg-teal-500/10",
-    borderColor: "border-teal-500/20"
+    borderColor: "border-teal-500/20",
   },
-]
+];
 
 const techStack = [
   { icon: Box, label: "Next.js 15" },
@@ -74,14 +80,14 @@ const techStack = [
   { icon: Palette, label: "Tailwind CSS" },
   { icon: GitBranch, label: "shadcn/ui" },
   { icon: Cpu, label: "E2B Sandbox" },
-]
+];
 
 export function FeaturesSection() {
   return (
     <section className="relative py-24 sm:py-32 bg-[#111111]">
       {/* Subtle gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/[0.02] to-transparent pointer-events-none" />
-      
+
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="text-center mb-16">
@@ -97,10 +103,13 @@ export function FeaturesSection() {
             </span>
             <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
               Everything you need to{" "}
-              <span className="bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">build</span>
+              <span className="bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+                build
+              </span>
             </h2>
             <p className="text-lg text-zinc-400 max-w-2xl mx-auto font-light">
-              Powered by cutting-edge AI and cloud sandbox technology to transform your ideas into reality.
+              Powered by cutting-edge AI and cloud sandbox technology to
+              transform your ideas into reality.
             </p>
           </motion.div>
         </div>
@@ -117,11 +126,15 @@ export function FeaturesSection() {
               className="group relative"
             >
               {/* Card glow effect on hover */}
-              <div className={`absolute -inset-0.5 bg-gradient-to-r ${feature.bgColor} rounded-xl blur opacity-0 group-hover:opacity-30 transition-opacity duration-500`} />
-              
+              <div
+                className={`absolute -inset-0.5 bg-gradient-to-r ${feature.bgColor} rounded-xl blur opacity-0 group-hover:opacity-30 transition-opacity duration-500`}
+              />
+
               <div className="relative h-full bg-zinc-900/50 backdrop-blur-sm rounded-xl p-6 border border-zinc-800/50 hover:border-zinc-700/50 transition-all duration-300 hover:shadow-xl hover:shadow-black/20 hover:-translate-y-1">
                 {/* Icon */}
-                <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl ${feature.bgColor} ${feature.borderColor} border mb-4 group-hover:scale-110 transition-transform duration-300 shadow-lg`}>
+                <div
+                  className={`inline-flex items-center justify-center w-12 h-12 rounded-xl ${feature.bgColor} ${feature.borderColor} border mb-4 group-hover:scale-110 transition-transform duration-300 shadow-lg`}
+                >
                   <feature.icon className={`w-6 h-6 ${feature.color}`} />
                 </div>
 
@@ -146,7 +159,9 @@ export function FeaturesSection() {
           className="mt-20"
         >
           <div className="text-center mb-8">
-            <p className="text-sm text-zinc-500 uppercase tracking-wider font-medium">Built with modern technology</p>
+            <p className="text-sm text-zinc-500 uppercase tracking-wider font-medium">
+              Built with modern technology
+            </p>
           </div>
           <div className="flex flex-wrap justify-center gap-4">
             {techStack.map((tech, index) => (
@@ -167,5 +182,5 @@ export function FeaturesSection() {
         </motion.div>
       </div>
     </section>
-  )
+  );
 }

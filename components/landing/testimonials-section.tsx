@@ -1,11 +1,12 @@
-"use client"
+"use client";
 
-import { motion } from "framer-motion"
-import { Star, Quote } from "lucide-react"
+import { motion } from "framer-motion";
+import { Star, Quote } from "lucide-react";
 
 const testimonials = [
   {
-    quote: "I built a complete SaaS landing page in under a minute. The code quality is exceptional - clean TypeScript, proper component structure, and beautiful Tailwind styling.",
+    quote:
+      "I built a complete SaaS landing page in under a minute. The code quality is exceptional - clean TypeScript, proper component structure, and beautiful Tailwind styling.",
     author: "Sarah Chen",
     role: "Indie Developer",
     avatar: "SC",
@@ -13,7 +14,8 @@ const testimonials = [
     gradient: "from-violet-500 to-purple-500",
   },
   {
-    quote: "The iterative workflow is incredible. I described changes in plain English and watched them happen in real-time. It feels like pair programming with a senior developer.",
+    quote:
+      "The iterative workflow is incredible. I described changes in plain English and watched them happen in real-time. It feels like pair programming with a senior developer.",
     author: "Marcus Johnson",
     role: "Startup Founder",
     avatar: "MJ",
@@ -21,7 +23,8 @@ const testimonials = [
     gradient: "from-emerald-500 to-teal-500",
   },
   {
-    quote: "Went from Figma mockup to working prototype in 10 minutes. The live preview feature with shareable URLs saved us hours of deployment setup.",
+    quote:
+      "Went from Figma mockup to working prototype in 10 minutes. The live preview feature with shareable URLs saved us hours of deployment setup.",
     author: "Emma Rodriguez",
     role: "Product Designer",
     avatar: "ER",
@@ -29,7 +32,8 @@ const testimonials = [
     gradient: "from-amber-500 to-orange-500",
   },
   {
-    quote: "The AI understands context perfectly. I asked it to 'make the pricing section more premium' and it added elegant gradients, better spacing, and refined typography.",
+    quote:
+      "The AI understands context perfectly. I asked it to 'make the pricing section more premium' and it added elegant gradients, better spacing, and refined typography.",
     author: "David Kim",
     role: "Frontend Engineer",
     avatar: "DK",
@@ -37,7 +41,8 @@ const testimonials = [
     gradient: "from-cyan-500 to-blue-500",
   },
   {
-    quote: "Best tool I've used for rapid prototyping. The shadcn/ui integration means I get production-ready components out of the box. Game changer.",
+    quote:
+      "Best tool I've used for rapid prototyping. The shadcn/ui integration means I get production-ready components out of the box. Game changer.",
     author: "Lisa Park",
     role: "Tech Lead",
     avatar: "LP",
@@ -45,27 +50,30 @@ const testimonials = [
     gradient: "from-pink-500 to-rose-500",
   },
   {
-    quote: "Error recovery is magical. When my build failed, the AI automatically detected the issue, fixed it, and verified the solution. Zero manual debugging needed.",
+    quote:
+      "Error recovery is magical. When my build failed, the AI automatically detected the issue, fixed it, and verified the solution. Zero manual debugging needed.",
     author: "Alex Turner",
     role: "Full Stack Developer",
     avatar: "AT",
     rating: 5,
     gradient: "from-teal-500 to-cyan-500",
   },
-]
+];
 
 export function TestimonialsSection() {
   return (
     <section className="relative py-24 sm:py-32 overflow-hidden bg-[#111111]">
       {/* Subtle background gradient */}
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-amber-500/[0.02] to-transparent pointer-events-none" />
-      
+
       {/* Subtle background pattern */}
-      <div className="absolute inset-0 opacity-[0.015] pointer-events-none" 
-        style={{ 
-          backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', 
-          backgroundSize: '60px 60px' 
-        }} 
+      <div
+        className="absolute inset-0 opacity-[0.015] pointer-events-none"
+        style={{
+          backgroundImage:
+            "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)",
+          backgroundSize: "60px 60px",
+        }}
       />
 
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -83,10 +91,13 @@ export function TestimonialsSection() {
             </span>
             <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
               Loved by{" "}
-              <span className="bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">developers</span>
+              <span className="bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">
+                developers
+              </span>
             </h2>
             <p className="text-lg text-zinc-400 max-w-2xl mx-auto font-light">
-              Join thousands of developers who are building faster with AI-powered web development.
+              Join thousands of developers who are building faster with
+              AI-powered web development.
             </p>
           </motion.div>
         </div>
@@ -103,8 +114,10 @@ export function TestimonialsSection() {
               className="group"
             >
               {/* Card glow on hover */}
-              <div className={`absolute -inset-0.5 bg-gradient-to-r ${testimonial.gradient} rounded-xl blur opacity-0 group-hover:opacity-20 transition-opacity duration-500`} />
-              
+              <div
+                className={`absolute -inset-0.5 bg-gradient-to-r ${testimonial.gradient} rounded-xl blur opacity-0 group-hover:opacity-20 transition-opacity duration-500`}
+              />
+
               <div className="relative h-full bg-zinc-900/50 backdrop-blur-sm rounded-xl p-6 border border-zinc-800/50 hover:border-zinc-700/50 transition-all duration-300 hover:shadow-xl hover:shadow-black/20 hover:-translate-y-1">
                 {/* Quote icon */}
                 <div className="absolute top-4 right-4 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -114,7 +127,10 @@ export function TestimonialsSection() {
                 {/* Rating */}
                 <div className="flex gap-1 mb-4">
                   {[...Array(testimonial.rating)].map((_, i) => (
-                    <Star key={i} className="w-4 h-4 text-amber-400 fill-amber-400 drop-shadow-sm" />
+                    <Star
+                      key={i}
+                      className="w-4 h-4 text-amber-400 fill-amber-400 drop-shadow-sm"
+                    />
                   ))}
                 </div>
 
@@ -125,11 +141,17 @@ export function TestimonialsSection() {
 
                 {/* Author */}
                 <div className="flex items-center gap-3">
-                  <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${testimonial.gradient} flex items-center justify-center shadow-lg`}>
-                    <span className="text-xs font-bold text-white">{testimonial.avatar}</span>
+                  <div
+                    className={`w-11 h-11 rounded-xl bg-gradient-to-br ${testimonial.gradient} flex items-center justify-center shadow-lg`}
+                  >
+                    <span className="text-xs font-bold text-white">
+                      {testimonial.avatar}
+                    </span>
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-white">{testimonial.author}</p>
+                    <p className="text-sm font-medium text-white">
+                      {testimonial.author}
+                    </p>
                     <p className="text-xs text-zinc-500">{testimonial.role}</p>
                   </div>
                 </div>
@@ -147,13 +169,29 @@ export function TestimonialsSection() {
           className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-6"
         >
           {[
-            { value: "10K+", label: "Developers", gradientClass: "from-emerald-400 to-emerald-300" },
-            { value: "50K+", label: "Projects Built", gradientClass: "from-violet-400 to-violet-300" },
-            { value: "<30s", label: "Average Build Time", gradientClass: "from-amber-400 to-amber-300" },
-            { value: "4.9/5", label: "User Rating", gradientClass: "from-cyan-400 to-cyan-300" },
+            {
+              value: "10K+",
+              label: "Developers",
+              gradientClass: "from-emerald-400 to-emerald-300",
+            },
+            {
+              value: "50K+",
+              label: "Projects Built",
+              gradientClass: "from-violet-400 to-violet-300",
+            },
+            {
+              value: "<30s",
+              label: "Average Build Time",
+              gradientClass: "from-amber-400 to-amber-300",
+            },
+            {
+              value: "4.9/5",
+              label: "User Rating",
+              gradientClass: "from-cyan-400 to-cyan-300",
+            },
           ].map((stat, index) => (
-            <motion.div 
-              key={stat.label} 
+            <motion.div
+              key={stat.label}
               initial={{ opacity: 0, scale: 0.95 }}
               whileInView={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.3, delay: index * 0.1 }}
@@ -161,12 +199,16 @@ export function TestimonialsSection() {
               whileHover={{ scale: 1.05, y: -4 }}
               className="text-center p-6 rounded-xl bg-zinc-900/50 backdrop-blur-sm border border-zinc-800/50 hover:border-zinc-700/50 transition-all shadow-lg shadow-black/10"
             >
-              <div className={`text-3xl sm:text-4xl font-bold bg-gradient-to-r ${stat.gradientClass} bg-clip-text text-transparent mb-1`}>{stat.value}</div>
+              <div
+                className={`text-3xl sm:text-4xl font-bold bg-gradient-to-r ${stat.gradientClass} bg-clip-text text-transparent mb-1`}
+              >
+                {stat.value}
+              </div>
               <div className="text-sm text-zinc-500">{stat.label}</div>
             </motion.div>
           ))}
         </motion.div>
       </div>
     </section>
-  )
+  );
 }

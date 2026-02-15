@@ -1,132 +1,180 @@
-import { NextRequest, NextResponse } from "next/server"
-import { withAuth } from "@/lib/auth"
-import { asyncErrorHandler, ValidationError } from "@/lib/errors"
-import { checkChatRateLimit } from "@/lib/rate-limit"
+import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/auth";
+import { asyncErrorHandler, ValidationError } from "@/lib/errors";
+import { checkChatRateLimit } from "@/lib/rate-limit";
 import {
   captureSandboxScreenshot,
   getHostUrl,
   getSandbox,
-} from "@/lib/e2b/sandbox"
+} from "@/lib/e2b/sandbox";
 
-export const maxDuration = 60
+export const maxDuration = 60;
 
 /**
  * POST /api/screenshot
  * Capture a screenshot of a URL using E2B Desktop SDK's native screenshot capability.
  * Falls back to SVG placeholder if screenshot fails.
  */
-export const POST = withAuth(asyncErrorHandler(async (req: NextRequest) => {
-    const rateLimit = await checkChatRateLimit(req)
+export const POST = withAuth(
+  asyncErrorHandler(async (req: NextRequest) => {
+    const rateLimit = await checkChatRateLimit(req);
     if (!rateLimit.allowed) {
-      const retryAfter = Math.ceil((rateLimit.resetTime - Date.now()) / 1000)
+      const retryAfter = Math.ceil((rateLimit.resetTime - Date.now()) / 1000);
       return NextResponse.json(
         { error: "Rate limit exceeded", retryAfter },
-        { status: 429, headers: { "Retry-After": retryAfter.toString() } }
-      )
+        { status: 429, headers: { "Retry-After": retryAfter.toString() } },
+      );
     }
 
-    const { url, projectName, projectId, width = 1280, height = 800 } = await req.json()
+    const {
+      url,
+      projectName,
+      projectId,
+      width = 1280,
+      height = 800,
+    } = await req.json();
 
     if (!url || typeof url !== "string") {
-      throw new ValidationError("URL is required", { url: ["A valid URL string is required"] })
+      throw new ValidationError("URL is required", {
+        url: ["A valid URL string is required"],
+      });
     }
 
     // Try to capture screenshot using E2B if projectId is provided
     if (projectId) {
       try {
-        let captureUrl: string | null = null
+        let captureUrl: string | null = null;
 
         // Fragments-style source of truth: derive preview URL from the live sandbox host.
         // Only use currently active/reconnectable sandboxes; do not create a new sandbox
         // just to capture screenshots.
         try {
-          const sandbox = await getSandbox(projectId)
+          const sandbox = await getSandbox(projectId);
           if (sandbox) {
-            const requestedPort = inferPreviewPort(url)
-            const resolvedUrl = getHostUrl(sandbox, requestedPort)
-            captureUrl = resolvedUrl
+            const requestedPort = inferPreviewPort(url);
+            const resolvedUrl = getHostUrl(sandbox, requestedPort);
+            captureUrl = resolvedUrl;
             if (resolvedUrl !== url) {
-              console.log(`[Screenshot] Canonicalized preview URL from ${url} to ${captureUrl}`)
+              console.log(
+                `[Screenshot] Canonicalized preview URL from ${url} to ${captureUrl}`,
+              );
             }
           } else {
-            console.warn("[Screenshot] No active sandbox found, skipping sandbox capture path")
+            console.warn(
+              "[Screenshot] No active sandbox found, skipping sandbox capture path",
+            );
           }
         } catch (urlResolveError) {
-          console.warn("[Screenshot] Failed to canonicalize preview URL, skipping direct capture:", urlResolveError)
+          console.warn(
+            "[Screenshot] Failed to canonicalize preview URL, skipping direct capture:",
+            urlResolveError,
+          );
         }
 
         if (!captureUrl) {
           if (isSafeSandboxPreviewUrl(url)) {
-            const hostScreenshot = await captureViaHostPlaywright(url, width, height)
+            const hostScreenshot = await captureViaHostPlaywright(
+              url,
+              width,
+              height,
+            );
             if (hostScreenshot) {
-              console.log("[Screenshot] Captured via host Playwright fallback (safe direct URL)")
+              console.log(
+                "[Screenshot] Captured via host Playwright fallback (safe direct URL)",
+              );
               return NextResponse.json({
                 screenshot_base64: hostScreenshot,
                 source: "host-playwright-direct",
-              })
+              });
             }
           }
-          console.warn("[Screenshot] No canonical sandbox URL available, falling back to placeholder")
+          console.warn(
+            "[Screenshot] No canonical sandbox URL available, falling back to placeholder",
+          );
         } else {
-          console.log(`[Screenshot] Capturing via E2B for project ${projectId}:`, captureUrl)
+          console.log(
+            `[Screenshot] Capturing via E2B for project ${projectId}:`,
+            captureUrl,
+          );
 
           const screenshot = await captureSandboxScreenshot(projectId, {
             sandboxUrl: captureUrl,
             width,
             height,
             waitForLoad: 3000, // Increased wait time for better reliability
-          })
+          });
 
           if (screenshot) {
             // Validate the screenshot data
-            if (screenshot.startsWith('data:image/png;base64,')) {
-              const base64Data = screenshot.split(',')[1]
-              const sizeEstimate = (base64Data.length * 3) / 4 // Rough estimate of decoded size
+            if (screenshot.startsWith("data:image/png;base64,")) {
+              const base64Data = screenshot.split(",")[1];
+              const sizeEstimate = (base64Data.length * 3) / 4; // Rough estimate of decoded size
 
               if (sizeEstimate < 100) {
-                console.warn("[Screenshot] Screenshot data too small, using placeholder")
+                console.warn(
+                  "[Screenshot] Screenshot data too small, using placeholder",
+                );
               } else {
-                console.log(`[Screenshot] Successfully captured screenshot (approx ${Math.round(sizeEstimate)} bytes)`)
+                console.log(
+                  `[Screenshot] Successfully captured screenshot (approx ${Math.round(sizeEstimate)} bytes)`,
+                );
                 return NextResponse.json({
                   screenshot_base64: screenshot,
                   source: "e2b",
-                })
+                });
               }
             } else {
-              console.warn("[Screenshot] Invalid screenshot format, expected PNG base64")
+              console.warn(
+                "[Screenshot] Invalid screenshot format, expected PNG base64",
+              );
             }
           } else {
-            console.warn("[Screenshot] E2B returned null, falling back to placeholder")
+            console.warn(
+              "[Screenshot] E2B returned null, falling back to placeholder",
+            );
           }
 
           // Fallback path: capture from API host using Playwright.
           // Only permitted for canonical sandbox URLs to avoid user-controlled host access.
-          const hostScreenshot = await captureViaHostPlaywright(captureUrl, width, height)
+          const hostScreenshot = await captureViaHostPlaywright(
+            captureUrl,
+            width,
+            height,
+          );
           if (hostScreenshot) {
-            console.log("[Screenshot] Captured via host Playwright fallback")
+            console.log("[Screenshot] Captured via host Playwright fallback");
             return NextResponse.json({
               screenshot_base64: hostScreenshot,
               source: "host-playwright",
-            })
+            });
           }
         }
       } catch (e2bError) {
-        console.warn("[Screenshot] E2B screenshot failed, falling back to placeholder:", e2bError)
+        console.warn(
+          "[Screenshot] E2B screenshot failed, falling back to placeholder:",
+          e2bError,
+        );
       }
     } else {
-      console.log("[Screenshot] No projectId provided, using placeholder")
+      console.log("[Screenshot] No projectId provided, using placeholder");
     }
 
     // Fall back to SVG placeholder
-    console.log("[Screenshot] Generating placeholder for:", projectName)
-    const svg = generateWebsitePreviewSVG(projectName || "Project Preview", url, width, height)
-    const base64 = Buffer.from(svg).toString("base64")
+    console.log("[Screenshot] Generating placeholder for:", projectName);
+    const svg = generateWebsitePreviewSVG(
+      projectName || "Project Preview",
+      url,
+      width,
+      height,
+    );
+    const base64 = Buffer.from(svg).toString("base64");
 
     return NextResponse.json({
       screenshot_base64: `data:image/svg+xml;base64,${base64}`,
       source: "placeholder",
-    })
-}))
+    });
+  }),
+);
 
 /**
  * Generates an SVG that looks like a website preview.
@@ -136,11 +184,12 @@ function generateWebsitePreviewSVG(
   projectName: string,
   _url: string,
   width: number,
-  height: number
+  height: number,
 ): string {
-  const truncatedName = projectName.length > 30
-    ? projectName.substring(0, 27) + "..."
-    : projectName
+  const truncatedName =
+    projectName.length > 30
+      ? projectName.substring(0, 27) + "..."
+      : projectName;
 
   // Extract a color from the project name for variety
   const colors = [
@@ -151,9 +200,11 @@ function generateWebsitePreviewSVG(
     { primary: "#EF4444", secondary: "#DC2626" }, // red
     { primary: "#EC4899", secondary: "#DB2777" }, // pink
     { primary: "#06B6D4", secondary: "#0891B2" }, // cyan
-  ]
-  const colorIndex = projectName.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length
-  const color = colors[colorIndex]
+  ];
+  const colorIndex =
+    projectName.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0) %
+    colors.length;
+  const color = colors[colorIndex];
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
     <defs>
@@ -197,7 +248,7 @@ function generateWebsitePreviewSVG(
     <!-- Cards simulation -->
     <rect x="100" y="250" width="${(width - 280) / 3}" height="100" rx="8" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.05)"/>
     <rect x="${120 + (width - 280) / 3}" y="250" width="${(width - 280) / 3}" height="100" rx="8" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.05)"/>
-    <rect x="${140 + 2 * (width - 280) / 3}" y="250" width="${(width - 280) / 3}" height="100" rx="8" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.05)"/>
+    <rect x="${140 + (2 * (width - 280)) / 3}" y="250" width="${(width - 280) / 3}" height="100" rx="8" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.05)"/>
 
     <!-- Project name overlay -->
     <rect x="${width / 2 - 150}" y="${height - 90}" width="300" height="50" rx="8" fill="rgba(0,0,0,0.7)"/>
@@ -206,36 +257,36 @@ function generateWebsitePreviewSVG(
     <!-- E2B badge -->
     <rect x="${width - 130}" y="${height - 80}" width="70" height="24" rx="4" fill="url(#accent)" opacity="0.9"/>
     <text x="${width - 95}" y="${height - 63}" font-family="system-ui, sans-serif" font-size="11" font-weight="500" fill="white" text-anchor="middle">Live</text>
-  </svg>`
+  </svg>`;
 }
 
 function inferPreviewPort(rawUrl: string): number {
   try {
-    const parsed = new URL(rawUrl)
+    const parsed = new URL(rawUrl);
     if (parsed.port) {
-      const value = parseInt(parsed.port, 10)
-      if (!Number.isNaN(value) && value > 0) return value
+      const value = parseInt(parsed.port, 10);
+      if (!Number.isNaN(value) && value > 0) return value;
     }
 
-    const hostPrefix = parsed.hostname.match(/^(\d{2,5})-/)
+    const hostPrefix = parsed.hostname.match(/^(\d{2,5})-/);
     if (hostPrefix?.[1]) {
-      const value = parseInt(hostPrefix[1], 10)
-      if (!Number.isNaN(value) && value > 0) return value
+      const value = parseInt(hostPrefix[1], 10);
+      if (!Number.isNaN(value) && value > 0) return value;
     }
   } catch {
     // Ignore and use default below.
   }
 
-  return 3000
+  return 3000;
 }
 
 function isSafeSandboxPreviewUrl(rawUrl: string): boolean {
   try {
-    const parsed = new URL(rawUrl)
-    if (parsed.protocol !== "https:") return false
-    return /^[0-9]{2,5}-[a-z0-9-]+\.e2b\.app$/i.test(parsed.hostname)
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "https:") return false;
+    return /^[0-9]{2,5}-[a-z0-9-]+\.e2b\.app$/i.test(parsed.hostname);
   } catch {
-    return false
+    return false;
   }
 }
 
@@ -245,48 +296,48 @@ async function captureViaHostPlaywright(
   height: number,
 ): Promise<string | null> {
   try {
-    const { chromium } = await import("@playwright/test")
+    const { chromium } = await import("@playwright/test");
 
     // Try system Chrome channel first (no bundled browser download needed),
     // then fallback to default Chromium if available.
     const launchOptions: Array<{ channel?: "chrome"; headless: boolean }> = [
       { channel: "chrome", headless: true },
       { headless: true },
-    ]
+    ];
 
     for (const options of launchOptions) {
       try {
-        const browser = await chromium.launch(options)
+        const browser = await chromium.launch(options);
         try {
           const page = await browser.newPage({
             viewport: { width, height },
-          })
+          });
           await page.goto(targetUrl, {
             waitUntil: "domcontentloaded",
             timeout: 30000,
-          })
+          });
           try {
-            await page.waitForLoadState("networkidle", { timeout: 10000 })
+            await page.waitForLoadState("networkidle", { timeout: 10000 });
           } catch {
             // Ignore networkidle timeout on pages with persistent connections.
           }
           const imageBuffer = await page.screenshot({
             type: "png",
             fullPage: false,
-          })
-          return `data:image/png;base64,${imageBuffer.toString("base64")}`
+          });
+          return `data:image/png;base64,${imageBuffer.toString("base64")}`;
         } finally {
-          await browser.close().catch(() => {})
+          await browser.close().catch(() => {});
         }
       } catch {
-        continue
+        continue;
       }
     }
   } catch (error) {
-    console.warn("[Screenshot] Host Playwright fallback unavailable:", error)
+    console.warn("[Screenshot] Host Playwright fallback unavailable:", error);
   }
 
-  return null
+  return null;
 }
 
 function escapeXml(text: string): string {
@@ -295,5 +346,5 @@ function escapeXml(text: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;")
+    .replace(/'/g, "&apos;");
 }

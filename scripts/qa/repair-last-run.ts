@@ -36,7 +36,9 @@ function parseParts(parts: unknown): Array<Record<string, unknown>> {
   if (typeof parts === "string") {
     try {
       const parsed = JSON.parse(parts) as unknown;
-      return Array.isArray(parsed) ? (parsed as Array<Record<string, unknown>>) : [];
+      return Array.isArray(parsed)
+        ? (parsed as Array<Record<string, unknown>>)
+        : [];
     } catch {
       return [];
     }
@@ -66,7 +68,8 @@ function buildAssistantFallbackText(messages: MessageRow[]): string {
     if (message.role !== "assistant") continue;
     const parts = parseParts(message.parts);
     for (const part of parts) {
-      if (typeof part.type !== "string" || !part.type.startsWith("tool-")) continue;
+      if (typeof part.type !== "string" || !part.type.startsWith("tool-"))
+        continue;
       if (part.state !== "output-available") continue;
       if (!part.output || typeof part.output !== "object") continue;
 
@@ -149,7 +152,10 @@ async function main() {
 
   const projectResult = projectIdArg
     ? await baseQuery.eq("id", projectIdArg).maybeSingle()
-    : await baseQuery.order("updated_at", { ascending: false }).limit(1).maybeSingle();
+    : await baseQuery
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
   if (projectResult.error) throw projectResult.error;
   const project = (projectResult.data as ProjectRow | null) ?? null;
@@ -185,8 +191,13 @@ async function main() {
 
   const targetName =
     (updates.name as string | undefined) ||
-    (isPlaceholderProjectName(project.name, project.id) ? derivedName : project.name);
-  if (hasInvalidPngScreenshot(project.screenshot_base64) || !project.screenshot_base64) {
+    (isPlaceholderProjectName(project.name, project.id)
+      ? derivedName
+      : project.name);
+  if (
+    hasInvalidPngScreenshot(project.screenshot_base64) ||
+    !project.screenshot_base64
+  ) {
     updates.screenshot_base64 = createSvgPlaceholderDataUrl(targetName);
     appliedScreenshotFix = true;
   }

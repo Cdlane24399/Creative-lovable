@@ -254,12 +254,12 @@ export function PromptInput({
       <PromptInputFooter>
         <PromptInputTools>
           {/* Model Selector */}
-          <AIModelSelector open={modelPickerOpen} onOpenChange={setModelPickerOpen}>
+          <AIModelSelector
+            open={modelPickerOpen}
+            onOpenChange={setModelPickerOpen}
+          >
             <ModelSelectorTrigger asChild>
-              <PromptInputButton
-                disabled={!isIdle}
-                size="sm"
-              >
+              <PromptInputButton disabled={!isIdle} size="sm">
                 <ModelIcon model={selectedModel} className="h-3.5 w-3.5" />
                 <span>{MODEL_DISPLAY_NAMES[selectedModel]}</span>
               </PromptInputButton>

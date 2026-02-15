@@ -1,18 +1,18 @@
-"use client"
+"use client";
 
-import { useEffect } from "react"
-import Link from "next/link"
+import { useEffect } from "react";
+import Link from "next/link";
 
 export default function ProjectError({
   error,
   reset,
 }: {
-  error: Error & { digest?: string }
-  reset: () => void
+  error: Error & { digest?: string };
+  reset: () => void;
 }) {
   useEffect(() => {
-    console.error("Project error:", error)
-  }, [error])
+    console.error("Project error:", error);
+  }, [error]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4 bg-[#111111]">
@@ -21,8 +21,8 @@ export default function ProjectError({
           Failed to load project
         </h2>
         <p className="text-zinc-400 text-sm">
-          There was a problem loading this project. It may have been deleted or you
-          may not have access.
+          There was a problem loading this project. It may have been deleted or
+          you may not have access.
         </p>
         {error.digest && (
           <p className="text-xs text-zinc-600 font-mono">
@@ -45,5 +45,5 @@ export default function ProjectError({
         </div>
       </div>
     </div>
-  )
+  );
 }
