@@ -78,7 +78,7 @@ const steps = [
     visual: (
       <div className="space-y-2">
         <div className="bg-[#18181B] rounded-xl p-3 border border-zinc-800 text-xs text-zinc-400">
-          "Make the header sticky and add a dark mode toggle"
+          &ldquo;Make the header sticky and add a dark mode toggle&rdquo;
         </div>
         <div className="flex items-center justify-center">
           <div className="w-6 h-6 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">

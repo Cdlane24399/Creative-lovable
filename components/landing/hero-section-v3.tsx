@@ -152,7 +152,7 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
           transition={{ duration: 0.6, delay: 0.2 }}
           className="text-base sm:text-lg text-zinc-400 max-w-2xl mx-auto mb-12 text-center leading-relaxed"
         >
-          The AI-powered development platform trusted by teams at the world's
+          The AI-powered development platform trusted by teams at the world&apos;s
           leading companies. Build, iterate, and deploy Next.js applications
           with unprecedented speed and precision.
         </motion.p>

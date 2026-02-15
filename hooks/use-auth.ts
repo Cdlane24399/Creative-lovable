@@ -16,13 +16,13 @@ interface UseAuthReturn {
  * and any other component that needs the current user.
  */
 export function useAuth(): UseAuthReturn {
+  const supabaseConfigured = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(supabaseConfigured);
 
   useEffect(() => {
     // Skip auth if Supabase is not configured (local dev without env vars)
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-      setIsLoading(false);
+    if (!supabaseConfigured) {
       return;
     }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Heart } from "lucide-react";
 import { LumiLogo } from "@/components/shared/icons";
 
@@ -27,14 +28,14 @@ export function Footer() {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-8 lg:gap-12">
           {/* Brand */}
           <div className="col-span-2">
-            <a href="/" className="flex items-center gap-2.5 mb-4 group">
+            <Link href="/" className="flex items-center gap-2.5 mb-4 group">
               <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/25 group-hover:shadow-emerald-500/40 transition-all duration-300 group-hover:scale-105">
                 <LumiLogo className="w-4 h-4 text-white" />
               </span>
               <span className="text-xl font-semibold tracking-tight text-white group-hover:text-emerald-400 transition-colors">
                 Lumi
               </span>
-            </a>
+            </Link>
             <p className="text-sm text-zinc-500 max-w-xs mb-6 leading-relaxed">
               AI-powered web development platform that transforms your ideas
               into production-ready applications in seconds.

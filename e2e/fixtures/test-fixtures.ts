@@ -13,6 +13,7 @@ export const test = base.extend<{
     await page.goto('/');
     // Wait for the landing page to be fully loaded
     await page.waitForLoadState('networkidle');
+    // eslint-disable-next-line react-hooks/rules-of-hooks -- Playwright fixture `use`, not a React hook
     await use();
   },
 });

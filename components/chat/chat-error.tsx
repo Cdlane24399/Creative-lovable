@@ -162,7 +162,7 @@ export function ChatEmptyState() {
       </div>
       <h3 className="text-base font-medium text-zinc-200 mb-1">Start building</h3>
       <p className="text-sm text-zinc-500 text-center max-w-[280px]">
-        Describe what you want to create and I'll help you build it step by step.
+        Describe what you want to create and I&apos;ll help you build it step by step.
       </p>
       
       {/* Suggestion chips */}

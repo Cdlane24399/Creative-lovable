@@ -228,7 +228,10 @@ export const CodeEditor = React.memo(
     const hasFiles = filePaths.length > 0;
 
     // Derive active file from selectedPath + files (no effect needed)
+    // eslint-disable-next-line react-hooks/preserve-manual-memoization -- deps are correct; derived values come from `files`
     const activeFile = React.useMemo<FileNode | null>(() => {
+      const paths = Object.keys(files);
+
       // If selected path is valid and still exists in files, use it
       if (selectedPath && files[selectedPath]) {
         return {
@@ -240,7 +243,7 @@ export const CodeEditor = React.memo(
       }
 
       // No files available
-      if (!hasFiles) return null;
+      if (paths.length === 0) return null;
 
       // Auto-select: try default paths first
       for (const path of DEFAULT_ACTIVE_FILE_PATHS) {
@@ -255,14 +258,14 @@ export const CodeEditor = React.memo(
       }
 
       // Fallback to first file
-      const firstPath = filePaths[0];
+      const firstPath = paths[0];
       return {
         name: firstPath.split("/").pop()!,
         path: firstPath,
         type: "file",
         content: files[firstPath],
       };
-    }, [selectedPath, files, hasFiles, filePaths]);
+    }, [selectedPath, files]);
 
     // Wrap setActiveFile to just store the path
     const handleFileSelect = React.useCallback((node: FileNode) => {

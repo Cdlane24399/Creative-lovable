@@ -15,7 +15,12 @@ import { createOpenAI } from '@ai-sdk/openai'
  * - Consistent error handling
  * - Built-in rate limiting and retries
  *
+ * Web Search:
+ * - Enable via providerOptions.gateway.search in streamText()
+ * - Uses AI Gateway's built-in search capability
+ *
  * @see https://ai-sdk.dev/docs/ai-sdk-core/gateway
+ * @see https://vercel.com/docs/ai-gateway/capabilities/web-search
  */
 const aiGateway = createGateway()
 
@@ -155,6 +160,37 @@ export function getGatewayProviderOptions(key: ModelKey) {
   return {
     gateway: {
       order: [...MODEL_CONFIG[key].providerOrder],
+    },
+  }
+}
+
+/**
+ * Get Gateway provider options with web search enabled
+ *
+ * AI SDK v6: Enables AI Gateway's built-in web search capability
+ * The model can use search to look up documentation, APIs, and more
+ *
+ * @param key - Model identifier from MODEL_CONFIG
+ * @returns Provider options with web search enabled
+ *
+ * @example
+ * ```ts
+ * const result = streamText({
+ *   model: getModel('anthropic'),
+ *   providerOptions: getGatewayProviderOptionsWithSearch('anthropic'),
+ *   // Model can now use search tool to look up information
+ * })
+ * ```
+ * @see https://vercel.com/docs/ai-gateway/capabilities/web-search
+ */
+export function getGatewayProviderOptionsWithSearch(key: ModelKey) {
+  return {
+    gateway: {
+      order: [...MODEL_CONFIG[key].providerOrder],
+      search: {
+        // Allow up to 5 searches per request to balance thoroughness with speed
+        maxSearchCalls: 5,
+      },
     },
   }
 }

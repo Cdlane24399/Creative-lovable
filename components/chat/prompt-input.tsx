@@ -140,6 +140,26 @@ export function PromptInput({
   // Merge refs
   React.useImperativeHandle(inputRef, () => textareaRef.current!);
 
+  // Precompute random sparkle positions (lazy useState init is pure per React Compiler)
+  const [sparklePositions] = React.useState(() =>
+    Array.from({ length: 6 }, () => ({
+      left: `${10 + Math.random() * 80}%`,
+      top: `${10 + Math.random() * 80}%`,
+    })),
+  );
+
+  // Auto-resize textarea when value changes
+  const autoResize = React.useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+  }, []);
+
+  React.useEffect(() => {
+    autoResize();
+  }, [inputValue, autoResize]);
+
   const isIdle = status === "idle";
   const isWorking = status === "working";
   const isImproving = status === "improving";
@@ -183,12 +203,6 @@ export function PromptInput({
               showImproveEffect && "text-violet-300",
             )}
             rows={1}
-            style={{
-              // Simple auto-resize via style (or could use a library/hook)
-              height: textareaRef.current
-                ? Math.min(textareaRef.current.scrollHeight, 200) + "px"
-                : "auto",
-            }}
             disabled={isInputDisabled}
           />
 
@@ -213,8 +227,8 @@ export function PromptInput({
                     }}
                     className="absolute w-1 h-1 bg-violet-400 rounded-full"
                     style={{
-                      left: `${10 + Math.random() * 80}%`,
-                      top: `${10 + Math.random() * 80}%`,
+                      left: sparklePositions[i].left,
+                      top: sparklePositions[i].top,
                       boxShadow: "0 0 10px 2px rgba(167, 139, 250, 0.6)",
                     }}
                   />

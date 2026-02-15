@@ -103,6 +103,8 @@ import {
   createBuildTools,
   createSyncTools,
   createCodeTools,
+  createSearchTools,
+  createSkillTools,
 } from "./tools";
 
 /**
@@ -112,6 +114,10 @@ import {
  * Note: initializeProject is NOT exposed to the agent.
  * Project initialization happens automatically in withSandbox (sandbox-provider.ts).
  * syncProject remains available for explicit persistence when needed.
+ *
+ * New tools added:
+ * - Search tools: Web search and documentation lookup (via AI Gateway)
+ * - Skill tools: Execute Vercel Skills for refactoring, dead code removal, etc.
  *
  * @param projectId - Unique identifier for the project/session
  * @returns Object containing all available tools
@@ -137,6 +143,8 @@ export function createContextAwareTools(projectId: string) {
   const buildTools = createBuildTools(projectId);
   const syncTools = createSyncTools(projectId);
   const codeTools = createCodeTools(projectId);
+  const searchTools = createSearchTools(projectId);
+  const skillTools = createSkillTools(projectId);
 
   // Return combined tools object
   return {
@@ -163,6 +171,12 @@ export function createContextAwareTools(projectId: string) {
 
     // Code execution
     ...codeTools,
+
+    // Web search and documentation lookup (AI Gateway)
+    ...searchTools,
+
+    // Skill execution (Vercel Skills)
+    ...skillTools,
   };
 }
 

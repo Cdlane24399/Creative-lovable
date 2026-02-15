@@ -154,7 +154,9 @@ export function EditorProvider({
   const projectNameRef = useRef<string>(projectName);
   const lastSavedUrlRef = useRef<string | null>(null);
 
-  projectNameRef.current = projectName;
+  useEffect(() => {
+    projectNameRef.current = projectName;
+  }, [projectName]);
 
   const {
     project,
@@ -207,6 +209,7 @@ export function EditorProvider({
     updateProject,
   });
 
+  /* eslint-disable react-hooks/set-state-in-effect -- syncing state from fetched project data */
   useEffect(() => {
     if (project) {
       setProjectName(project.name);
@@ -219,6 +222,7 @@ export function EditorProvider({
       }
     }
   }, [project, initialPrompt, titleGeneratedRef]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (sandboxUrl && initialPrompt && !titleGeneratedRef.current) {

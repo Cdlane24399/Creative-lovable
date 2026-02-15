@@ -47,6 +47,7 @@ export function useProjectPersistence({
     projectId: undefined as string | undefined,
   });
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- ref access doesn't need to be a dependency
   const saveProject = useCallback(async () => {
     if (!projectId || !sandboxUrl) return;
 
@@ -95,7 +96,9 @@ export function useProjectPersistence({
     updateProject,
     setHasUnsavedChanges,
   ]);
-  saveProjectRef.current = saveProject;
+  useEffect(() => {
+    saveProjectRef.current = saveProject;
+  }, [saveProject]);
 
   // Auto-save project when sandbox URL changes
   useEffect(() => {

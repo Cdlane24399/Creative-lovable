@@ -73,7 +73,9 @@ export function PreviewPanel({ ref }: PreviewPanelProps) {
   const isLoading = sandboxUrl ? iframeLoading : externalLoading;
 
   // Keep ref in sync for timers (avoid stale closure values)
-  iframeLoadingRef.current = iframeLoading;
+  useEffect(() => {
+    iframeLoadingRef.current = iframeLoading;
+  }, [iframeLoading]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -93,6 +95,7 @@ export function PreviewPanel({ ref }: PreviewPanelProps) {
   const prevLoadingRef = useRef(externalLoading);
 
   // Reset loading state and force iframe refresh when sandbox URL changes or loading completes
+  /* eslint-disable react-hooks/set-state-in-effect -- resetting UI state when sandbox URL changes */
   useEffect(() => {
     if (!sandboxUrl) {
       setError(null);
@@ -134,6 +137,7 @@ export function PreviewPanel({ ref }: PreviewPanelProps) {
       }
     }, 30000);
   }, [sandboxUrl, externalLoading]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleIframeLoad = useCallback(() => {
     if (!mountedRef.current) return;

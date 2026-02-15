@@ -120,7 +120,7 @@ export function TestimonialsSection() {
 
                 {/* Quote */}
                 <p className="text-zinc-300 text-sm leading-relaxed mb-6 relative z-10 font-normal group-hover:text-zinc-200 transition-colors">
-                  "{testimonial.quote}"
+                  &ldquo;{testimonial.quote}&rdquo;
                 </p>
 
                 {/* Author */}

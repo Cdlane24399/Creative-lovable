@@ -15,6 +15,8 @@
  * - Sync: Tools for database persistence
  * - Build: Tools for building and bundling applications
  * - Code: Tools for code analysis and transformation
+ * - Search: Tools for web search and documentation lookup
+ * - Skill: Tools for loading and executing Vercel Skills
  */
 
 export { createPlanningTools } from "./planning.tools";
@@ -26,3 +28,5 @@ export { createProjectInitTools } from "./project-init.tools";
 export { createSyncTools } from "./sync.tools";
 export { createBuildTools } from "./build.tools";
 export { createCodeTools } from "./code.tools";
+export { createSearchTools } from "./search.tools";
+export { createSkillTools, AVAILABLE_SKILLS } from "./skill.tools";

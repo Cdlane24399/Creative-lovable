@@ -32,6 +32,7 @@ import {
 import {
   getModel,
   getGatewayProviderOptions,
+  getGatewayProviderOptionsWithSearch,
   getOpenRouterModel,
   hasOpenRouterFallback,
   type ModelKey,
@@ -83,13 +84,19 @@ const FILE_TOOLS = [
 const BUILD_TOOLS = ["runCommand", "installPackage", "getBuildStatus"] as const;
 const SYNC_TOOLS = ["syncProject"] as const;
 const CODE_TOOLS = ["executeCode"] as const;
+// New: Web search tools (via AI Gateway)
+const SEARCH_TOOLS = ["webSearch", "lookupDocumentation"] as const;
+// New: Skill tools (Vercel Skills)
+const SKILL_TOOLS = ["listSkills", "executeSkill", "refactorCode", "removeDeadCode"] as const;
 
 type ToolName =
   | (typeof PLANNING_TOOLS)[number]
   | (typeof FILE_TOOLS)[number]
   | (typeof BUILD_TOOLS)[number]
   | (typeof SYNC_TOOLS)[number]
-  | (typeof CODE_TOOLS)[number];
+  | (typeof CODE_TOOLS)[number]
+  | (typeof SEARCH_TOOLS)[number]
+  | (typeof SKILL_TOOLS)[number];
 
 // Default project ID for sandbox operations
 const DEFAULT_PROJECT_ID = "default";
@@ -100,6 +107,8 @@ const DEFAULT_ACTIVE_TOOLS: ToolName[] = [
   ...BUILD_TOOLS,
   ...SYNC_TOOLS,
   ...CODE_TOOLS,
+  ...SEARCH_TOOLS,
+  ...SKILL_TOOLS,
 ];
 
 // New-system bootstrap: keep first step focused on planning + project scan + file writes.
@@ -140,7 +149,50 @@ function getToolOutputSuccess(output: unknown): boolean | undefined {
   return undefined;
 }
 
-/** Ensures tool-call parts have input as object (required by MiniMax/moonshot/glm APIs) */
+/**
+ * Sanitize toolCallId values in model messages to satisfy provider constraints.
+ * AWS Bedrock requires toolUseId to match [a-zA-Z0-9_-]+.
+ * When conversations are resumed from the database, stored IDs may contain
+ * characters (e.g., dots, colons) that break downstream providers.
+ */
+function sanitizeToolCallIds<T extends { role: string; content?: unknown }>(
+  messages: T[],
+): T[] {
+  const idMap = new Map<string, string>();
+  let counter = 0;
+
+  const sanitize = (id: string): string => {
+    if (/^[a-zA-Z0-9_-]+$/.test(id)) return id;
+    const cached = idMap.get(id);
+    if (cached) return cached;
+    // Replace invalid chars; append counter to avoid collisions
+    const safe = id.replace(/[^a-zA-Z0-9_-]/g, "_") + `_${counter++}`;
+    idMap.set(id, safe);
+    return safe;
+  };
+
+  return messages.map((msg) => {
+    if (!Array.isArray(msg.content)) return msg;
+    let changed = false;
+    const newContent = msg.content.map((part: Record<string, unknown>) => {
+      if (
+        part &&
+        typeof part === "object" &&
+        typeof part.toolCallId === "string"
+      ) {
+        const sanitized = sanitize(part.toolCallId as string);
+        if (sanitized !== part.toolCallId) {
+          changed = true;
+          return { ...part, toolCallId: sanitized };
+        }
+      }
+      return part;
+    });
+    return (changed ? { ...msg, content: newContent } : msg) as T;
+  });
+}
+
+/** Ensures tool-call parts have input/args as object (required by Anthropic, MiniMax, moonshot, glm APIs) */
 function ensureToolCallInputsAreObjects<T extends { role: string; content?: unknown }>(
   messages: T[],
 ): T[] {
@@ -148,18 +200,22 @@ function ensureToolCallInputsAreObjects<T extends { role: string; content?: unkn
     if (msg.role !== "assistant" || !Array.isArray(msg.content)) return msg;
     let changed = false;
     const newContent = msg.content.map((part: unknown) => {
-      const p = part as { type?: string; input?: unknown };
-      if (
-        p &&
-        typeof p === "object" &&
-        p.type === "tool-call" &&
-        typeof p.input === "string"
-      ) {
-        try {
+      const p = part as { type?: string; input?: unknown; args?: unknown };
+      if (p && typeof p === "object" && p.type === "tool-call") {
+        const updates: Record<string, unknown> = {};
+        if (typeof p.input === "string") {
+          try {
+            updates.input = JSON.parse(p.input) as Record<string, unknown>;
+          } catch { /* keep original */ }
+        }
+        if (typeof p.args === "string") {
+          try {
+            updates.args = JSON.parse(p.args) as Record<string, unknown>;
+          } catch { /* keep original */ }
+        }
+        if (Object.keys(updates).length > 0) {
           changed = true;
-          return { ...p, input: JSON.parse(p.input) as Record<string, unknown> };
-        } catch {
-          return part;
+          return { ...p, ...updates };
         }
       }
       return part;
@@ -286,8 +342,12 @@ export const POST = withAuth(
               })
           : Promise.resolve();
 
-      // Convert messages for the model
-      const modelMessages = await modelMessagesPromise;
+      // Convert messages for the model, sanitize tool call IDs
+      // (AWS Bedrock requires [a-zA-Z0-9_-]+), and ensure tool-call
+      // inputs are objects (Anthropic/others reject string-serialized input).
+      const modelMessages = ensureToolCallInputsAreObjects(
+        sanitizeToolCallIds(await modelMessagesPromise),
+      );
 
       // Generate enhanced system prompt with context awareness
       const systemPrompt = generateAgenticSystemPrompt(
@@ -458,13 +518,17 @@ export const POST = withAuth(
           const createResult = (provider: "gateway" | "openrouter") => {
             const usingOpenRouter = provider === "openrouter";
 
+            // Enable web search via AI Gateway when using the gateway provider
+            // This allows the model to search the web for documentation, APIs, and more
+            const providerOptions = usingOpenRouter
+              ? undefined
+              : getGatewayProviderOptionsWithSearch(modelKey);
+
             return streamText({
               model: usingOpenRouter
                 ? getOpenRouterModel(modelKey)
                 : getModel(modelKey),
-              ...(!usingOpenRouter && {
-                providerOptions: getGatewayProviderOptions(modelKey),
-              }),
+              ...(providerOptions && { providerOptions }),
               system: systemPrompt,
               messages: modelMessages,
               tools,

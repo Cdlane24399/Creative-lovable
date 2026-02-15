@@ -606,7 +606,32 @@ async function restoreSnapshotIfPresent(
   );
 }
 
+// Deduplicate concurrent resolveSandbox calls for the same project.
+// Prevents race conditions where restore + dev-server both trigger sandbox creation.
+const inflightResolves = new Map<string, Promise<Sandbox>>();
+
 async function resolveSandbox(
+  projectId: string,
+  options: ResolveSandboxOptions = {},
+): Promise<Sandbox> {
+  const inflight = inflightResolves.get(projectId);
+  if (inflight) {
+    console.log(
+      `[Sandbox] Deduplicating concurrent resolveSandbox for ${projectId}`,
+    );
+    return inflight;
+  }
+
+  const promise = resolveSandboxImpl(projectId, options);
+  inflightResolves.set(projectId, promise);
+  try {
+    return await promise;
+  } finally {
+    inflightResolves.delete(projectId);
+  }
+}
+
+async function resolveSandboxImpl(
   projectId: string,
   options: ResolveSandboxOptions = {},
 ): Promise<Sandbox> {

@@ -44,8 +44,12 @@ export function useSandboxLifecycle({
   const projectNameRef = useRef<string>(projectName);
 
   // Keep refs in sync
-  sandboxUrlRef.current = sandboxUrl;
-  projectNameRef.current = projectName;
+  useEffect(() => {
+    sandboxUrlRef.current = sandboxUrl;
+  }, [sandboxUrl]);
+  useEffect(() => {
+    projectNameRef.current = projectName;
+  }, [projectName]);
 
   // ---- Debounced URL updater ----
   const updateSandboxUrlDebounced = useCallback(
@@ -121,6 +125,7 @@ export function useSandboxLifecycle({
     });
 
   // Start dev server when pending project name is set
+  /* eslint-disable react-hooks/set-state-in-effect -- syncing polling state with dev server lifecycle */
   useEffect(() => {
     if (!pendingServerStart || !projectId) return;
     const forceRestart = forceRestartNextStartRef.current;
@@ -142,6 +147,7 @@ export function useSandboxLifecycle({
     setIsPollingEnabled(true);
     startDevServer(forceRestart);
   }, [pendingServerStart, projectId, pendingSandboxId, startDevServer]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Restore project state when loading an existing project
   useEffect(() => {
