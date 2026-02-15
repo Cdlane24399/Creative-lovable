@@ -281,5 +281,7 @@ export function useChatWithTools({
     getThinkingTime,
     // Stop the current streaming response
     stop: chat.stop,
+    // Tool approval: approve or deny a pending tool call
+    addToolApprovalResponse: chat.addToolApprovalResponse,
   };
 }

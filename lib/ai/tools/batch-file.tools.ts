@@ -149,7 +149,10 @@ export function createBatchFileTools(projectId: string) {
       description:
         "Write multiple files at once (default for new scaffolds and multi-file edits). " +
         "More efficient than multiple writeFile calls. " +
-        "Automatically creates parent directories.",
+        "Automatically creates parent directories. " +
+        "Follow React best practices: use Server Components by default, add 'use client' " +
+        "only for interactivity. Use composition patterns (children, render props) over " +
+        "prop-drilling. Push data fetching to server layer.",
       inputSchema: z.object({
         files: z
           .array(batchFileSchema)

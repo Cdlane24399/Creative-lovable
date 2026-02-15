@@ -29,4 +29,5 @@ export { createSyncTools } from "./sync.tools";
 export { createBuildTools } from "./build.tools";
 export { createCodeTools } from "./code.tools";
 export { createSearchTools } from "./search.tools";
-export { createSkillTools, AVAILABLE_SKILLS } from "./skill.tools";
+export { createSkillTools } from "./skill.tools";
+export { createResearchTools } from "./research.tools";

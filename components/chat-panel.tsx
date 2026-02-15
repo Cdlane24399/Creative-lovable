@@ -13,12 +13,20 @@ import { useChatWithTools } from "@/hooks/use-chat-with-tools";
 import { type ModelProvider } from "@/lib/ai/agent";
 import { MessageList } from "@/components/chat/message-list";
 import {
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
+} from "@/components/ai-elements/conversation";
+import {
   PromptInput,
   type PromptInputStatus,
 } from "@/components/chat/prompt-input";
 import type { MessagePart } from "@/components/chat/message";
 import { parseToolOutputs } from "@/lib/parsers/tool-outputs";
-import { PlanProgress, extractPlanState } from "@/components/chat/plan-progress";
+import {
+  PlanProgress,
+  extractPlanState,
+} from "@/components/chat/plan-progress";
 import {
   useEditorChatActions,
   useEditorMeta,
@@ -46,7 +54,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function isOutputAvailableToolPart(part: unknown): part is Record<string, unknown> {
+function isOutputAvailableToolPart(
+  part: unknown,
+): part is Record<string, unknown> {
   if (!isRecord(part)) return false;
   return (
     typeof part.type === "string" &&
@@ -72,7 +82,9 @@ function getProjectNameFromToolPart(part: unknown): string | undefined {
     : undefined;
 }
 
-function getFallbackProjectName(messages: Array<{ parts?: unknown[] }>): string {
+function getFallbackProjectName(
+  messages: Array<{ parts?: unknown[] }>,
+): string {
   const projectNames = messages.flatMap((message) =>
     (message.parts || [])
       .map((part) => getProjectNameFromToolPart(part))
@@ -137,6 +149,7 @@ export function ChatPanel({ ref }: ChatPanelProps) {
     isCallingTools,
     getThinkingTime,
     stop,
+    addToolApprovalResponse,
   } = useChatWithTools({
     projectId,
     model: selectedModel,
@@ -262,7 +275,8 @@ export function ChatPanel({ ref }: ChatPanelProps) {
     );
 
     if (latestPreviewUrl) {
-      if (process.env.NODE_ENV === "development") console.log("[ChatPanel] Got previewUrl from tool:", latestPreviewUrl);
+      if (process.env.NODE_ENV === "development")
+        console.log("[ChatPanel] Got previewUrl from tool:", latestPreviewUrl);
       handleSandboxUrlUpdate(latestPreviewUrl);
     }
 
@@ -274,10 +288,7 @@ export function ChatPanel({ ref }: ChatPanelProps) {
         filesReadyInfo.sandboxId,
       );
       filesReadyTriggeredRef.current = true;
-      handleFilesReady(
-        filesReadyInfo.projectName,
-        filesReadyInfo.sandboxId,
-      );
+      handleFilesReady(filesReadyInfo.projectName, filesReadyInfo.sandboxId);
     }
   }, [messages, handleSandboxUrlUpdate, handleFilesReady]);
 
@@ -321,18 +332,18 @@ export function ChatPanel({ ref }: ChatPanelProps) {
   // Cast needed: AI SDK UIMessagePart includes types (e.g. ReasoningUIPart) not
   // in our local MessagePart union, but extractPlanState only inspects tool-* parts.
   const planState = useMemo(
-    () => extractPlanState(messages as Array<{ role: string; parts?: MessagePart[] }>),
+    () =>
+      extractPlanState(
+        messages as Array<{ role: string; parts?: MessagePart[] }>,
+      ),
     [messages],
-  )
+  );
 
   return (
     <div className="flex h-full flex-col bg-[#111111]">
       {/* Messages Area */}
-      <div
-        data-chat-scroll-container="true"
-        className="flex-1 overflow-y-auto px-4 py-6 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent"
-      >
-        <div className="mx-auto w-full max-w-3xl">
+      <Conversation className="px-4 py-6 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+        <ConversationContent className="mx-auto w-full max-w-3xl">
           <MessageList
             messages={messages}
             isWorking={isWorking}
@@ -341,15 +352,20 @@ export function ChatPanel({ ref }: ChatPanelProps) {
             onRetry={handleRetry}
             getThinkingTime={getThinkingTime}
             onSelectSuggestion={handleSelectSuggestion}
+            onToolApprove={(toolCallId) =>
+              addToolApprovalResponse({ id: toolCallId, approved: true })
+            }
+            onToolDeny={(toolCallId) =>
+              addToolApprovalResponse({ id: toolCallId, approved: false })
+            }
           />
-        </div>
-      </div>
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
 
       {/* Input Area */}
       <div className="p-4 pt-2">
-        {planState && (
-          <PlanProgress plan={planState} isWorking={isWorking} />
-        )}
+        {planState && <PlanProgress plan={planState} isWorking={isWorking} />}
         <PromptInput
           inputValue={inputValue}
           setInputValue={setInputValue}

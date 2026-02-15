@@ -64,7 +64,9 @@ export function createFileTools(projectId: string) {
     writeFile: tool({
       description:
         "Write content to a single file in the project. Creates parent directories " +
-        "if they don't exist. Prefer batchWriteFiles when changing multiple files.",
+        "if they don't exist. Prefer batchWriteFiles when changing multiple files. " +
+        "Follow React best practices: use Server Components by default, add 'use client' " +
+        "only for interactivity, keep components small and composable, use Tailwind for styling.",
       inputSchema: z.object({
         path: filePathSchema,
         content: z.string().describe("Complete file content to write"),

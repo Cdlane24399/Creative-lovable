@@ -76,6 +76,19 @@ export function looksLikeMissingSystemLibs(output: string): boolean {
   );
 }
 
+function getPlaywrightInstallCommand(runtimeDir: string, useBun: boolean): string {
+  return useBun
+    ? `cd "${runtimeDir}" && bunx playwright install --with-deps chromium || bunx playwright install chromium`
+    : `cd "${runtimeDir}" && npx playwright install --with-deps chromium || npx playwright install chromium`;
+}
+
+function getChromiumReadyCheckCommand(runtimeDir: string, useBun: boolean): string {
+  const runtime = useBun ? "bun" : "node";
+  const script =
+    "import('playwright').then(async ({ chromium }) => { const { existsSync } = await import('node:fs'); const executablePath = chromium.executablePath(); console.log(existsSync(executablePath) ? 'ready' : 'missing'); }).catch(() => console.log('missing'))";
+  return `cd "${runtimeDir}" && ${runtime} -e "${script}"`;
+}
+
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 export function hasPngSignature(data: Uint8Array): boolean {
@@ -178,6 +191,27 @@ export async function captureSandboxScreenshot(
       }
     }
 
+    const chromiumCheck = await executeCommand(
+      sandbox,
+      getChromiumReadyCheckCommand(runtimeDir, useBun),
+      { timeoutMs: 10000 },
+    );
+    if (!chromiumCheck.stdout.includes("ready")) {
+      console.log("[Screenshot] Chromium browser missing, installing...");
+      const browserInstall = await executeCommand(
+        sandbox,
+        getPlaywrightInstallCommand(runtimeDir, useBun),
+        { timeoutMs: 300000 },
+      );
+      if (browserInstall.exitCode !== 0) {
+        console.warn(
+          "[Screenshot] Failed to install Chromium browser:",
+          browserInstall.stderr || browserInstall.stdout,
+        );
+        return null;
+      }
+    }
+
     // Create a Playwright screenshot script.
     const screenshotScript = `
 import { chromium } from "playwright";
@@ -264,9 +298,7 @@ await run();
         );
         const browserInstall = await executeCommand(
           sandbox,
-          useBun
-            ? `cd "${runtimeDir}" && bunx playwright install --with-deps chromium || bunx playwright install chromium`
-            : `cd "${runtimeDir}" && npx playwright install --with-deps chromium || npx playwright install chromium`,
+          getPlaywrightInstallCommand(runtimeDir, useBun),
           { timeoutMs: 300000 },
         );
         if (browserInstall.exitCode === 0) {

@@ -2,45 +2,24 @@
  * Chat API Route - AI SDK v6 Implementation
  *
  * Key v6 Patterns Used:
- * - streamText with stopWhen(stepCountIs()) for multi-step control
+ * - ToolLoopAgent with createAgentUIStreamResponse for declarative agent orchestration
+ * - createWebBuilderAgent encapsulates prepareStep, error recovery, token budgets
  * - toUIMessageStreamResponse() for streaming to frontend
  * - convertToModelMessages (v6 renamed from convertToCoreMessages)
  * - validateUIMessages for message validation
- * - onStepFinish callback for step tracking
- * - prepareStep for dynamic activeTools and message pruning
- * - experimental_repairToolCall for error recovery
  * - NoSuchToolError, InvalidToolInputError for type-safe error handling
  *
+ * @see https://ai-sdk.dev/docs/ai-sdk-core/agents
  * @see https://ai-sdk.dev/docs/ai-sdk-core/streaming
  */
 import { NextResponse } from "next/server";
 import {
-  convertToModelMessages,
-  streamText,
-  stepCountIs,
-  pruneMessages,
   validateUIMessages,
-  NoSuchToolError,
-  InvalidToolInputError,
+  createAgentUIStreamResponse,
   type UIMessage,
 } from "ai";
-import {
-  SYSTEM_PROMPT,
-  MODEL_SETTINGS,
-  type ModelProvider,
-} from "@/lib/ai/agent";
-import {
-  getModel,
-  getGatewayProviderOptions,
-  getGatewayProviderOptionsWithSearch,
-  getOpenRouterModel,
-  hasOpenRouterFallback,
-  type ModelKey,
-} from "@/lib/ai/providers";
-import {
-  createContextAwareTools,
-  generateAgenticSystemPrompt,
-} from "@/lib/ai/web-builder-agent";
+import { MODEL_SETTINGS, type ModelProvider } from "@/lib/ai/agent";
+import { createWebBuilderAgent } from "@/lib/ai/agents/web-builder";
 import {
   deriveProjectNameFromMessages,
   isPlaceholderProjectName,
@@ -72,157 +51,8 @@ import { quickSyncToDatabaseWithRetry } from "@/lib/e2b/sync-manager";
 
 export const maxDuration = 300;
 
-// AI SDK v6: Define tool groups for dynamic activation
-const PLANNING_TOOLS = ["planChanges", "analyzeProjectState"] as const;
-const FILE_TOOLS = [
-  "writeFile",
-  "readFile",
-  "editFile",
-  "getProjectStructure",
-  "batchWriteFiles",
-] as const;
-const BUILD_TOOLS = ["runCommand", "installPackage", "getBuildStatus"] as const;
-const SYNC_TOOLS = ["syncProject"] as const;
-const CODE_TOOLS = ["executeCode"] as const;
-// New: Web search tools (via AI Gateway)
-const SEARCH_TOOLS = ["webSearch", "lookupDocumentation"] as const;
-// New: Skill tools (Vercel Skills)
-const SKILL_TOOLS = ["listSkills", "executeSkill", "refactorCode", "removeDeadCode"] as const;
-
-type ToolName =
-  | (typeof PLANNING_TOOLS)[number]
-  | (typeof FILE_TOOLS)[number]
-  | (typeof BUILD_TOOLS)[number]
-  | (typeof SYNC_TOOLS)[number]
-  | (typeof CODE_TOOLS)[number]
-  | (typeof SEARCH_TOOLS)[number]
-  | (typeof SKILL_TOOLS)[number];
-
 // Default project ID for sandbox operations
 const DEFAULT_PROJECT_ID = "default";
-
-const DEFAULT_ACTIVE_TOOLS: ToolName[] = [
-  ...PLANNING_TOOLS,
-  ...FILE_TOOLS,
-  ...BUILD_TOOLS,
-  ...SYNC_TOOLS,
-  ...CODE_TOOLS,
-  ...SEARCH_TOOLS,
-  ...SKILL_TOOLS,
-];
-
-// New-system bootstrap: keep first step focused on planning + project scan + file writes.
-// Includes writeFile/editFile to avoid error-retry waste when the model needs single-file ops.
-const BOOTSTRAP_ACTIVE_TOOLS: ToolName[] = [
-  "analyzeProjectState",
-  "planChanges",
-  "getProjectStructure",
-  "readFile",
-  "writeFile",
-  "editFile",
-  "batchWriteFiles",
-  "installPackage",
-  "getBuildStatus",
-  "syncProject",
-];
-
-const FILE_MUTATION_TOOLS = new Set([
-  "writeFile",
-  "editFile",
-  "batchWriteFiles",
-  "initializeProject",
-]);
-
-function getToolOutputSuccess(output: unknown): boolean | undefined {
-  if (!output || typeof output !== "object") return undefined;
-  const obj = output as Record<string, unknown>;
-
-  // Explicit success field takes priority
-  if ("success" in obj) return Boolean(obj.success);
-
-  // Treat an 'error' field as failure
-  if ("error" in obj && obj.error) return false;
-
-  // 'filesReady' signals a successful file operation
-  if ("filesReady" in obj) return Boolean(obj.filesReady);
-
-  return undefined;
-}
-
-/**
- * Sanitize toolCallId values in model messages to satisfy provider constraints.
- * AWS Bedrock requires toolUseId to match [a-zA-Z0-9_-]+.
- * When conversations are resumed from the database, stored IDs may contain
- * characters (e.g., dots, colons) that break downstream providers.
- */
-function sanitizeToolCallIds<T extends { role: string; content?: unknown }>(
-  messages: T[],
-): T[] {
-  const idMap = new Map<string, string>();
-  let counter = 0;
-
-  const sanitize = (id: string): string => {
-    if (/^[a-zA-Z0-9_-]+$/.test(id)) return id;
-    const cached = idMap.get(id);
-    if (cached) return cached;
-    // Replace invalid chars; append counter to avoid collisions
-    const safe = id.replace(/[^a-zA-Z0-9_-]/g, "_") + `_${counter++}`;
-    idMap.set(id, safe);
-    return safe;
-  };
-
-  return messages.map((msg) => {
-    if (!Array.isArray(msg.content)) return msg;
-    let changed = false;
-    const newContent = msg.content.map((part: Record<string, unknown>) => {
-      if (
-        part &&
-        typeof part === "object" &&
-        typeof part.toolCallId === "string"
-      ) {
-        const sanitized = sanitize(part.toolCallId as string);
-        if (sanitized !== part.toolCallId) {
-          changed = true;
-          return { ...part, toolCallId: sanitized };
-        }
-      }
-      return part;
-    });
-    return (changed ? { ...msg, content: newContent } : msg) as T;
-  });
-}
-
-/** Ensures tool-call parts have input/args as object (required by Anthropic, MiniMax, moonshot, glm APIs) */
-function ensureToolCallInputsAreObjects<T extends { role: string; content?: unknown }>(
-  messages: T[],
-): T[] {
-  return messages.map((msg) => {
-    if (msg.role !== "assistant" || !Array.isArray(msg.content)) return msg;
-    let changed = false;
-    const newContent = msg.content.map((part: unknown) => {
-      const p = part as { type?: string; input?: unknown; args?: unknown };
-      if (p && typeof p === "object" && p.type === "tool-call") {
-        const updates: Record<string, unknown> = {};
-        if (typeof p.input === "string") {
-          try {
-            updates.input = JSON.parse(p.input) as Record<string, unknown>;
-          } catch { /* keep original */ }
-        }
-        if (typeof p.args === "string") {
-          try {
-            updates.args = JSON.parse(p.args) as Record<string, unknown>;
-          } catch { /* keep original */ }
-        }
-        if (Object.keys(updates).length > 0) {
-          changed = true;
-          return { ...p, ...updates };
-        }
-      }
-      return part;
-    });
-    return (changed ? { ...msg, content: newContent } : msg) as T;
-  });
-}
 
 // Export type for the chat messages
 export type ChatMessage = UIMessage;
@@ -282,13 +112,10 @@ export const POST = withAuth(
       const messageService = getMessageService();
       const tokenUsageService = getTokenUsageService();
 
-      // Validate requested model exists, fallback to anthropic.
+      // Validate requested model exists, fallback to anthropic
       const requestedModel = (
         model in MODEL_SETTINGS ? model : "anthropic"
       ) as ModelProvider;
-
-      // Create context-aware tools for this project
-      const tools = createContextAwareTools(projectId);
 
       let messages: UIMessage[];
       try {
@@ -314,10 +141,7 @@ export const POST = withAuth(
         ? "Untitled Project"
         : derivedProjectName;
 
-      // Always respect the model selected by the user in the UI.
       const executionModel = requestedModel;
-      const modelKey = executionModel as ModelKey;
-      const modelSettings = MODEL_SETTINGS[executionModel];
 
       log.info("Chat request received", {
         projectId,
@@ -327,550 +151,197 @@ export const POST = withAuth(
         messageCount: rawMessages.length,
       });
 
-      // Start independent async work early to reduce route-level waterfalls
-      const modelMessagesPromise = convertToModelMessages(
-        messages.map(({ id: _id, ...message }) => message),
-        { tools },
-      );
-      const ensureProjectExistsPromise: Promise<void> =
-        projectId && projectId !== DEFAULT_PROJECT_ID
-          ? projectService
-              .ensureProjectExists(projectId, defaultProjectName)
-              .then(() => undefined)
-              .catch((dbError) => {
-                log.warn("Failed to ensure project exists", { projectId }, dbError);
-              })
-          : Promise.resolve();
-
-      // Convert messages for the model, sanitize tool call IDs
-      // (AWS Bedrock requires [a-zA-Z0-9_-]+), and ensure tool-call
-      // inputs are objects (Anthropic/others reject string-serialized input).
-      const modelMessages = ensureToolCallInputsAreObjects(
-        sanitizeToolCallIds(await modelMessagesPromise),
-      );
-
-      // Generate enhanced system prompt with context awareness
-      const systemPrompt = generateAgenticSystemPrompt(
-        projectId,
-        SYSTEM_PROMPT,
-      );
+      // Ensure project exists in database BEFORE any tool calls can trigger context saves
+      if (projectId && projectId !== DEFAULT_PROJECT_ID) {
+        await projectService
+          .ensureProjectExists(projectId, defaultProjectName)
+          .catch((dbError) => {
+            log.warn("Failed to ensure project exists", { projectId }, dbError);
+          });
+      }
 
       // Initialize project info if this is a new session
       if (!isPlaceholderProjectName(defaultProjectName, projectId)) {
         setProjectInfo(projectId, { projectName: defaultProjectName });
       }
 
-      // Ensure project exists in database BEFORE any tool calls can trigger context saves
-      // This prevents foreign key constraint violations
-      await ensureProjectExistsPromise;
+      // Track file mutation state and token usage for onFinish
+      let hasUnsyncedChanges = false;
+      const pendingTokenUsage: Array<{
+        project_id: string;
+        model: string;
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+        step_number: number;
+        timestamp: string;
+      }> = [];
 
-      // AI SDK v6 best practice: Track steps for debugging and monitoring
-      let currentStepNumber = 0;
-      let cumulativeTokens = 0;
+      // Create the ToolLoopAgent with lifecycle callbacks.
+      // The agent encapsulates: model selection, system prompt, tools,
+      // prepareStep (token budgets, pruning, activeTools), onStepFinish,
+      // and experimental_repairToolCall.
+      const agent = createWebBuilderAgent({
+        projectId,
+        model: executionModel,
+        onFileMutation: () => {
+          hasUnsyncedChanges = true;
+        },
+        onSyncComplete: () => {
+          hasUnsyncedChanges = false;
+        },
+        onTokenUsage: (usage) => {
+          if (projectId && projectId !== DEFAULT_PROJECT_ID) {
+            pendingTokenUsage.push({
+              project_id: projectId,
+              model: executionModel,
+              prompt_tokens: usage.promptTokens,
+              completion_tokens: usage.completionTokens,
+              total_tokens: usage.totalTokens,
+              step_number: usage.stepNumber,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        },
+      });
 
-      // Wrap streaming in sandbox context for infrastructure-level lifecycle management
-      // This ensures all tools share the same sandbox instance
-      // initProject: true auto-initializes the project structure before the agent starts
+      // Wrap streaming in sandbox context for shared sandbox instance.
+      // initProject: true auto-initializes the project structure before the agent starts.
       return withSandbox(
         projectId,
         async () => {
           // Capture sandbox reference for onFinish callback (which runs after
           // AsyncLocalStorage context has exited)
           const sandboxRef = getCurrentSandbox();
-          let hasUnsyncedChanges = false;
-          const pendingTokenUsage: Array<{
-            project_id: string;
-            model: string;
-            prompt_tokens: number;
-            completion_tokens: number;
-            total_tokens: number;
-            step_number: number;
-            timestamp: string;
-          }> = [];
 
-          const openRouterEnabled = hasOpenRouterFallback();
+          // AI SDK v6: createAgentUIStreamResponse drives the ToolLoopAgent,
+          // streams UIMessageStreamParts to the client, and calls onFinish
+          // when the stream completes.
+          return createAgentUIStreamResponse({
+            agent,
+            uiMessages: messages,
+            abortSignal: req.signal,
+            originalMessages: messages as never[],
+            onFinish: async ({ messages: finishedMessages }) => {
+              const messagesWithFallbackText =
+                ensureAssistantText(finishedMessages);
 
-          const streamErrorHandler = (error: unknown) => {
-            if (NoSuchToolError.isInstance(error)) {
-              return "I tried to use an unknown tool. Let me try a different approach.";
-            }
-            if (InvalidToolInputError.isInstance(error)) {
-              return "I provided invalid input to a tool. Let me fix that and try again.";
-            }
-            return `An error occurred: ${error instanceof Error ? error.message : "Unknown error"}`;
-          };
-
-          const streamFinishHandler = async ({
-            messages: finishedMessages,
-          }: {
-            messages: UIMessage[];
-          }) => {
-            const messagesWithFallbackText =
-              ensureAssistantText(finishedMessages);
-
-            // Save messages to database if projectId provided
-            if (projectId && projectId !== DEFAULT_PROJECT_ID) {
-              try {
-                // Convert UIMessage array to our format and save
-                // AI SDK v6: UIMessage only has parts, no content property
-                // Cast parts across generic boundary (UIMessagePart<UIDataTypes, UITools> → UIMessagePart)
-                const messagesToSave = messagesWithFallbackText.map((msg) => ({
-                  id: msg.id,
-                  role: msg.role as "user" | "assistant" | "system",
-                  content:
-                    msg.parts
-                      ?.filter((p) => p.type === "text")
-                      .map((p) =>
-                        "text" in p ? (p as { text: string }).text : "",
-                      )
-                      .join("") || "",
-                  parts: msg.parts as MessageToSave["parts"],
-                }));
-
-                await messageService.saveConversation(
-                  projectId,
-                  messagesToSave,
-                );
-
-                log.info("Messages saved", { projectId, count: messagesToSave.length });
-              } catch (dbError) {
-                log.error("Failed to save messages", { projectId }, dbError);
-              }
-
-              // Flush token usage as a single batch write to reduce DB write pressure.
-              if (pendingTokenUsage.length > 0) {
-                tokenUsageService
-                  .recordTokenUsageBatch(pendingTokenUsage)
-                  .then(() => {
-                    log.debug("Token usage batch recorded", {
-                      projectId,
-                      records: pendingTokenUsage.length,
-                    });
-                  })
-                  .catch((error) => {
-                    log.error("Failed to record token usage batch:", {
-                      error:
-                        error instanceof Error ? error.message : String(error),
-                    });
-                  });
-              }
-
-              // Auto-heal placeholder project names from the active prompt-derived title.
-              if (!isPlaceholderProjectName(defaultProjectName, projectId)) {
-                projectService
-                  .getProject(projectId)
-                  .then((projectRecord) => {
-                    if (
-                      isPlaceholderProjectName(projectRecord.name, projectId)
-                    ) {
-                      return projectService.updateProject(projectId, {
-                        name: defaultProjectName,
-                      });
-                    }
-                    return null;
-                  })
-                  .catch((error) => {
-                    log.warn("Failed to auto-heal placeholder project name", {
-                      projectId,
-                      error:
-                        error instanceof Error ? error.message : String(error),
-                    });
-                  });
-              }
-
-              // Auto-sync project files to database at session end (safety net),
-              // but skip if no unsynced file mutations were detected.
-              if (sandboxRef && hasUnsyncedChanges) {
-                quickSyncToDatabaseWithRetry(sandboxRef, projectId)
-                  .then(() => {
-                    hasUnsyncedChanges = false;
-                    log.info("Auto-synced project files", { projectId });
-                  })
-                  .catch((syncError) =>
-                    log.warn("Session-end sync failed", { projectId }, syncError),
+              // Save messages to database
+              if (projectId && projectId !== DEFAULT_PROJECT_ID) {
+                try {
+                  // AI SDK v6: UIMessage only has parts, no content property
+                  const messagesToSave = messagesWithFallbackText.map(
+                    (msg) => ({
+                      id: msg.id,
+                      role: msg.role as "user" | "assistant" | "system",
+                      content:
+                        msg.parts
+                          ?.filter((p) => p.type === "text")
+                          .map((p) =>
+                            "text" in p ? (p as { text: string }).text : "",
+                          )
+                          .join("") || "",
+                      parts: msg.parts as MessageToSave["parts"],
+                    }),
                   );
-              } else if (!hasUnsyncedChanges) {
-                log.debug("Skipped final sync (no unsynced changes)", { projectId });
-              }
 
-              try {
-                await flushContext(projectId);
-              } catch (flushError) {
-                log.warn("Failed to flush agent context", { projectId }, flushError);
-              }
-            }
-
-            // Log completion summary with context
-            const context = getAgentContext(projectId);
-            log.info("Chat complete", {
-              projectId,
-              steps: currentStepNumber,
-              serverRunning: !!context.serverState?.isRunning,
-            });
-          };
-
-          const streamResponseOptions = {
-            originalMessages: messages,
-            onError: streamErrorHandler,
-            onFinish: streamFinishHandler,
-          };
-
-          const createResult = (provider: "gateway" | "openrouter") => {
-            const usingOpenRouter = provider === "openrouter";
-
-            // Enable web search via AI Gateway when using the gateway provider
-            // This allows the model to search the web for documentation, APIs, and more
-            const providerOptions = usingOpenRouter
-              ? undefined
-              : getGatewayProviderOptionsWithSearch(modelKey);
-
-            return streamText({
-              model: usingOpenRouter
-                ? getOpenRouterModel(modelKey)
-                : getModel(modelKey),
-              ...(providerOptions && { providerOptions }),
-              system: systemPrompt,
-              messages: modelMessages,
-              tools,
-              abortSignal: req.signal,
-              // AI SDK v6: Use stopWhen with stepCountIs for multi-step agentic behaviors
-              // AI SDK v6: Use stopWhen with stepCountIs for multi-step control
-              stopWhen: stepCountIs(modelSettings.maxSteps || 50),
-              // AI SDK v6: maxOutputTokens (renamed from maxTokens in v5)
-              ...(modelSettings.maxOutputTokens && {
-                maxOutputTokens: modelSettings.maxOutputTokens,
-              }),
-
-              // AI SDK v6: onError for stream-level error logging
-              onError: ({ error }) => {
-                log.error("streamText error", {
-                  projectId,
-                  provider,
-                  model: executionModel,
-                  step: currentStepNumber,
-                  error: error instanceof Error ? error.message : String(error),
-                });
-              },
-
-              // AI SDK v6: onStepFinish callback for step tracking
-              onStepFinish: async ({
-                text,
-                toolCalls,
-                toolResults,
-                finishReason,
-                usage,
-              }) => {
-                currentStepNumber++;
-
-                // Log step completion for debugging
-                log.debug("Step finished", {
-                  projectId,
-                  step: currentStepNumber,
-                  provider,
-                  finishReason,
-                  toolCallsCount: toolCalls?.length || 0,
-                  toolResultsCount: toolResults?.length || 0,
-                  textLength: text?.length || 0,
-                  tokensUsed: usage?.totalTokens,
-                });
-
-                for (const toolCall of toolCalls || []) {
-                  const toolName = (toolCall as { toolName?: string }).toolName;
-                  if (toolName && FILE_MUTATION_TOOLS.has(toolName)) {
-                    hasUnsyncedChanges = true;
-                  }
-                }
-
-                for (const toolResult of toolResults || []) {
-                  const result = toolResult as {
-                    toolName?: string;
-                    toolCall?: { toolName?: string };
-                    output?: unknown;
-                  };
-                  const toolName = result.toolName ?? result.toolCall?.toolName;
-                  if (!toolName) continue;
-
-                  if (FILE_MUTATION_TOOLS.has(toolName)) {
-                    const success = getToolOutputSuccess(result.output);
-                    if (success !== false) {
-                      hasUnsyncedChanges = true;
-                    }
-                  }
-
-                  if (toolName === "syncProject") {
-                    const success = getToolOutputSuccess(result.output);
-                    if (success !== false) {
-                      hasUnsyncedChanges = false;
-                    }
-                  }
-                }
-
-                // Track cumulative token usage and warn when approaching budget
-                const stepTokens = usage?.totalTokens || 0;
-                cumulativeTokens += stepTokens;
-
-                if (cumulativeTokens > 500_000) {
-                  log.warn("Approaching token budget", {
+                  await messageService.saveConversation(
                     projectId,
-                    step: currentStepNumber,
-                    cumulativeTokens,
+                    messagesToSave,
+                  );
+                  log.info("Messages saved", {
+                    projectId,
+                    count: messagesToSave.length,
                   });
+                } catch (dbError) {
+                  log.error("Failed to save messages", { projectId }, dbError);
                 }
 
-                // Collect token usage and flush in batch on finish.
-                if (usage && projectId && projectId !== DEFAULT_PROJECT_ID) {
-                  const promptTokens = usage.inputTokens || 0;
-                  const completionTokens = usage.outputTokens || 0;
-                  const totalTokens =
-                    usage.totalTokens || promptTokens + completionTokens;
-
-                  if (totalTokens > 0) {
-                    pendingTokenUsage.push({
-                      project_id: projectId,
-                      model: executionModel,
-                      prompt_tokens: promptTokens,
-                      completion_tokens: completionTokens,
-                      total_tokens: totalTokens,
-                      step_number: currentStepNumber,
-                      timestamp: new Date().toISOString(),
+                // Flush token usage as a single batch write
+                if (pendingTokenUsage.length > 0) {
+                  tokenUsageService
+                    .recordTokenUsageBatch(pendingTokenUsage)
+                    .then(() => {
+                      log.debug("Token usage batch recorded", {
+                        projectId,
+                        records: pendingTokenUsage.length,
+                      });
+                    })
+                    .catch((error) => {
+                      log.error("Failed to record token usage batch", {
+                        error:
+                          error instanceof Error
+                            ? error.message
+                            : String(error),
+                      });
                     });
-                  }
                 }
-              },
 
-              // AI SDK v6: prepareStep for dynamic step configuration and activeTools
-              prepareStep: async ({ stepNumber, messages: stepMessages }) => {
-                const context = getAgentContext(projectId);
-                const maxSteps = modelSettings.maxSteps || 50;
-                const config: {
-                  messages?: typeof stepMessages;
-                  activeTools?: ToolName[];
-                } = {};
+                // Auto-heal placeholder project names
+                if (!isPlaceholderProjectName(defaultProjectName, projectId)) {
+                  projectService
+                    .getProject(projectId)
+                    .then((projectRecord) => {
+                      if (
+                        isPlaceholderProjectName(projectRecord.name, projectId)
+                      ) {
+                        return projectService.updateProject(projectId, {
+                          name: defaultProjectName,
+                        });
+                      }
+                      return null;
+                    })
+                    .catch((error) => {
+                      log.warn("Failed to auto-heal placeholder project name", {
+                        projectId,
+                        error:
+                          error instanceof Error
+                            ? error.message
+                            : String(error),
+                      });
+                    });
+                }
 
-                // MiniMax/moonshot/glm APIs require tool_use.input as object, not JSON string.
-                const needsToolInputTransform =
-                  executionModel === "minimax" ||
-                  executionModel === "moonshot" ||
-                  executionModel === "glm";
-
-                // Token budget enforcement: force graceful completion when approaching limits
-                const TOKEN_HARD_CAP = 600_000;
-                if (cumulativeTokens > TOKEN_HARD_CAP) {
-                  config.activeTools = [];
-                  log.warn("Token hard cap reached, disabling tools for graceful completion", {
+                // Auto-sync project files to database (safety net)
+                if (sandboxRef && hasUnsyncedChanges) {
+                  quickSyncToDatabaseWithRetry(sandboxRef, projectId)
+                    .then(() => {
+                      hasUnsyncedChanges = false;
+                      log.info("Auto-synced project files", { projectId });
+                    })
+                    .catch((syncError) =>
+                      log.warn(
+                        "Session-end sync failed",
+                        { projectId },
+                        syncError,
+                      ),
+                    );
+                } else if (!hasUnsyncedChanges) {
+                  log.debug("Skipped final sync (no unsynced changes)", {
                     projectId,
-                    stepNumber,
-                    cumulativeTokens,
-                    cap: TOKEN_HARD_CAP,
-                  });
-                  if (needsToolInputTransform && stepMessages.length > 0) {
-                    config.messages = ensureToolCallInputsAreObjects(stepMessages);
-                  }
-                  return config;
-                }
-
-                // Model-aware compression thresholds
-                // Keep multi-step loops cost-bounded even on large-context models.
-                const isGeminiModel =
-                  executionModel === "google" || executionModel === "googlePro";
-                const compressionThreshold = isGeminiModel ? 30 : 24;
-                const keepCount = isGeminiModel ? 18 : 14;
-
-                // For longer agentic loops, compress conversation history
-                // CRITICAL: Must preserve tool_use/tool_result pairs to avoid API errors
-                if (stepMessages.length >= compressionThreshold) {
-                  const keepWindow =
-                    `before-last-${keepCount}-messages` as `before-last-${number}-messages`;
-
-                  const prunedMessages = pruneMessages({
-                    messages: stepMessages,
-                    toolCalls: keepWindow,
-                    reasoning: "before-last-message",
-                    emptyMessages: "remove",
-                  });
-
-                  // Preserve system context if pruning removes the leading system message.
-                  config.messages =
-                    stepMessages[0]?.role === "system" &&
-                    !prunedMessages.includes(stepMessages[0])
-                      ? [stepMessages[0], ...prunedMessages]
-                      : prunedMessages;
-
-                  log.debug("Message pruning", {
-                    projectId,
-                    stepNumber,
-                    originalCount: stepMessages.length,
-                    prunedCount: config.messages.length,
-                    keepWindow,
-                    model: executionModel,
                   });
                 }
 
-                // Force the model to synthesize a final response near the loop limit.
-                if (stepNumber >= Math.max(1, maxSteps - 2)) {
-                  config.activeTools = [];
-                  log.debug("prepareStep: near step limit, disabling tools", {
-                    stepNumber,
-                    maxSteps,
-                    activeTools: [],
-                    reason: "step_limit",
-                  });
-                  if (needsToolInputTransform && stepMessages.length > 0) {
-                    config.messages = ensureToolCallInputsAreObjects(stepMessages);
-                  }
-                  return config;
+                try {
+                  await flushContext(projectId);
+                } catch (flushError) {
+                  log.warn(
+                    "Failed to flush agent context",
+                    { projectId },
+                    flushError,
+                  );
                 }
+              }
 
-                // Soft token budget: restrict to essential tools to wrap up efficiently
-                const TOKEN_SOFT_CAP = 500_000;
-                const isTokenConstrained = cumulativeTokens > TOKEN_SOFT_CAP;
-
-                // AI SDK v6: Dynamic activeTools based on context
-                // This optimizes token usage by only including relevant tools
-                let toolSelectionReason = "default";
-                if (isTokenConstrained) {
-                  // Near token budget: only allow file ops + sync to finish up
-                  config.activeTools = [
-                    ...FILE_TOOLS,
-                    ...BUILD_TOOLS,
-                    ...SYNC_TOOLS,
-                  ] as ToolName[];
-                  toolSelectionReason = "token_constrained";
-                } else if (stepNumber === 0) {
-                  // First step: keep scope tight for reliable bootstrap behavior.
-                  config.activeTools = BOOTSTRAP_ACTIVE_TOOLS;
-                  toolSelectionReason = "bootstrap";
-                } else if (context.buildStatus?.hasErrors) {
-                  // Build errors: Focus on debugging and file operations
-                  config.activeTools = [
-                    ...FILE_TOOLS,
-                    ...BUILD_TOOLS,
-                  ] as ToolName[];
-                  toolSelectionReason = "build_errors";
-                } else if (
-                  context.serverState?.isRunning &&
-                  context.taskGraph
-                ) {
-                  // Server running with active task graph: Focus on file operations
-                  config.activeTools = [
-                    ...FILE_TOOLS,
-                    ...BUILD_TOOLS,
-                  ] as ToolName[];
-                  toolSelectionReason = "active_task_graph";
-                } else {
-                  config.activeTools = DEFAULT_ACTIVE_TOOLS;
-                }
-
-                log.debug("prepareStep: tool selection", {
-                  stepNumber,
-                  maxSteps,
-                  activeToolCount: config.activeTools?.length ?? 0,
-                  activeTools: config.activeTools,
-                  reason: toolSelectionReason,
-                  hasErrors: !!context.buildStatus?.hasErrors,
-                  serverRunning: !!context.serverState?.isRunning,
-                  hasTaskGraph: !!context.taskGraph,
-                });
-
-                // Apply tool-input transform last so pruned messages are also fixed
-                if (needsToolInputTransform) {
-                  const baseMessages = config.messages ?? stepMessages;
-                  if (baseMessages.length > 0) {
-                    config.messages = ensureToolCallInputsAreObjects(baseMessages);
-                  }
-                }
-
-                return config;
-              },
-
-              // AI SDK v6: Tool call repair for better error recovery
-              experimental_repairToolCall: async ({ toolCall, error }) => {
-                // Don't try to repair unknown tools
-                if (NoSuchToolError.isInstance(error)) {
-                  log.warn("Tool repair: unknown tool", { projectId, tool: toolCall.toolName });
-                  return null;
-                }
-
-                // For invalid inputs, try to fix common issues
-                if (InvalidToolInputError.isInstance(error)) {
-                  log.debug("Tool repair: fixing invalid input", { projectId, tool: toolCall.toolName });
-
-                  // toolCall.input can be a JSON string (from model) or object
-                  try {
-                    const parsedInput =
-                      typeof toolCall.input === "string"
-                        ? (JSON.parse(toolCall.input) as Record<string, unknown>)
-                        : (toolCall.input as Record<string, unknown>);
-                    const repairedInput = { ...parsedInput };
-
-                    // Fix common path issues
-                    if (typeof repairedInput.path === "string") {
-                      // Remove leading slashes if present
-                      repairedInput.path = repairedInput.path.replace(
-                        /^\/+/,
-                        "",
-                      );
-                    }
-
-                    // Fix projectName issues
-                    if (typeof repairedInput.projectName === "string") {
-                      // Convert to lowercase with hyphens
-                      repairedInput.projectName = repairedInput.projectName
-                        .toLowerCase()
-                        .replace(/\s+/g, "-")
-                        .replace(/[^a-z0-9-]/g, "");
-                    }
-
-                    // Normalize malformed files payloads sent as an object map.
-                    if (
-                      repairedInput.files &&
-                      !Array.isArray(repairedInput.files) &&
-                      typeof repairedInput.files === "object"
-                    ) {
-                      repairedInput.files = Object.values(
-                        repairedInput.files as Record<string, unknown>,
-                      );
-                    }
-
-                    // LanguageModelV3ToolCall expects input as a JSON string
-                    return {
-                      ...toolCall,
-                      input: JSON.stringify(repairedInput),
-                    };
-                  } catch {
-                    // If input can't be parsed, we can't repair
-                    return null;
-                  }
-                }
-
-                // Return null if we can't repair
-                return null;
-              },
-            });
-          };
-
-          try {
-            return createResult("gateway").toUIMessageStreamResponse(
-              streamResponseOptions,
-            );
-          } catch (gatewayError) {
-            if (!openRouterEnabled) {
-              throw gatewayError;
-            }
-
-            log.warn("Gateway stream initialization failed, using OpenRouter", {
-              projectId,
-              model: executionModel,
-              error:
-                gatewayError instanceof Error
-                  ? gatewayError.message
-                  : String(gatewayError),
-            });
-
-            return createResult("openrouter").toUIMessageStreamResponse(
-              streamResponseOptions,
-            );
-          }
+              // Log completion summary
+              const context = getAgentContext(projectId);
+              log.info("Chat complete", {
+                projectId,
+                steps: pendingTokenUsage.length,
+                serverRunning: !!context.serverState?.isRunning,
+              });
+            },
+          });
         },
         {
           projectDir: getProjectDir(),
@@ -881,17 +352,15 @@ export const POST = withAuth(
     } catch (error) {
       log.error("Chat API error", { projectId: "unknown" }, error);
 
-      // AI SDK v6 best practice: Provide detailed error responses
       const errorMessage =
         error instanceof Error
           ? error.message
           : "Failed to process chat request";
-      const errorDetails = {
-        error: errorMessage,
-        timestamp: new Date().toISOString(),
-      };
 
-      return NextResponse.json(errorDetails, { status: 500 });
+      return NextResponse.json(
+        { error: errorMessage, timestamp: new Date().toISOString() },
+        { status: 500 },
+      );
     }
   },
   { skipRateLimit: true },

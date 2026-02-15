@@ -1,11 +1,68 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useMemo } from "react";
 import { Message, type MessagePart } from "./message";
 import type { UIMessage } from "ai";
-import { ChatEmptyState } from "./chat-error";
+import { ConversationEmptyState } from "@/components/ai-elements/conversation";
+import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
 import { ChatError } from "./chat-error";
-import { SuggestionChips, buildHeuristicSuggestions } from "./suggestion-chips";
+
+// Heuristic suggestion rules — moved from suggestion-chips.tsx during ai-elements migration
+const HEURISTIC_RULES: Array<{ keywords: string[]; suggestions: string[] }> = [
+  {
+    keywords: ["auth", "login", "signup", "user"],
+    suggestions: [
+      "Add forgot-password flow",
+      "Add social sign-in",
+      "Add account settings page",
+      "Add role-based access",
+    ],
+  },
+  {
+    keywords: ["dashboard", "analytics", "metrics", "chart"],
+    suggestions: [
+      "Add date-range filters",
+      "Add export to CSV",
+      "Add realtime metrics",
+      "Add drill-down charts",
+    ],
+  },
+  {
+    keywords: ["ecommerce", "shop", "cart", "product", "checkout"],
+    suggestions: [
+      "Add product search",
+      "Add saved favorites",
+      "Add order history",
+      "Add checkout validation",
+    ],
+  },
+  {
+    keywords: ["landing", "marketing", "hero", "homepage"],
+    suggestions: [
+      "Add testimonials section",
+      "Add pricing comparison",
+      "Add FAQ accordion",
+      "Add conversion tracking",
+    ],
+  },
+];
+
+const defaultSuggestions = [
+  "Add loading skeletons",
+  "Add empty state UX",
+  "Add keyboard shortcuts",
+  "Add mobile polish",
+];
+
+function buildHeuristicSuggestions(contextText?: string): string[] {
+  const normalized = (contextText || "").toLowerCase();
+  for (const rule of HEURISTIC_RULES) {
+    if (rule.keywords.some((keyword) => normalized.includes(keyword))) {
+      return rule.suggestions;
+    }
+  }
+  return defaultSuggestions;
+}
 
 // Hoisted static JSX — avoids recreating element tree on every render
 const typingIndicator = (
@@ -42,6 +99,8 @@ interface MessageListProps {
   onRetry: () => void;
   getThinkingTime?: (messageId: string) => number | undefined;
   onSelectSuggestion?: (suggestion: string) => void;
+  onToolApprove?: (toolCallId: string) => void;
+  onToolDeny?: (toolCallId: string) => void;
 }
 
 export const MessageList = React.memo(
@@ -53,10 +112,9 @@ export const MessageList = React.memo(
     onRetry,
     getThinkingTime,
     onSelectSuggestion,
+    onToolApprove,
+    onToolDeny,
   }: MessageListProps) {
-    const messagesEndRef = useRef<HTMLDivElement>(null);
-    const shouldAutoScrollRef = useRef(true);
-
     const uniqueMessages = useMemo(
       () => [
         ...new Map(messages.map((message) => [message.id, message])).values(),
@@ -72,39 +130,26 @@ export const MessageList = React.memo(
       [uniqueMessages],
     );
 
-    useEffect(() => {
-      const scrollContainer = messagesEndRef.current?.closest(
-        "[data-chat-scroll-container='true']",
-      ) as HTMLElement | null;
-      if (!scrollContainer) return;
-
-      const handleScroll = () => {
-        const distanceFromBottom =
-          scrollContainer.scrollHeight -
-          scrollContainer.scrollTop -
-          scrollContainer.clientHeight;
-        shouldAutoScrollRef.current = distanceFromBottom < 120;
-      };
-
-      handleScroll();
-      scrollContainer.addEventListener("scroll", handleScroll, {
-        passive: true,
-      });
-
-      return () => {
-        scrollContainer.removeEventListener("scroll", handleScroll);
-      };
-    }, []);
-
-    useEffect(() => {
-      if (!shouldAutoScrollRef.current) return;
-      messagesEndRef.current?.scrollIntoView({
-        behavior: isWorking ? "auto" : "smooth",
-      });
-    }, [uniqueMessages, isWorking]);
-
     if (uniqueMessages.length === 0 && !isWorking) {
-      return <ChatEmptyState />;
+      return (
+        <ConversationEmptyState
+          title="Start building"
+          description="Describe what you want to create and I'll help you build it step by step."
+          icon={
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/20 to-blue-500/20">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                className="h-6 w-6 text-emerald-400"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <path d="M9.663 17h4.674M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+            </div>
+          }
+        />
+      );
     }
 
     const showSuggestionChips =
@@ -126,25 +171,30 @@ export const MessageList = React.memo(
               message.role === "assistant" &&
               message.id === lastAssistantMessage?.id
             }
+            onToolApprove={onToolApprove}
+            onToolDeny={onToolDeny}
           />
         ))}
 
         {showSuggestionChips && (
-          <SuggestionChips
-            suggestions={buildHeuristicSuggestions(
+          <Suggestions className="px-1 pt-2">
+            {buildHeuristicSuggestions(
               getMessageText(lastAssistantMessage),
-            )}
-            onSelect={onSelectSuggestion}
-          />
+            ).map((s) => (
+              <Suggestion key={s} suggestion={s} onClick={onSelectSuggestion} />
+            ))}
+          </Suggestions>
         )}
 
-        {isWorking ? (isCallingTools ? toolCallingIndicator : typingIndicator) : null}
+        {isWorking
+          ? isCallingTools
+            ? toolCallingIndicator
+            : typingIndicator
+          : null}
 
         {error && !isWorking ? (
           <ChatError error={error} onRetry={onRetry} />
         ) : null}
-
-        <div ref={messagesEndRef} className="h-px w-full" />
       </div>
     );
   },
@@ -153,7 +203,9 @@ export const MessageList = React.memo(
       prevProps.messages === nextProps.messages &&
       prevProps.isWorking === nextProps.isWorking &&
       prevProps.isCallingTools === nextProps.isCallingTools &&
-      prevProps.error === nextProps.error
+      prevProps.error === nextProps.error &&
+      prevProps.onToolApprove === nextProps.onToolApprove &&
+      prevProps.onToolDeny === nextProps.onToolDeny
     );
   },
 );

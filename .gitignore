@@ -51,6 +51,25 @@ build/
 # SVG generator cache
 .svggen/
 
-# Cursor debug logs
-.cursor/debug.log
-.env.local
+# AI coding tool configs and skills
+.agent/
+.agents/
+.claude/skills/
+.cline/
+.codebuddy/
+.commandcode/
+.continue/
+.cursor/
+.factory/
+.kilocode/
+.kiro/
+.mcpjam/
+.neovate/
+.openhands/
+.pi/
+.qoder/
+.roo/
+.trae/
+.windsurf/
+.zencoder/
+skills/

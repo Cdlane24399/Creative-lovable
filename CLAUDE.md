@@ -212,8 +212,10 @@ Tool factories in `lib/ai/tools/`, barrel export at `lib/ai/tools/index.ts`.
 | `createSyncTools` | Database persistence with retry logic |
 | `createBuildTools` | Building and bundling applications |
 | `createCodeTools` | Code analysis and transformation |
+| `createSearchTools` | Web search via Tavily |
+| `createSkillTools` | Discover Vercel Skills from registry |
 
-**Key tools:** `initializeProject`, `batchWriteFiles`, `syncProject`, `writeFile`, `editFile`, `readFile`, `getProjectStructure`, `installPackage`, `getBuildStatus`, `runCommand`, `executeCode`.
+**Key tools:** `initializeProject`, `batchWriteFiles`, `syncProject`, `writeFile`, `editFile`, `readFile`, `getProjectStructure`, `installPackage`, `getBuildStatus`, `runCommand`, `executeCode`, `webSearch`, `findSkills`.
 
 ---
 

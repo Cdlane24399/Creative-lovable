@@ -1,25 +1,29 @@
 "use client";
 
 import * as React from "react";
-import { useRef } from "react";
-import { ArrowUp, Loader2, Square, Wand2 } from "lucide-react";
+import { useRef, useCallback } from "react";
+import { Loader2, Wand2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Button } from "@/components/ui/button";
+import {
+  PromptInput as AiPromptInput,
+  PromptInputBody,
+  PromptInputTextarea,
+  PromptInputFooter,
+  PromptInputTools,
+  PromptInputButton,
+  PromptInputSubmit,
+  type PromptInputMessage,
+} from "@/components/ai-elements/prompt-input";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { MODEL_DISPLAY_NAMES, type ModelProvider } from "@/lib/ai/agent";
 import { MiniMaxIcon, MoonshotIcon, GLMIcon } from "@/components/shared/icons";
+import type { ChatStatus } from "ai";
 
 // Icons (reusing from existing chat-panel or definition here for portability)
 const AnthropicIcon = ({ className }: { className?: string }) => (
@@ -148,205 +152,151 @@ export function PromptInput({
     })),
   );
 
-  // Auto-resize textarea when value changes
-  const autoResize = React.useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 200) + "px";
-  }, []);
-
-  React.useEffect(() => {
-    autoResize();
-  }, [inputValue, autoResize]);
-
   const isIdle = status === "idle";
   const isWorking = status === "working";
   const isImproving = status === "improving";
-  const isInputDisabled = status !== "idle";
+
+  // Map our custom status to AI SDK ChatStatus
+  const chatStatus: ChatStatus = isWorking
+    ? "streaming"
+    : isImproving
+      ? "submitted"
+      : "ready";
+
+  // Bridge between ai-elements onSubmit (PromptInputMessage) and parent's onSubmit (FormEvent)
+  const handleAiSubmit = useCallback(
+    (_message: PromptInputMessage, event: React.FormEvent<HTMLFormElement>) => {
+      onSubmit(event);
+    },
+    [onSubmit],
+  );
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="relative z-10 mx-auto w-full max-w-3xl"
+    <AiPromptInput
+      onSubmit={handleAiSubmit}
+      className={cn(
+        "relative z-10 mx-auto w-full max-w-3xl",
+        "[&_[data-slot=input-group]]:rounded-2xl [&_[data-slot=input-group]]:bg-[#1A1A1A]/90 [&_[data-slot=input-group]]:border-white/5 [&_[data-slot=input-group]]:shadow-2xl [&_[data-slot=input-group]]:backdrop-blur-xl [&_[data-slot=input-group]]:transition-all [&_[data-slot=input-group]]:duration-300",
+        showImproveEffect
+          ? "[&_[data-slot=input-group]]:border-violet-500/50 [&_[data-slot=input-group]]:ring-1 [&_[data-slot=input-group]]:ring-violet-500/20"
+          : "[&_[data-slot=input-group]]:focus-within:border-zinc-700 [&_[data-slot=input-group]]:hover:border-zinc-800",
+      )}
     >
-      <div
-        className={cn(
-          "relative flex flex-col gap-1.5 rounded-2xl bg-[#1A1A1A]/90 border border-white/5 px-3 py-2 shadow-2xl backdrop-blur-xl transition-all duration-300",
-          showImproveEffect
-            ? "border-violet-500/50 ring-1 ring-violet-500/20"
-            : "focus-within:border-zinc-700 hover:border-zinc-800",
-        )}
-      >
-        {/* Text Area */}
-        <div className="relative">
-          <textarea
-            id="chat-prompt-input"
-            name="chatPrompt"
-            ref={textareaRef}
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                onSubmit(e);
-              }
-              if (e.key === "Escape" && isWorking && onStop) {
-                e.preventDefault();
-                onStop();
-              }
-            }}
-            placeholder="Build something wonderful..."
-            aria-label="Chat prompt"
-            className={cn(
-              "min-h-[36px] w-full resize-none bg-transparent px-1 text-[15px] leading-normal text-zinc-100 placeholder:text-zinc-500 focus:outline-none transition-colors",
-              showImproveEffect && "text-violet-300",
-            )}
-            rows={1}
-            disabled={isInputDisabled}
-          />
+      <PromptInputBody>
+        <PromptInputTextarea
+          ref={textareaRef}
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && isWorking && onStop) {
+              e.preventDefault();
+              onStop();
+            }
+          }}
+          placeholder="Build something wonderful..."
+          disabled={!isIdle}
+          className={cn(showImproveEffect && "text-violet-300")}
+        />
 
-          {/* Sparkle effect overlay */}
-          <AnimatePresence>
-            {showImproveEffect && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 pointer-events-none"
-              >
-                {[...Array(6)].map((_, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, scale: 0 }}
-                    animate={{ opacity: [0, 1, 0], scale: [0, 1, 0] }}
-                    transition={{
-                      duration: 2,
-                      delay: i * 0.15,
-                      repeat: Infinity,
-                    }}
-                    className="absolute w-1 h-1 bg-violet-400 rounded-full"
-                    style={{
-                      left: sparklePositions[i].left,
-                      top: sparklePositions[i].top,
-                      boxShadow: "0 0 10px 2px rgba(167, 139, 250, 0.6)",
-                    }}
-                  />
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        {/* Sparkle effect overlay - positioned relative to InputGroup */}
+        <AnimatePresence>
+          {showImproveEffect && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 pointer-events-none z-10"
+            >
+              {[...Array(6)].map((_, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, scale: 0 }}
+                  animate={{ opacity: [0, 1, 0], scale: [0, 1, 0] }}
+                  transition={{
+                    duration: 2,
+                    delay: i * 0.15,
+                    repeat: Infinity,
+                  }}
+                  className="absolute w-1 h-1 bg-violet-400 rounded-full"
+                  style={{
+                    left: sparklePositions[i].left,
+                    top: sparklePositions[i].top,
+                    boxShadow: "0 0 10px 2px rgba(167, 139, 250, 0.6)",
+                  }}
+                />
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </PromptInputBody>
 
-        {/* Toolbar */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {/* Model Selector */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1.5 rounded-md px-2 text-xs font-medium text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
-                  disabled={!isIdle}
-                >
-                  <ModelIcon model={selectedModel} className="h-3.5 w-3.5" />
-                  <span>{MODEL_DISPLAY_NAMES[selectedModel]}</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                className="w-[200px] bg-[#1A1A1A] border-zinc-800 p-1"
-              >
-                {Object.entries(MODEL_DISPLAY_NAMES).map(([key, name]) => (
-                  <DropdownMenuItem
-                    key={key}
-                    onClick={() => setSelectedModel(key as ModelProvider)}
-                    className={cn(
-                      "flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-400 rounded-sm cursor-pointer hover:bg-zinc-800 hover:text-zinc-100",
-                      selectedModel === key && "bg-zinc-800 text-zinc-100",
-                    )}
-                  >
-                    <ModelIcon
-                      model={key as ModelProvider}
-                      className="h-3.5 w-3.5"
-                    />
-                    {name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {/* Improve Prompt - only visible when there's text */}
-            {inputValue.trim() && (
-              <Button
-                type="button"
-                variant="ghost"
+      <PromptInputFooter>
+        <PromptInputTools>
+          {/* Model Selector */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <PromptInputButton
+                disabled={!isIdle}
                 size="sm"
-                onClick={onImprovePrompt}
-                disabled={isImproving || isWorking}
-                className={cn(
-                  "h-7 gap-1.5 rounded-md px-2 text-xs font-medium transition-all group",
-                  !isImproving && !isWorking
-                    ? "text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
-                    : "text-zinc-600 cursor-not-allowed",
-                )}
               >
-                {isImproving ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Wand2 className="h-3 w-3 transition-transform group-hover:rotate-12" />
-                )}
-                <span>Improve</span>
-              </Button>
-            )}
-          </div>
-
-          <div className="flex items-center">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  {isWorking ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={onStop}
-                      aria-label="Stop generating"
-                      className="h-8 w-8 rounded-lg p-0 transition-all duration-200 flex items-center justify-center bg-red-500 text-white hover:bg-red-400 hover:scale-105 shadow-[0_0_15px_-3px_rgba(239,68,68,0.4)]"
-                    >
-                      <Square className="h-3.5 w-3.5 fill-current" />
-                    </Button>
-                  ) : (
-                    <Button
-                      type="submit"
-                      size="sm"
-                      disabled={!isIdle || !inputValue.trim() || isImproving}
-                      aria-label="Send message"
-                      className={cn(
-                        "h-8 w-8 rounded-lg p-0 transition-all duration-200 flex items-center justify-center",
-                        inputValue.trim() && !isImproving
-                          ? "bg-emerald-500 text-black hover:bg-emerald-400 hover:scale-105 shadow-[0_0_15px_-3px_rgba(16,185,129,0.4)]"
-                          : "bg-zinc-800 text-zinc-500 cursor-not-allowed",
-                      )}
-                    >
-                      <ArrowUp className="h-4 w-4 stroke-[2.5px]" />
-                    </Button>
+                <ModelIcon model={selectedModel} className="h-3.5 w-3.5" />
+                <span>{MODEL_DISPLAY_NAMES[selectedModel]}</span>
+              </PromptInputButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="w-[200px] bg-[#1A1A1A] border-zinc-800 p-1"
+            >
+              {Object.entries(MODEL_DISPLAY_NAMES).map(([key, name]) => (
+                <DropdownMenuItem
+                  key={key}
+                  onClick={() => setSelectedModel(key as ModelProvider)}
+                  className={cn(
+                    "flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-400 rounded-sm cursor-pointer hover:bg-zinc-800 hover:text-zinc-100",
+                    selectedModel === key && "bg-zinc-800 text-zinc-100",
                   )}
-                </TooltipTrigger>
-                <TooltipContent className="bg-zinc-900 border-zinc-800 text-zinc-300">
-                  <p>
-                    {isWorking
-                      ? "Stop generating (Esc)"
-                      : "Send message (⌘ + Enter)"}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-        </div>
-      </div>
-    </form>
+                >
+                  <ModelIcon
+                    model={key as ModelProvider}
+                    className="h-3.5 w-3.5"
+                  />
+                  {name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Improve Prompt - only visible when there's text */}
+          {inputValue.trim() && (
+            <PromptInputButton
+              onClick={onImprovePrompt}
+              disabled={isImproving || isWorking}
+              tooltip={{ content: "Improve prompt", shortcut: "⌘I" }}
+              className={cn(
+                "transition-all group",
+                !isImproving && !isWorking
+                  ? "text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
+                  : "text-zinc-600 cursor-not-allowed",
+              )}
+              size="sm"
+            >
+              {isImproving ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Wand2 className="h-3 w-3 transition-transform group-hover:rotate-12" />
+              )}
+              <span>Improve</span>
+            </PromptInputButton>
+          )}
+        </PromptInputTools>
+
+        <PromptInputSubmit
+          status={chatStatus}
+          onStop={isWorking ? onStop : undefined}
+          disabled={!isWorking && (isImproving || !inputValue.trim())}
+        />
+      </PromptInputFooter>
+    </AiPromptInput>
   );
 }
 

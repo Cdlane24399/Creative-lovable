@@ -1,9 +1,72 @@
 "use client";
 
-import { Clock } from "lucide-react";
-import { ChatMarkdown } from "./chat-markdown";
-import { ToolResultItem } from "./tool-result-item";
-import { ThinkingSection } from "./thinking-section";
+import {
+  Message as AIMessage,
+  MessageContent,
+  MessageResponse,
+} from "@/components/ai-elements/message";
+import {
+  Reasoning,
+  ReasoningTrigger,
+  ReasoningContent,
+} from "@/components/ai-elements/reasoning";
+import type { ToolUIPart } from "ai";
+import { Task, TaskContent } from "@/components/ai-elements/task";
+import {
+  File as FileIcon,
+  Pencil,
+  FileText,
+  Search,
+  Terminal,
+  Wrench,
+  FileX,
+  type LucideProps,
+} from "lucide-react";
+import {
+  Confirmation,
+  ConfirmationRequest,
+  ConfirmationAccepted,
+  ConfirmationRejected,
+  ConfirmationActions,
+  ConfirmationAction,
+} from "@/components/ai-elements/confirmation";
+
+// Tool approval helpers
+const TOOL_LABELS: Record<string, string> = {
+  syncProject: "Sync project files to database",
+  runCommand: "Run shell command",
+};
+
+function getToolLabel(toolName: string): string {
+  return TOOL_LABELS[toolName] || toolName;
+}
+
+function getInputSummary(
+  toolName: string,
+  input?: Record<string, unknown>,
+): string | null {
+  if (!input) return null;
+  if (toolName === "runCommand" && typeof input.command === "string") {
+    return input.command;
+  }
+  if (toolName === "syncProject") {
+    return "Persist all files to cloud storage";
+  }
+  return null;
+}
+
+/** Converts an absolute path to a relative display path. */
+function toRelativePath(filePath: string): string {
+  let path = filePath.replace(/^\/+/, "");
+  const prefixesToStrip = ["home/user/", "home/", "app/", "src/"];
+  for (const prefix of prefixesToStrip) {
+    if (path.startsWith(prefix)) {
+      path = path.slice(prefix.length);
+      break;
+    }
+  }
+  return path || filePath;
+}
 
 // Local types matching what's used in chat-panel currently
 export interface TextPart {
@@ -15,7 +78,8 @@ export type ToolState =
   | "input-streaming"
   | "input-available"
   | "output-available"
-  | "output-error";
+  | "output-error"
+  | "approval-requested";
 
 export interface ToolPart {
   type: string;
@@ -58,6 +122,26 @@ const TOOL_ACTION_MAP: Record<string, ToolAction> = {
 
 function getToolAction(toolName: string): ToolAction {
   return TOOL_ACTION_MAP[toolName] || "Executed";
+}
+
+const TOOL_ACTION_ICONS: Record<ToolAction, React.ComponentType<LucideProps>> = {
+  Created: FileIcon,
+  Edited: Pencil,
+  Read: FileText,
+  Searched: Search,
+  Executed: Terminal,
+  Generated: Wrench,
+  Deleted: FileX,
+};
+
+function ToolActionIcon({ action, ...props }: { action: ToolAction } & LucideProps) {
+  const Icon = TOOL_ACTION_ICONS[action] ?? Wrench;
+  return <Icon {...props} />;
+}
+
+interface TimelineRow {
+  action: ToolAction;
+  filePath: string;
 }
 
 function extractFilePath(
@@ -227,10 +311,14 @@ interface MessageProps {
   content?: string;
   parts?: MessagePart[];
   isStreaming?: boolean;
-  /** Thinking time in seconds before the response started */
+  /** @deprecated Reasoning is now extracted from parts inline. Kept for API compat. */
   thinkingTime?: number;
-  /** Optional thinking/reasoning content to display */
+  /** @deprecated Reasoning is now extracted from parts inline. Kept for API compat. */
   thinkingContent?: string;
+  /** Callback to approve a tool call (tool approval flow) */
+  onToolApprove?: (toolCallId: string) => void;
+  /** Callback to deny a tool call (tool approval flow) */
+  onToolDeny?: (toolCallId: string) => void;
 }
 
 export function Message({
@@ -238,13 +326,13 @@ export function Message({
   content,
   parts,
   isStreaming = false,
-  thinkingTime,
-  thinkingContent,
+  onToolApprove,
+  onToolDeny,
 }: MessageProps) {
   if (role === "user") {
     return (
-      <div className="flex w-full justify-end">
-        <div className="max-w-[85%] rounded-2xl bg-zinc-800/80 px-4 py-2.5 text-sm text-zinc-100 shadow-sm backdrop-blur-sm">
+      <AIMessage from="user">
+        <MessageContent className="max-w-[85%] rounded-2xl bg-zinc-800/80 px-4 py-2.5 text-sm text-zinc-100 shadow-sm backdrop-blur-sm">
           {parts ? (
             parts.map((part, i) =>
               part.type === "text" ? (
@@ -254,111 +342,198 @@ export function Message({
           ) : (
             <span>{content}</span>
           )}
-        </div>
-      </div>
+        </MessageContent>
+      </AIMessage>
     );
   }
 
   // Assistant Message
   return (
-    <div className="flex w-full flex-col gap-2">
-      {/* Thinking time indicator */}
-      {/* Thinking section */}
-      {thinkingContent ? <ThinkingSection content={thinkingContent} /> : null}
-      {/* Thinking time indicator (fallback if no thinking content) */}
-      {!thinkingContent && thinkingTime !== undefined && thinkingTime > 0 && (
-        <div className="flex items-center gap-1 px-1">
-          <Clock className="h-3 w-3 text-zinc-500" />
-          <span className="text-xs text-zinc-500">
-            Thought for {thinkingTime}s
-          </span>
-        </div>
-      )}
-      <div className="flex flex-col gap-2 rounded-2xl p-1">
+    <AIMessage from="assistant">
+      <MessageContent>
         {parts ? (
-          // Complex message with parts (text + tools)
-          <AssistantMessageParts parts={parts} isStreaming={isStreaming} />
+          <AssistantMessageParts
+            parts={parts}
+            isStreaming={isStreaming}
+            onToolApprove={onToolApprove}
+            onToolDeny={onToolDeny}
+          />
         ) : (
-          // Simple text content
-          <div className="text-sm text-zinc-300">
-            <ChatMarkdown content={content || ""} isStreaming={isStreaming} />
-          </div>
+          <MessageResponse>{content || ""}</MessageResponse>
         )}
-      </div>
-    </div>
+      </MessageContent>
+    </AIMessage>
   );
 }
 
 // Planning tool types that render in the floating checklist, not inline
 const PLAN_TOOL_NAMES = new Set(["planChanges", "markStepComplete"]);
 
+interface ReasoningRow {
+  text: string;
+  isStreaming: boolean;
+}
+
 function AssistantMessageParts({
   parts,
   isStreaming,
+  onToolApprove,
+  onToolDeny,
 }: {
   parts: MessagePart[];
   isStreaming: boolean;
+  onToolApprove?: (toolCallId: string) => void;
+  onToolDeny?: (toolCallId: string) => void;
 }) {
   const elements: React.ReactNode[] = [];
+  let currentToolGroup: TimelineRow[] = [];
+  let currentReasoningGroup: ReasoningRow[] = [];
+  let groupKey = 0;
+
+  function flushToolGroup() {
+    if (currentToolGroup.length === 0) return;
+    const rows = [...currentToolGroup];
+    const key = groupKey++;
+    elements.push(
+      <Task key={`group-${key}`} defaultOpen>
+        <TaskContent>
+          {rows.map((row, i) => (
+            <div key={i} className="flex items-center gap-2 py-0.5 text-sm">
+              <ToolActionIcon
+                action={row.action}
+                className="size-4 shrink-0 text-muted-foreground"
+              />
+              <span className="font-medium">{row.action}</span>
+              <span className="truncate text-muted-foreground">
+                · {toRelativePath(row.filePath)}
+              </span>
+            </div>
+          ))}
+        </TaskContent>
+      </Task>,
+    );
+    currentToolGroup = [];
+  }
+
+  function flushReasoningGroup() {
+    if (currentReasoningGroup.length === 0) return;
+    const rows = [...currentReasoningGroup];
+    const key = groupKey++;
+    const combinedText = rows.map((r) => r.text).join("\n\n");
+    const isAnyStreaming = rows.some((r) => r.isStreaming);
+    elements.push(
+      <Reasoning key={`reasoning-${key}`} isStreaming={isAnyStreaming} defaultOpen={false}>
+        <ReasoningTrigger />
+        {combinedText && (
+          <ReasoningContent>{combinedText}</ReasoningContent>
+        )}
+      </Reasoning>,
+    );
+    currentReasoningGroup = [];
+  }
+
+  function flushAll() {
+    flushReasoningGroup();
+    flushToolGroup();
+  }
 
   parts.forEach((part, index) => {
-    if (part.type === "text") {
-      // Don't render empty text parts
-      if (!(part as TextPart).text.trim()) return;
+    // Reasoning parts — render inline as collapsible blocks
+    if (part.type === "reasoning") {
+      flushToolGroup();
+      const rp = part as unknown as { text: string; state?: string };
+      currentReasoningGroup.push({
+        text: rp.text,
+        isStreaming: rp.state === "streaming",
+      });
+      return;
+    }
 
+    if (part.type === "text") {
+      if (!(part as TextPart).text.trim()) return;
+      flushAll();
       elements.push(
-        <div key={`text-${index}`} className="text-sm text-zinc-300 px-1">
-          <ChatMarkdown
-            content={(part as TextPart).text}
-            isStreaming={isStreaming}
-          />
+        <div key={`text-${index}`} className="px-1">
+          <MessageResponse>{(part as TextPart).text}</MessageResponse>
         </div>,
       );
     } else if (part.type.startsWith("tool-")) {
+      flushReasoningGroup();
       const toolPart = part as ToolPart;
       const toolName = toolPart.type.replace("tool-", "");
 
       // Planning tools render in the floating checklist above the input, skip inline
       if (PLAN_TOOL_NAMES.has(toolName)) return;
 
-      if (toolName === "batchWriteFiles") {
-        const expandedRows = expandBatchWriteToolPart(toolPart);
-        if (expandedRows.length > 0) {
-          expandedRows.forEach((row, rowIndex) => {
-            elements.push(
-              <ToolResultItem
-                key={`tool-${index}-row-${rowIndex}`}
-                action={row.action}
-                filePath={row.filePath}
-                content={row.content}
-                state={toolPart.state}
-              />,
-            );
-          });
-          return;
-        }
+      // Show approval UI for tools awaiting user confirmation — breaks the group
+      if (
+        toolPart.state === "approval-requested" &&
+        toolPart.toolCallId &&
+        onToolApprove &&
+        onToolDeny
+      ) {
+        flushToolGroup();
+        const summary = getInputSummary(toolName, toolPart.input);
+        elements.push(
+          <Confirmation
+            key={`approval-${index}`}
+            approval={{ id: toolPart.toolCallId }}
+            state={toolPart.state as ToolUIPart["state"]}
+          >
+            <ConfirmationRequest>
+              <div className="flex flex-col gap-0.5">
+                <p className="font-medium text-sm">{getToolLabel(toolName)}</p>
+                {summary && (
+                  <p className="text-xs font-mono text-muted-foreground">
+                    {summary}
+                  </p>
+                )}
+              </div>
+            </ConfirmationRequest>
+            <ConfirmationAccepted>Approved</ConfirmationAccepted>
+            <ConfirmationRejected>Denied</ConfirmationRejected>
+            <ConfirmationActions>
+              <ConfirmationAction
+                variant="outline"
+                onClick={() => onToolDeny(toolPart.toolCallId!)}
+              >
+                Deny
+              </ConfirmationAction>
+              <ConfirmationAction
+                onClick={() => onToolApprove(toolPart.toolCallId!)}
+              >
+                Approve
+              </ConfirmationAction>
+            </ConfirmationActions>
+          </Confirmation>,
+        );
+        return;
       }
 
-      const action = getToolAction(toolName);
-      const filePath = extractFilePath(toolName, toolPart.input);
-      const content = extractToolContent(
-        toolName,
-        toolPart.input,
-        toolPart.output,
-        toolPart.errorText,
-      );
-
-      elements.push(
-        <ToolResultItem
-          key={`tool-${index}`}
-          action={action}
-          filePath={filePath}
-          content={content}
-          state={toolPart.state}
-        />,
-      );
+      // Accumulate tool rows into the current timeline group
+      if (toolName === "batchWriteFiles") {
+        const expandedRows = expandBatchWriteToolPart(toolPart);
+        for (const row of expandedRows) {
+          // Skip the JSON summary row — only show individual file rows
+          if (row.filePath === "batchWriteFiles/result.json") continue;
+          currentToolGroup.push({ action: row.action, filePath: row.filePath });
+        }
+        // Fallback when no files could be expanded
+        if (expandedRows.filter((r) => r.filePath !== "batchWriteFiles/result.json").length === 0) {
+          currentToolGroup.push({
+            action: getToolAction(toolName),
+            filePath: extractFilePath(toolName, toolPart.input),
+          });
+        }
+      } else {
+        currentToolGroup.push({
+          action: getToolAction(toolName),
+          filePath: extractFilePath(toolName, toolPart.input),
+        });
+      }
     }
   });
 
+  flushAll();
   return <>{elements}</>;
 }

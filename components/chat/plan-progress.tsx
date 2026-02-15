@@ -4,6 +4,12 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, ChevronRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Task,
+  TaskTrigger,
+  TaskContent,
+  TaskItem,
+} from "@/components/ai-elements/task";
 import type { MessagePart, ToolPart } from "./message";
 
 export interface PlanStep {
@@ -193,115 +199,102 @@ export function PlanProgress({ plan, isWorking }: PlanProgressProps) {
           className="mx-auto w-full max-w-3xl"
         >
           <div className="rounded-t-xl border border-b-0 border-white/[0.05] bg-[#1A1A1A]/90 backdrop-blur-xl overflow-hidden">
-            {/* Compact header */}
-            <button
-              type="button"
-              onClick={() => setIsExpanded((prev) => !prev)}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-white/[0.03]"
-            >
-              <ChevronRight
-                className={cn(
-                  "h-3 w-3 shrink-0 text-zinc-500 transition-transform duration-200",
-                  isExpanded && "rotate-90",
-                )}
-              />
-
-              <span className="flex-1 truncate text-[11px] font-medium text-zinc-400">
-                {plan.goal}
-              </span>
-
-              {/* Progress pill */}
-              <span
-                className={cn(
-                  "shrink-0 rounded-full px-1.5 py-px text-[10px] font-semibold tabular-nums leading-tight",
-                  allComplete
-                    ? "bg-emerald-500/15 text-emerald-400"
-                    : "bg-zinc-800/80 text-zinc-500",
-                )}
-              >
-                {completedCount}/{totalCount}
-              </span>
-            </button>
-
-            {/* Thin progress bar */}
-            <div className="h-px bg-zinc-800/40">
-              <motion.div
-                className={cn(
-                  "h-full",
-                  allComplete ? "bg-emerald-500/60" : "bg-emerald-500/40",
-                )}
-                initial={{ width: 0 }}
-                animate={{ width: `${progressPercent}%` }}
-                transition={{ duration: 0.4, ease: "easeOut" }}
-              />
-            </div>
-
-            {/* Steps list — collapsible */}
-            <AnimatePresence initial={false}>
-              {isExpanded && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.15, ease: "easeOut" }}
-                  className="overflow-hidden"
+            <Task open={isExpanded} onOpenChange={setIsExpanded}>
+              <TaskTrigger title={plan.goal}>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-white/[0.03]"
                 >
-                  <ul className="px-3 py-1.5 space-y-px">
-                    {plan.steps.map((step, index) => {
-                      const isCurrent = index === currentStepIndex && isWorking;
-                      return (
-                        <li
-                          key={index}
-                          className="flex items-center gap-2 py-0.5"
-                        >
-                          {/* Status indicator */}
-                          <div
-                            className={cn(
-                              "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full transition-all duration-300",
-                              step.completed
-                                ? "bg-emerald-500"
-                                : isCurrent
-                                  ? "border border-emerald-500/50"
-                                  : "border border-zinc-700",
-                            )}
-                          >
-                            {step.completed ? (
-                              <motion.div
-                                initial={{ scale: 0 }}
-                                animate={{ scale: 1 }}
-                                transition={{
-                                  type: "spring",
-                                  stiffness: 500,
-                                  damping: 25,
-                                }}
-                              >
-                                <Check className="h-2 w-2 text-black stroke-[3px]" />
-                              </motion.div>
-                            ) : isCurrent ? (
-                              <Loader2 className="h-2 w-2 text-emerald-400 animate-spin" />
-                            ) : null}
-                          </div>
+                  <ChevronRight
+                    className={cn(
+                      "h-3 w-3 shrink-0 text-zinc-500 transition-transform duration-200",
+                      isExpanded && "rotate-90",
+                    )}
+                  />
 
-                          {/* Step text */}
-                          <span
-                            className={cn(
-                              "text-[11px] leading-snug transition-colors duration-300",
-                              step.completed
-                                ? "text-zinc-600 line-through decoration-zinc-700"
-                                : isCurrent
-                                  ? "text-zinc-300"
-                                  : "text-zinc-500",
-                            )}
+                  <span className="flex-1 truncate text-[11px] font-medium text-zinc-400">
+                    {plan.goal}
+                  </span>
+
+                  {/* Progress pill */}
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full px-1.5 py-px text-[10px] font-semibold tabular-nums leading-tight",
+                      allComplete
+                        ? "bg-emerald-500/15 text-emerald-400"
+                        : "bg-zinc-800/80 text-zinc-500",
+                    )}
+                  >
+                    {completedCount}/{totalCount}
+                  </span>
+                </button>
+              </TaskTrigger>
+
+              {/* Thin progress bar */}
+              <div className="h-px bg-zinc-800/40">
+                <motion.div
+                  className={cn(
+                    "h-full",
+                    allComplete ? "bg-emerald-500/60" : "bg-emerald-500/40",
+                  )}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progressPercent}%` }}
+                  transition={{ duration: 0.4, ease: "easeOut" }}
+                />
+              </div>
+
+              <TaskContent>
+                {plan.steps.map((step, index) => {
+                  const isCurrent = index === currentStepIndex && isWorking;
+                  return (
+                    <TaskItem
+                      key={index}
+                      className={cn(
+                        "flex items-center gap-2 py-0.5 text-[11px]",
+                        step.completed
+                          ? "text-zinc-600 line-through decoration-zinc-700"
+                          : isCurrent
+                            ? "text-zinc-300"
+                            : "text-zinc-500",
+                      )}
+                    >
+                      {/* Status indicator */}
+                      <div
+                        className={cn(
+                          "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full transition-all duration-300",
+                          step.completed
+                            ? "bg-emerald-500"
+                            : isCurrent
+                              ? "border border-emerald-500/50"
+                              : "border border-zinc-700",
+                        )}
+                      >
+                        {step.completed ? (
+                          <motion.div
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 500,
+                              damping: 25,
+                            }}
                           >
-                            {step.label}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                            <Check className="h-2 w-2 text-black stroke-[3px]" />
+                          </motion.div>
+                        ) : isCurrent ? (
+                          <Loader2 className="h-2 w-2 text-emerald-400 animate-spin" />
+                        ) : null}
+                      </div>
+
+                      {/* Step text */}
+                      <span className="leading-snug">
+                        {step.label}
+                      </span>
+                    </TaskItem>
+                  );
+                })}
+              </TaskContent>
+            </Task>
           </div>
         </motion.div>
       )}

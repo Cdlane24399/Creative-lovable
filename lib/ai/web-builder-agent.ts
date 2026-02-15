@@ -105,6 +105,7 @@ import {
   createCodeTools,
   createSearchTools,
   createSkillTools,
+  createResearchTools,
 } from "./tools";
 
 /**
@@ -145,6 +146,7 @@ export function createContextAwareTools(projectId: string) {
   const codeTools = createCodeTools(projectId);
   const searchTools = createSearchTools(projectId);
   const skillTools = createSkillTools(projectId);
+  const researchTools = createResearchTools(projectId);
 
   // Return combined tools object
   return {
@@ -177,6 +179,9 @@ export function createContextAwareTools(projectId: string) {
 
     // Skill execution (Vercel Skills)
     ...skillTools,
+
+    // Research subagent (design inspiration, skills discovery)
+    ...researchTools,
   };
 }
 

@@ -74,6 +74,7 @@ export function createBuildTools(projectId: string) {
       description:
         "Run a shell command in the project environment (e.g., npm install, pnpm add, bun add, npm run build). " +
         "Use for command-line operations with the package manager already used by the project.",
+      needsApproval: true,
       inputSchema: z.object({
         command: z
           .string()
@@ -199,7 +200,10 @@ export function createBuildTools(projectId: string) {
             );
           }
 
-          const packageManager = await detectPackageManager(sandbox, projectDir);
+          const packageManager = await detectPackageManager(
+            sandbox,
+            projectDir,
+          );
           const installCommand = getInstallCommand(
             packageManager,
             packages,
@@ -370,6 +374,5 @@ export function createBuildTools(projectId: string) {
         }
       },
     }),
-
   };
 }
