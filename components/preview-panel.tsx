@@ -9,7 +9,11 @@ import React, {
 } from "react";
 import dynamic from "next/dynamic";
 import { Camera } from "lucide-react";
-import { useEditor } from "@/components/contexts/editor-context";
+import {
+  useEditorMeta,
+  useEditorState,
+  useEditorUiActions,
+} from "@/components/contexts/editor-context";
 import { PreviewLoading } from "./preview-loading";
 
 // Dynamic import — these are behind tabs, not needed on initial render
@@ -32,8 +36,9 @@ interface PreviewPanelProps {
 }
 
 export function PreviewPanel({ ref }: PreviewPanelProps) {
-  // Consume shared state from EditorContext (no prop drilling)
-  const { state, actions, meta } = useEditor();
+  const state = useEditorState();
+  const actions = useEditorUiActions();
+  const meta = useEditorMeta();
   const {
     sandboxUrl,
     currentView,

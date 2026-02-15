@@ -167,14 +167,28 @@ export function useDevServer({
 
     // Abort any ongoing fetch
     if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-      abortControllerRef.current = null
+      try {
+        abortControllerRef.current.abort()
+      } catch {
+        // Ignore errors during abort
+      } finally {
+        abortControllerRef.current = null
+      }
     }
   }, [])
 
   // Fetch current status with abort control and retry logic
   const fetchStatus = useCallback(async (): Promise<DevServerStatus | null> => {
     if (!encodedProjectId) return null
+
+    // Abort previous request if still pending
+    if (abortControllerRef.current) {
+      try {
+        abortControllerRef.current.abort()
+      } catch {
+        // Ignore errors during abort
+      }
+    }
 
     // Create new abort controller for this request
     const abortController = new AbortController()
@@ -340,7 +354,12 @@ export function useDevServer({
       const response = await fetch(`/api/sandbox/${encodedProjectId}/dev-server`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectName, sandboxId, forceRestart }),
+        body: JSON.stringify({
+          projectName,
+          sandboxId,
+          forceRestart,
+          waitForReady: false,
+        }),
       })
 
       const { data, rawText } = await parseJsonResponseSafe<{
@@ -475,6 +494,15 @@ export function useDevServer({
   useEffect(() => {
     return () => {
       stopPolling()
+      // Ensure abort controller is cleaned up
+      if (abortControllerRef.current) {
+        try {
+          abortControllerRef.current.abort()
+        } catch {
+          // Ignore errors during cleanup
+        }
+        abortControllerRef.current = null
+      }
     }
   }, [stopPolling])
 

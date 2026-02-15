@@ -41,7 +41,7 @@ const DEV_SERVER_PORTS = [3000, 3001, 3002, 3003, 3004, 3005] as const;
 const DEFAULT_WEB_PORT = 3000;
 
 // Track in-flight start requests to prevent duplicates
-const startingProjects = new Map<string, Promise<any>>();
+const startingProjects = new Map<string, Promise<NextResponse>>();
 
 async function waitForRunningPort(
   sandbox: Awaited<ReturnType<typeof createSandbox>>,
@@ -303,11 +303,13 @@ export const POST = withAuth(
           projectName = "project",
           sandboxId: providedSandboxId,
           forceRestart = false,
+          waitForReady = false,
         } = body;
         console.log("[dev-server POST] Params:", {
           projectName,
           providedSandboxId,
           forceRestart,
+          waitForReady,
         });
 
         // If sandboxId is provided, try to connect to that specific sandbox first
@@ -405,7 +407,7 @@ export const POST = withAuth(
 
         // Give template start command a short window before forcing manual restart.
         // This mirrors fragments behavior where template start_cmd boots preview.
-        if (!forceRestart) {
+        if (!forceRestart && waitForReady) {
           const templatePort = await waitForRunningPort(
             sandbox,
             12_000,
@@ -474,6 +476,20 @@ export const POST = withAuth(
           },
         );
         console.log("[dev-server POST] Background process started");
+
+        // Non-blocking default: return immediately and let the client poll status.
+        if (!waitForReady) {
+          statusCache.delete(projectId);
+          return NextResponse.json({
+            success: true,
+            starting: true,
+            alreadyRunning: false,
+            url: null,
+            port: null,
+            sandboxId: sandbox.sandboxId,
+            message: "Dev server start initiated; polling for readiness.",
+          });
+        }
 
         // Extended wait for server startup (120 seconds max to account for slower environments and first-time builds)
         const maxWaitMs = 120000;

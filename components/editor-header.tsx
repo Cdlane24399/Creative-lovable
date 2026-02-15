@@ -27,13 +27,16 @@ import {
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { useEditor } from "@/components/contexts/editor-context";
+import {
+  useEditorState,
+  useEditorUiActions,
+} from "@/components/contexts/editor-context";
 
 export type EditorView = "preview" | "code" | "settings";
 
 export function EditorHeader() {
-  // Consume shared state from EditorContext (no prop drilling)
-  const { state, actions } = useEditor();
+  const state = useEditorState();
+  const actions = useEditorUiActions();
   const router = useRouter();
   const {
     currentView,

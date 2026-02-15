@@ -58,19 +58,20 @@ export type ModelProvider =
   | "glm";
 
 // Model-specific settings for streamText
+// AI SDK v6: maxSteps is deprecated, use stopWhen(stepCountIs(n)) instead
 export const MODEL_SETTINGS: Record<
   ModelProvider,
   {
-    maxSteps?: number;
-    maxTokens?: number;
+    maxSteps?: number; // Used with stopWhen(stepCountIs(maxSteps))
+    maxOutputTokens?: number; // v6 renamed from maxTokens
   }
 > = {
   anthropic: { maxSteps: 24 },
   opus: { maxSteps: 24 },
-  google: { maxSteps: 18, maxTokens: 8192 },
-  googlePro: { maxSteps: 24, maxTokens: 8192 },
+  google: { maxSteps: 18, maxOutputTokens: 8192 },
+  googlePro: { maxSteps: 24, maxOutputTokens: 8192 },
   openai: { maxSteps: 24 },
-  haiku: { maxSteps: 18, maxTokens: 8192 },
+  haiku: { maxSteps: 18, maxOutputTokens: 8192 },
   minimax: { maxSteps: 24 },
   moonshot: { maxSteps: 24 },
   glm: { maxSteps: 24 },

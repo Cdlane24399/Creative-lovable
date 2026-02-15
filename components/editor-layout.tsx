@@ -6,7 +6,7 @@ import { EditorHeader } from "./editor-header";
 import { ErrorBoundary } from "./error-boundary";
 import {
   EditorProvider,
-  useEditor,
+  useEditorRefs,
 } from "@/components/contexts/editor-context";
 import { type ModelProvider } from "@/lib/ai/agent";
 
@@ -33,15 +33,15 @@ export function EditorLayout({
 }
 
 /**
- * Thin layout shell -- all state comes from EditorContext.
- * Children (EditorHeader, ChatPanel, PreviewPanel) consume
- * context directly via useEditor(), eliminating prop drilling.
+ * Thin layout shell -- all state comes from EditorContext hooks.
+ * Children consume targeted hooks, eliminating prop drilling and
+ * avoiding unnecessary rerenders from unrelated state updates.
  *
  * Each panel is wrapped in its own ErrorBoundary so a crash in one
  * does not take down the entire editor.
  */
 function EditorLayoutShell() {
-  const { meta } = useEditor();
+  const { chatRef, previewRef } = useEditorRefs();
 
   return (
     <div className="flex h-screen w-full flex-col bg-[#111111]">
@@ -58,7 +58,7 @@ function EditorLayoutShell() {
               </div>
             }
           >
-            <ChatPanel ref={meta.chatRef} />
+            <ChatPanel ref={chatRef} />
           </ErrorBoundary>
         </div>
 
@@ -71,7 +71,7 @@ function EditorLayoutShell() {
               </div>
             }
           >
-            <PreviewPanel ref={meta.previewRef} />
+            <PreviewPanel ref={previewRef} />
           </ErrorBoundary>
         </div>
       </div>

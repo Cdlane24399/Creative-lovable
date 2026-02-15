@@ -189,27 +189,6 @@ export function useProjectPersistence({
     [refetchProject, setIsFilesLoading],
   );
 
-  /**
-   * Simple refetch of project data (including files_snapshot).
-   * Used as a fallback when the chat completes, to ensure files are visible.
-   */
-  const refetchProjectData = useCallback(async (): Promise<number> => {
-    const result = await refetchProject();
-    if (result) {
-      const fileCount = Object.keys(result.files_snapshot || {}).length;
-      if (fileCount > 0) {
-        setIsFilesLoading(false);
-        debugLog(
-          "[EditorProvider] refetchProjectData: loaded",
-          fileCount,
-          "files",
-        );
-      }
-      return fileCount;
-    }
-    return 0;
-  }, [refetchProject, setIsFilesLoading]);
-
   // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
@@ -222,6 +201,5 @@ export function useProjectPersistence({
   return {
     saveProject,
     refetchFilesWithRetry,
-    refetchProjectData,
   };
 }

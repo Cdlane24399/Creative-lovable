@@ -62,6 +62,23 @@ export function extractPlanState(
       if (part.type === "tool-planChanges") {
         const toolPart = part as ToolPart;
         if (
+          (toolPart.state === "input-available" ||
+            toolPart.state === "input-streaming") &&
+          typeof toolPart.input === "object" &&
+          toolPart.input !== null
+        ) {
+          const input = toolPart.input as Record<string, unknown>;
+          if (Array.isArray(input.steps) && typeof input.goal === "string") {
+            latestPlan = {
+              goal: input.goal,
+              steps: input.steps.filter(
+                (s: unknown): s is string => typeof s === "string",
+              ),
+            };
+          }
+        }
+
+        if (
           toolPart.state === "output-available" &&
           typeof toolPart.output === "object" &&
           toolPart.output !== null

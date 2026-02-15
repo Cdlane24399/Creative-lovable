@@ -1,10 +1,16 @@
 /**
  * File Tools - File operation tools for the web builder agent
  *
+ * AI SDK v6 Tool Pattern:
+ * - Uses tool() from 'ai' package
+ * - inputSchema (NOT parameters) with Zod validation
+ * - execute() returns structured results for agent reasoning
+ *
  * This module contains tools for reading, writing, and editing files
  * in the project environment.
  *
  * @see {@link ../web-builder-agent.ts} for additional tool implementations
+ * @see https://ai-sdk.dev/docs/ai-sdk-core/tools
  */
 
 import { tool } from "ai";
@@ -49,6 +55,11 @@ export function createFileTools(projectId: string) {
     /**
      * Writes content to a file in the project.
      * Creates parent directories automatically.
+     *
+     * AI SDK v6: Tool definition pattern
+     * - description: Clear, action-oriented guidance for the LLM
+     * - inputSchema: Zod schema (v6 renamed from 'parameters')
+     * - execute: Async function returning structured result
      */
     writeFile: tool({
       description:

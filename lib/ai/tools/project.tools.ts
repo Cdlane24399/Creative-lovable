@@ -62,10 +62,10 @@ export function createProjectTools(projectId: string) {
           // Ensure project directory exists before scanning
           await executeCommand(sandbox, `mkdir -p "${projectDir}"`);
 
-          // Get file tree - exclude node_modules and .next
+          // Get file tree - exclude node_modules, .next, and lockfiles
           const treeResult = await executeCommand(
             sandbox,
-            `cd "${projectDir}" && find . -type f \\( -name "*.tsx" -o -name "*.ts" -o -name "*.jsx" -o -name "*.js" -o -name "*.css" -o -name "*.json" \\) ! -path "*/node_modules/*" ! -path "*/.next/*" ! -path "*/.git/*" ! -path "*/.bun/*" ! -path "*/.cache/*" ! -path "*/.npm/*" ! -path "*/.local/*" ! -path "*/.pnpm-store/*" ! -path "*/.yarn/*" ! -path "*/.vercel/*" 2>/dev/null | sort | head -${MAX_PROJECT_FILES}`,
+            `cd "${projectDir}" && find . -type f \\( -name "*.tsx" -o -name "*.ts" -o -name "*.jsx" -o -name "*.js" -o -name "*.css" -o -name "*.json" \\) ! -name "package-lock.json" ! -name "pnpm-lock.yaml" ! -name "yarn.lock" ! -name "bun.lock" ! -path "*/node_modules/*" ! -path "*/.next/*" ! -path "*/.git/*" ! -path "*/.bun/*" ! -path "*/.cache/*" ! -path "*/.npm/*" ! -path "*/.local/*" ! -path "*/.pnpm-store/*" ! -path "*/.yarn/*" ! -path "*/.vercel/*" 2>/dev/null | sort | head -${MAX_PROJECT_FILES}`,
           );
 
           const files = treeResult.stdout
@@ -78,11 +78,24 @@ export function createProjectTools(projectId: string) {
 
           let contents: Record<string, string> | undefined;
 
+          // Files to never include full contents for (lockfiles are huge, waste tokens)
+          const LOCKFILE_NAMES = new Set([
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "bun.lock",
+          ]);
+          const shouldExcludeContent = (file: string) =>
+            LOCKFILE_NAMES.has(file) || file.endsWith(".lock");
+
           if (includeContents && files.length > 0) {
             contents = {};
 
-            // Read contents in parallel for better performance
-            const filesToRead = files.slice(0, MAX_FILE_CONTENTS);
+            // Read contents in parallel for better performance.
+            // Skip lockfiles and generated files — they waste tokens and add no value.
+            const filesToRead = files
+              .filter((f) => !shouldExcludeContent(f))
+              .slice(0, MAX_FILE_CONTENTS);
             const readPromises = filesToRead.map(async (file) => {
               try {
                 const { content } = await readFileFromSandbox(

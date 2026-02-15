@@ -18,6 +18,13 @@ const typingIndicator = (
   </div>
 );
 
+const toolCallingIndicator = (
+  <div className="flex items-center gap-2 px-1 py-2 text-sm text-zinc-500">
+    <div className="h-3 w-3 animate-spin rounded-full border border-emerald-500/50 border-t-emerald-400" />
+    <span>Working on your request...</span>
+  </div>
+);
+
 function getMessageText(message: UIMessage | undefined): string {
   if (!message || !message.parts) return "";
   return message.parts
@@ -131,7 +138,7 @@ export const MessageList = React.memo(
           />
         )}
 
-        {isWorking && !isCallingTools ? typingIndicator : null}
+        {isWorking ? (isCallingTools ? toolCallingIndicator : typingIndicator) : null}
 
         {error && !isWorking ? (
           <ChatError error={error} onRetry={onRetry} />

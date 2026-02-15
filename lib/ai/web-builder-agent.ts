@@ -1,5 +1,5 @@
 /**
- * Web Builder Agent - AI SDK v6 Beta ToolLoopAgent Implementation
+ * Web Builder Agent - AI SDK v6 Implementation
  *
  * This is the main entry point for the web builder agent tools.
  * The implementation has been modularized into separate files for better
@@ -13,11 +13,39 @@
  * - tools/       - Individual tool implementations
  * - prompt-generator.ts - System prompt generation
  *
- * AI SDK v6 Features Used:
- * - Preliminary Tool Results: AsyncIterable for streaming progress
- * - Tool Input Lifecycle Hooks: onInputStart, onInputDelta, onInputAvailable
- * - Tool Execution Options: toolCallId, messages, abortSignal
- * - Context Awareness: Full project state tracking
+ * AI SDK v6 Best Practices Applied:
+ *
+ * 1. Tool Definition Pattern:
+ *    ✅ Use tool() from 'ai' package
+ *    ✅ inputSchema (NOT parameters) with Zod
+ *    ✅ execute() returns structured objects
+ *    ✅ Clear descriptions for LLM guidance
+ *
+ * 2. Error Handling:
+ *    ✅ Type-safe error classes (NoSuchToolError, InvalidToolInputError)
+ *    ✅ Graceful degradation with createErrorResult()
+ *    ✅ Tool call repair via experimental_repairToolCall
+ *
+ * 3. Context Management:
+ *    ✅ AgentContext tracks project state
+ *    ✅ Tool execution history for learning
+ *    ✅ Build status and error tracking
+ *
+ * 4. Performance Optimizations:
+ *    ✅ Dynamic activeTools via prepareStep
+ *    ✅ Message pruning for long conversations
+ *    ✅ Batch operations (batchWriteFiles)
+ *    ✅ Concurrent file writes
+ *
+ * Migration Notes (v5 → v6):
+ * - parameters → inputSchema
+ * - maxSteps → stopWhen(stepCountIs())
+ * - maxTokens → maxOutputTokens
+ * - CoreMessage → ModelMessage
+ * - convertToCoreMessages → convertToModelMessages
+ *
+ * @see https://ai-sdk.dev/docs/ai-sdk-core/tools
+ * @see https://ai-sdk.dev/docs/migration-guides/migration-guide-5-0
  */
 
 // Re-export schemas and types

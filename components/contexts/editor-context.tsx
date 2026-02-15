@@ -9,6 +9,7 @@ import {
   useEffect,
   useCallback,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { useProject } from "@/hooks/use-projects";
 import { normalizeSandboxPreviewUrl } from "@/lib/utils/url";
@@ -31,10 +32,6 @@ const debugLog =
     ? (...args: Parameters<typeof console.log>) => console.log(...args)
     : () => {};
 
-// ---------------------------------------------------------------------------
-// Context Interface: state / actions / meta (composition pattern)
-// ---------------------------------------------------------------------------
-
 export interface EditorState {
   currentView: EditorView;
   projectName: string;
@@ -45,52 +42,92 @@ export interface EditorState {
   isDevServerStarting: boolean;
 }
 
-export interface EditorActions {
+export interface EditorUiActions {
   setCurrentView: (view: EditorView) => void;
   handleRefresh: () => void;
   saveProject: () => Promise<void>;
   handleManualScreenshot: () => Promise<void>;
+}
+
+export interface EditorChatActions {
   handleSandboxUrlUpdate: (url: string | null) => void;
   handleFilesReady: (projectName: string, sandboxId?: string) => void;
-  /** Refetch project data (including files_snapshot) from the database */
-  refetchProjectData: () => Promise<number>;
 }
 
 export interface EditorMeta {
   projectId: string | undefined;
   project: Project | null;
   savedMessages: Message[];
-  /** True once the initial project/messages fetch has completed for the current projectId */
   messagesLoaded: boolean;
   initialPrompt: string | null | undefined;
   initialModel: ModelProvider | undefined;
-  previewRef: React.RefObject<PreviewPanelHandle | null>;
-  chatRef: React.RefObject<ChatPanelHandle | null>;
 }
+
+export interface EditorRefs {
+  previewRef: RefObject<PreviewPanelHandle | null>;
+  chatRef: RefObject<ChatPanelHandle | null>;
+}
+
+export type EditorActions = EditorUiActions & EditorChatActions;
 
 export interface EditorContextValue {
   state: EditorState;
   actions: EditorActions;
-  meta: EditorMeta;
+  meta: EditorMeta & EditorRefs;
 }
 
-// ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
+const EditorStateContext = createContext<EditorState | null>(null);
+const EditorUiActionsContext = createContext<EditorUiActions | null>(null);
+const EditorChatActionsContext = createContext<EditorChatActions | null>(null);
+const EditorMetaContext = createContext<EditorMeta | null>(null);
+const EditorRefsContext = createContext<EditorRefs | null>(null);
 
-export const EditorContext = createContext<EditorContextValue | null>(null);
-
-export function useEditor(): EditorContextValue {
-  const ctx = use(EditorContext);
+function useRequiredContext<T>(ctx: T | null, name: string): T {
   if (!ctx) {
-    throw new Error("useEditor must be used within an EditorProvider");
+    throw new Error(`${name} must be used within an EditorProvider`);
   }
   return ctx;
 }
 
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
+export function useEditorState(): EditorState {
+  return useRequiredContext(use(EditorStateContext), "useEditorState");
+}
+
+export function useEditorUiActions(): EditorUiActions {
+  return useRequiredContext(use(EditorUiActionsContext), "useEditorUiActions");
+}
+
+export function useEditorChatActions(): EditorChatActions {
+  return useRequiredContext(
+    use(EditorChatActionsContext),
+    "useEditorChatActions",
+  );
+}
+
+export function useEditorMeta(): EditorMeta {
+  return useRequiredContext(use(EditorMetaContext), "useEditorMeta");
+}
+
+export function useEditorRefs(): EditorRefs {
+  return useRequiredContext(use(EditorRefsContext), "useEditorRefs");
+}
+
+export function useEditor(): EditorContextValue {
+  const state = useEditorState();
+  const uiActions = useEditorUiActions();
+  const chatActions = useEditorChatActions();
+  const meta = useEditorMeta();
+  const refs = useEditorRefs();
+
+  return useMemo(
+    () => ({
+      state,
+      actions: { ...uiActions, ...chatActions },
+      meta: { ...meta, ...refs },
+    }),
+    [state, uiActions, chatActions, meta, refs],
+  );
+}
 
 interface EditorProviderProps {
   children: ReactNode;
@@ -105,24 +142,20 @@ export function EditorProvider({
   initialPrompt,
   initialModel,
 }: EditorProviderProps) {
-  // ---- UI state ----
   const [currentView, setCurrentView] = useState<EditorView>("preview");
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [projectName, setProjectName] = useState<string>("Untitled Project");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isFilesLoading, setIsFilesLoading] = useState(false);
 
-  // ---- Refs ----
-  const previewRef = useRef<PreviewPanelHandle>(null);
-  const chatRef = useRef<ChatPanelHandle>(null);
+  const previewRef = useRef<PreviewPanelHandle | null>(null);
+  const chatRef = useRef<ChatPanelHandle | null>(null);
   const refreshLoadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const projectNameRef = useRef<string>(projectName);
   const lastSavedUrlRef = useRef<string | null>(null);
 
-  // Keep ref in sync with state
   projectNameRef.current = projectName;
 
-  // ---- Data hooks ----
   const {
     project,
     messages: savedMessages,
@@ -133,8 +166,6 @@ export function EditorProvider({
   } = useProject(projectId || null, {
     autoFetch: !initialPrompt,
   });
-
-  // ---- Composed hooks ----
 
   const {
     sandboxUrl,
@@ -150,19 +181,18 @@ export function EditorProvider({
     setIsPreviewLoading,
   });
 
-  const { saveProject, refetchFilesWithRetry, refetchProjectData } =
-    useProjectPersistence({
-      projectId,
-      projectName,
-      sandboxUrl,
-      initialPrompt,
-      hasUnsavedChanges,
-      lastSavedUrlRef,
-      setHasUnsavedChanges,
-      setIsFilesLoading,
-      updateProject,
-      refetchProject,
-    });
+  const { saveProject, refetchFilesWithRetry } = useProjectPersistence({
+    projectId,
+    projectName,
+    sandboxUrl,
+    initialPrompt,
+    hasUnsavedChanges,
+    lastSavedUrlRef,
+    setHasUnsavedChanges,
+    setIsFilesLoading,
+    updateProject,
+    refetchProject,
+  });
 
   const { captureAndSaveScreenshot } = useScreenshotCapture({
     projectId,
@@ -177,9 +207,6 @@ export function EditorProvider({
     updateProject,
   });
 
-  // ---- Effects ----
-
-  // Sync project name and title state when loading an existing project
   useEffect(() => {
     if (project) {
       setProjectName(project.name);
@@ -193,7 +220,6 @@ export function EditorProvider({
     }
   }, [project, initialPrompt, titleGeneratedRef]);
 
-  // Trigger title generation when sandbox URL becomes available
   useEffect(() => {
     if (sandboxUrl && initialPrompt && !titleGeneratedRef.current) {
       const timer = setTimeout(generateProjectTitle, 1000);
@@ -201,7 +227,6 @@ export function EditorProvider({
     }
   }, [sandboxUrl, initialPrompt, generateProjectTitle, titleGeneratedRef]);
 
-  // Auto-capture screenshot when sandbox URL becomes available
   useEffect(() => {
     if (!sandboxUrl || !projectName || !projectId) return;
 
@@ -227,8 +252,6 @@ export function EditorProvider({
     project?.screenshot_url,
     captureAndSaveScreenshot,
   ]);
-
-  // ---- Actions ----
 
   const handleRefresh = useCallback(() => {
     if (previewRef.current) {
@@ -277,7 +300,6 @@ export function EditorProvider({
           generateProjectTitle();
         }
 
-        // Use the persistence hook's retry logic instead of inline polling
         refetchFilesWithRetry(3000);
       }
     },
@@ -315,15 +337,12 @@ export function EditorProvider({
     [initialPrompt, projectId, updateSandboxUrlDebounced],
   );
 
-  // Cleanup refresh timeout on unmount
   useEffect(() => {
     return () => {
       if (refreshLoadingTimeoutRef.current)
         clearTimeout(refreshLoadingTimeoutRef.current);
     };
   }, []);
-
-  // ---- Context value (state / actions / meta) ----
 
   const state = useMemo<EditorState>(
     () => ({
@@ -346,25 +365,22 @@ export function EditorProvider({
     ],
   );
 
-  const actions = useMemo<EditorActions>(
+  const uiActions = useMemo<EditorUiActions>(
     () => ({
       setCurrentView,
       handleRefresh,
       saveProject,
       handleManualScreenshot,
-      handleSandboxUrlUpdate,
-      handleFilesReady,
-      refetchProjectData,
     }),
-    [
-      setCurrentView,
-      handleRefresh,
-      saveProject,
-      handleManualScreenshot,
+    [setCurrentView, handleRefresh, saveProject, handleManualScreenshot],
+  );
+
+  const chatActions = useMemo<EditorChatActions>(
+    () => ({
       handleSandboxUrlUpdate,
       handleFilesReady,
-      refetchProjectData,
-    ],
+    }),
+    [handleSandboxUrlUpdate, handleFilesReady],
   );
 
   const meta = useMemo<EditorMeta>(
@@ -375,8 +391,6 @@ export function EditorProvider({
       messagesLoaded,
       initialPrompt,
       initialModel,
-      previewRef,
-      chatRef,
     }),
     [
       projectId,
@@ -385,15 +399,28 @@ export function EditorProvider({
       messagesLoaded,
       initialPrompt,
       initialModel,
-      previewRef,
-      chatRef,
     ],
   );
 
-  const contextValue = useMemo<EditorContextValue>(
-    () => ({ state, actions, meta }),
-    [state, actions, meta],
+  const refs = useMemo<EditorRefs>(
+    () => ({
+      previewRef,
+      chatRef,
+    }),
+    [previewRef, chatRef],
   );
 
-  return <EditorContext value={contextValue}>{children}</EditorContext>;
+  return (
+    <EditorRefsContext value={refs}>
+      <EditorMetaContext value={meta}>
+        <EditorStateContext value={state}>
+          <EditorUiActionsContext value={uiActions}>
+            <EditorChatActionsContext value={chatActions}>
+              {children}
+            </EditorChatActionsContext>
+          </EditorUiActionsContext>
+        </EditorStateContext>
+      </EditorMetaContext>
+    </EditorRefsContext>
+  );
 }

@@ -33,20 +33,7 @@ export async function authenticateRequest(
     return { isAuthenticated: true };
   }
 
-  // 2. Try Supabase Auth (Cookies) — slower path, requires network
-  try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (user) {
-      return { isAuthenticated: true };
-    }
-  } catch (error) {
-    // Ignore error and fall through
-  }
-
-  // 3. Handle missing API key configuration
+  // 2. Handle missing API key configuration first (fast path in local dev)
   if (!expectedApiKey) {
     // In development, allow requests without API key (with warning)
     if (isDevelopment()) {
@@ -73,6 +60,19 @@ export async function authenticateRequest(
       500,
     );
     return { isAuthenticated: false, error: errorResponse };
+  }
+
+  // 3. Try Supabase Auth (Cookies) — slower path, requires network
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) {
+      return { isAuthenticated: true };
+    }
+  } catch (error) {
+    // Ignore error and fall through
   }
 
   // 4. Authentication failed
@@ -111,7 +111,7 @@ function createErrorResponse(
   const body = JSON.stringify({ error: message, code });
   const responseHeaders = { "Content-Type": "application/json", ...headers };
 
-  if (NextRequest.prototype.isPrototypeOf(request)) {
+  if (request instanceof NextRequest) {
     return NextResponse.json(
       { error: message, code },
       { status, headers: responseHeaders },

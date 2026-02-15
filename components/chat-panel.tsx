@@ -19,7 +19,10 @@ import {
 import type { MessagePart } from "@/components/chat/message";
 import { parseToolOutputs } from "@/lib/parsers/tool-outputs";
 import { PlanProgress, extractPlanState } from "@/components/chat/plan-progress";
-import { useEditor } from "@/components/contexts/editor-context";
+import {
+  useEditorChatActions,
+  useEditorMeta,
+} from "@/components/contexts/editor-context";
 
 const VALID_MODEL_KEYS = new Set<ModelProvider>([
   "anthropic",
@@ -88,8 +91,8 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ ref }: ChatPanelProps) {
-  // Consume shared state from EditorContext (no prop drilling)
-  const { actions, meta } = useEditor();
+  const { handleSandboxUrlUpdate, handleFilesReady } = useEditorChatActions();
+  const meta = useEditorMeta();
   const {
     projectId,
     initialPrompt,
@@ -260,7 +263,7 @@ export function ChatPanel({ ref }: ChatPanelProps) {
 
     if (latestPreviewUrl) {
       if (process.env.NODE_ENV === "development") console.log("[ChatPanel] Got previewUrl from tool:", latestPreviewUrl);
-      actions.handleSandboxUrlUpdate(latestPreviewUrl);
+      handleSandboxUrlUpdate(latestPreviewUrl);
     }
 
     if (filesReadyInfo) {
@@ -271,74 +274,48 @@ export function ChatPanel({ ref }: ChatPanelProps) {
         filesReadyInfo.sandboxId,
       );
       filesReadyTriggeredRef.current = true;
-      actions.handleFilesReady(
+      handleFilesReady(
         filesReadyInfo.projectName,
         filesReadyInfo.sandboxId,
       );
     }
-  }, [messages, actions]);
+  }, [messages, handleSandboxUrlUpdate, handleFilesReady]);
 
-  // Refetch project files when chat completes (safety net)
-  // Ensures files appear even if parseToolOutputs missed the filesReady signal
+  // Safety net when tools wrote files without emitting filesReady.
   const wasWorkingRef = useRef(false);
   useEffect(() => {
-    let isCancelled = false;
-    let startTimer: NodeJS.Timeout | undefined;
-
     if (isWorking) {
-      wasWorkingRef.current = true;
-    } else if (wasWorkingRef.current) {
-      wasWorkingRef.current = false;
-
-      // If filesReady was never triggered during chat (e.g. agent used writeFile
-      // instead of batchWriteFiles), check if files were written and trigger
-      // dev server start as a fallback
-      if (!filesReadyTriggeredRef.current) {
-        const { filesReadyInfo } = parseToolOutputs(messages, new Set());
-        // Also check if any writeFile/editFile tool results exist
-        const hasFileWrites = messages.some(
-          (m) =>
-            m.role === "assistant" &&
-            m.parts?.some((part) => hasFileWriteOutput(part)),
-        );
-
-        if (hasFileWrites && !filesReadyInfo) {
-          console.log(
-            "[ChatPanel] Chat completed with file writes but no filesReady signal, triggering fallback dev server start",
-          );
-          const projectName = getFallbackProjectName(messages);
-          actions.handleFilesReady(projectName);
-        }
+      if (!wasWorkingRef.current) {
+        filesReadyTriggeredRef.current = false;
       }
-
-      // Chat just completed — poll project data until files_snapshot is populated.
-      // This prevents the Code tab from staying empty when sync finishes slightly later.
-      const pollForFiles = async () => {
-        const maxAttempts = 6;
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-          if (isCancelled) return;
-          const fileCount = await actions.refetchProjectData();
-          if (fileCount > 0) return;
-
-          if (attempt < maxAttempts - 1) {
-            const delayMs = 1500 + attempt * 1000;
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
-          }
-        }
-      };
-
-      startTimer = setTimeout(() => {
-        void pollForFiles();
-      }, 1500);
+      wasWorkingRef.current = true;
+      return;
     }
 
-    return () => {
-      isCancelled = true;
-      if (startTimer) {
-        clearTimeout(startTimer);
-      }
-    };
-  }, [isWorking, actions]);
+    if (!wasWorkingRef.current) {
+      return;
+    }
+
+    wasWorkingRef.current = false;
+    if (filesReadyTriggeredRef.current) {
+      return;
+    }
+
+    const { filesReadyInfo } = parseToolOutputs(messages, new Set());
+    const hasFileWrites = messages.some(
+      (m) =>
+        m.role === "assistant" &&
+        m.parts?.some((part) => hasFileWriteOutput(part)),
+    );
+
+    if (hasFileWrites && !filesReadyInfo) {
+      console.log(
+        "[ChatPanel] Chat completed with file writes but no filesReady signal, triggering fallback dev server start",
+      );
+      const projectName = getFallbackProjectName(messages);
+      handleFilesReady(projectName);
+    }
+  }, [isWorking, messages, handleFilesReady]);
 
   // Extract plan state from messages for the floating checklist
   // Cast needed: AI SDK UIMessagePart includes types (e.g. ReasoningUIPart) not

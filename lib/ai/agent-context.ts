@@ -599,6 +599,8 @@ export async function setCurrentPlan(projectId: string, steps: string[]): Promis
   })
   
   context.taskGraph = taskGraph
+  // Keep legacy plan fields in sync for tools still reading currentPlan/completedSteps.
+  context.currentPlan = [...steps]
   context.completedSteps = []
   
   markDirtyAndSave(context)
@@ -635,6 +637,7 @@ export function completeStep(projectId: string, step: string): void {
 export function setTaskGraph(projectId: string, taskGraph: TaskGraph): void {
   const context = getAgentContext(projectId)
   context.taskGraph = taskGraph
+  context.currentPlan = Object.values(taskGraph.tasks).map((task) => task.description)
   context.completedSteps = [] // Reset legacy tracking
   markDirtyAndSave(context)
 }
@@ -678,6 +681,7 @@ export function updateTaskStatus(
 export function clearTaskGraph(projectId: string): void {
   const context = getAgentContext(projectId)
   context.taskGraph = undefined
+  context.currentPlan = undefined
   markDirtyAndSave(context)
 }
 

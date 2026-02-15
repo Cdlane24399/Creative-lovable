@@ -1,7 +1,22 @@
 import { createGateway } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 
-// Gateway instance - uses AI_GATEWAY_API_KEY locally, Vercel OIDC in production
+/**
+ * AI SDK v6 Gateway Pattern
+ *
+ * Uses createGateway() for unified model routing with automatic fallback.
+ * Gateway authenticates via:
+ * - AI_GATEWAY_API_KEY (local development)
+ * - Vercel OIDC (production)
+ *
+ * Benefits:
+ * - Single API for multiple providers (Anthropic, Google, OpenAI, etc.)
+ * - Automatic failover between providers
+ * - Consistent error handling
+ * - Built-in rate limiting and retries
+ *
+ * @see https://ai-sdk.dev/docs/ai-sdk-core/gateway
+ */
 const aiGateway = createGateway()
 
 // Model configuration with Gateway IDs and provider routing
@@ -106,6 +121,12 @@ export function getOpenRouterModel(key: ModelKey) {
 
 /**
  * Get a model instance via AI Gateway
+ *
+ * AI SDK v6: Gateway pattern for multi-provider routing
+ * Returns a unified model interface that works across providers
+ *
+ * @param key - Model identifier from MODEL_CONFIG
+ * @returns Language model instance from gateway
  */
 export function getModel(key: ModelKey) {
   const config = MODEL_CONFIG[key]
@@ -114,6 +135,21 @@ export function getModel(key: ModelKey) {
 
 /**
  * Get Gateway provider options for a model
+ *
+ * AI SDK v6: Provider fallback order configuration
+ * Defines which providers to try in sequence when primary fails
+ *
+ * @param key - Model identifier from MODEL_CONFIG
+ * @returns Provider options with fallback order
+ *
+ * @example
+ * ```ts
+ * const result = streamText({
+ *   model: getModel('anthropic'),
+ *   providerOptions: getGatewayProviderOptions('anthropic'),
+ *   // Will try: anthropic -> vertex -> openrouter
+ * })
+ * ```
  */
 export function getGatewayProviderOptions(key: ModelKey) {
   return {

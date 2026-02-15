@@ -1,3 +1,19 @@
+/**
+ * Chat API Route - AI SDK v6 Implementation
+ *
+ * Key v6 Patterns Used:
+ * - streamText with stopWhen(stepCountIs()) for multi-step control
+ * - toUIMessageStreamResponse() for streaming to frontend
+ * - convertToModelMessages (v6 renamed from convertToCoreMessages)
+ * - validateUIMessages for message validation
+ * - onStepFinish callback for step tracking
+ * - prepareStep for dynamic activeTools and message pruning
+ * - experimental_repairToolCall for error recovery
+ * - NoSuchToolError, InvalidToolInputError for type-safe error handling
+ *
+ * @see https://ai-sdk.dev/docs/ai-sdk-core/streaming
+ */
+import { NextResponse } from "next/server";
 import {
   convertToModelMessages,
   streamText,
@@ -124,6 +140,34 @@ function getToolOutputSuccess(output: unknown): boolean | undefined {
   return undefined;
 }
 
+/** Ensures tool-call parts have input as object (required by MiniMax/moonshot/glm APIs) */
+function ensureToolCallInputsAreObjects<T extends { role: string; content?: unknown }>(
+  messages: T[],
+): T[] {
+  return messages.map((msg) => {
+    if (msg.role !== "assistant" || !Array.isArray(msg.content)) return msg;
+    let changed = false;
+    const newContent = msg.content.map((part: unknown) => {
+      const p = part as { type?: string; input?: unknown };
+      if (
+        p &&
+        typeof p === "object" &&
+        p.type === "tool-call" &&
+        typeof p.input === "string"
+      ) {
+        try {
+          changed = true;
+          return { ...p, input: JSON.parse(p.input) as Record<string, unknown> };
+        } catch {
+          return part;
+        }
+      }
+      return part;
+    });
+    return (changed ? { ...msg, content: newContent } : msg) as T;
+  });
+}
+
 // Export type for the chat messages
 export type ChatMessage = UIMessage;
 
@@ -138,16 +182,15 @@ export const POST = withAuth(
     if (!rateLimit.allowed) {
       const retryAfter = Math.ceil((rateLimit.resetTime - Date.now()) / 1000);
       log.warn("Rate limit exceeded", { retryAfter });
-      return new Response(
-        JSON.stringify({
+      return NextResponse.json(
+        {
           error:
             "Rate limit exceeded. Please wait before sending more messages.",
           retryAfter,
-        }),
+        },
         {
           status: 429,
           headers: {
-            "Content-Type": "application/json",
             "Retry-After": retryAfter.toString(),
             "X-RateLimit-Remaining": rateLimit.remaining.toString(),
             "X-RateLimit-Reset": rateLimit.resetTime.toString(),
@@ -427,10 +470,11 @@ export const POST = withAuth(
               tools,
               abortSignal: req.signal,
               // AI SDK v6: Use stopWhen with stepCountIs for multi-step agentic behaviors
+              // AI SDK v6: Use stopWhen with stepCountIs for multi-step control
               stopWhen: stepCountIs(modelSettings.maxSteps || 50),
-              // Model-specific token limits (important for Gemini)
-              ...(modelSettings.maxTokens && {
-                maxOutputTokens: modelSettings.maxTokens,
+              // AI SDK v6: maxOutputTokens (renamed from maxTokens in v5)
+              ...(modelSettings.maxOutputTokens && {
+                maxOutputTokens: modelSettings.maxOutputTokens,
               }),
 
               // AI SDK v6: onError for stream-level error logging
@@ -539,6 +583,12 @@ export const POST = withAuth(
                   activeTools?: ToolName[];
                 } = {};
 
+                // MiniMax/moonshot/glm APIs require tool_use.input as object, not JSON string.
+                const needsToolInputTransform =
+                  executionModel === "minimax" ||
+                  executionModel === "moonshot" ||
+                  executionModel === "glm";
+
                 // Token budget enforcement: force graceful completion when approaching limits
                 const TOKEN_HARD_CAP = 600_000;
                 if (cumulativeTokens > TOKEN_HARD_CAP) {
@@ -549,6 +599,9 @@ export const POST = withAuth(
                     cumulativeTokens,
                     cap: TOKEN_HARD_CAP,
                   });
+                  if (needsToolInputTransform && stepMessages.length > 0) {
+                    config.messages = ensureToolCallInputsAreObjects(stepMessages);
+                  }
                   return config;
                 }
 
@@ -598,6 +651,9 @@ export const POST = withAuth(
                     activeTools: [],
                     reason: "step_limit",
                   });
+                  if (needsToolInputTransform && stepMessages.length > 0) {
+                    config.messages = ensureToolCallInputsAreObjects(stepMessages);
+                  }
                   return config;
                 }
 
@@ -652,6 +708,14 @@ export const POST = withAuth(
                   hasTaskGraph: !!context.taskGraph,
                 });
 
+                // Apply tool-input transform last so pruned messages are also fixed
+                if (needsToolInputTransform) {
+                  const baseMessages = config.messages ?? stepMessages;
+                  if (baseMessages.length > 0) {
+                    config.messages = ensureToolCallInputsAreObjects(baseMessages);
+                  }
+                }
+
                 return config;
               },
 
@@ -667,12 +731,12 @@ export const POST = withAuth(
                 if (InvalidToolInputError.isInstance(error)) {
                   log.debug("Tool repair: fixing invalid input", { projectId, tool: toolCall.toolName });
 
-                  // LanguageModelV3ToolCall.input is a JSON string
+                  // toolCall.input can be a JSON string (from model) or object
                   try {
-                    const parsedInput = JSON.parse(toolCall.input) as Record<
-                      string,
-                      unknown
-                    >;
+                    const parsedInput =
+                      typeof toolCall.input === "string"
+                        ? (JSON.parse(toolCall.input) as Record<string, unknown>)
+                        : (toolCall.input as Record<string, unknown>);
                     const repairedInput = { ...parsedInput };
 
                     // Fix common path issues
@@ -704,6 +768,7 @@ export const POST = withAuth(
                       );
                     }
 
+                    // LanguageModelV3ToolCall expects input as a JSON string
                     return {
                       ...toolCall,
                       input: JSON.stringify(repairedInput),
@@ -762,10 +827,7 @@ export const POST = withAuth(
         timestamp: new Date().toISOString(),
       };
 
-      return new Response(JSON.stringify(errorDetails), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
+      return NextResponse.json(errorDetails, { status: 500 });
     }
   },
   { skipRateLimit: true },
