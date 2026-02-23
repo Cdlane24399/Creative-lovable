@@ -18,8 +18,8 @@ export function AppLayout({ children, sidebarProps }: AppLayoutProps) {
   const { user } = useAuth();
 
   return (
-    <div className="flex h-screen bg-[#0f0f0f] overflow-hidden font-sans text-foreground selection:bg-blue-500/30">
-      {/* Sidebar — always above content */}
+    <div className="flex h-screen bg-[#0a0a0a] overflow-hidden font-sans text-foreground selection:bg-blue-500/30">
+      {/* Sidebar — flat background layer */}
       <div className="relative z-20 flex-shrink-0">
         <AppSidebar
           user={user}
@@ -28,9 +28,9 @@ export function AppLayout({ children, sidebarProps }: AppLayoutProps) {
         />
       </div>
 
-      {/* Main content area */}
-      <main className="relative flex-1 overflow-hidden w-full z-10 rounded-xl my-1 mr-1">
-        <div className="relative flex-1 overflow-y-auto overflow-x-hidden h-full scroll-smooth">
+      {/* Elevated content panel */}
+      <main className="relative z-20 flex-1 bg-[#161616] rounded-[20px] m-1.5 ml-0 shadow-[0_0_60px_-10px_rgba(0,0,0,0.8)] ring-1 ring-white/[0.06] overflow-hidden">
+        <div className="h-full overflow-y-auto overflow-x-hidden scroll-smooth">
           {children}
         </div>
       </main>

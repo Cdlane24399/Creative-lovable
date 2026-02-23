@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -18,10 +17,17 @@ import {
   ModelSelectorEmpty,
   ModelSelectorGroup,
   ModelSelectorItem,
-  ModelSelectorLogo,
   ModelSelectorName,
 } from "@/components/ai-elements/model-selector";
 import { Check } from "lucide-react";
+import {
+  AnthropicIcon,
+  GoogleIcon,
+  OpenAIIcon,
+  MiniMaxIcon,
+  MoonshotIcon,
+  GLMIcon,
+} from "./icons";
 
 interface ModelSelectorProps {
   selectedModel: ModelProvider;
@@ -46,6 +52,23 @@ const MODELS: {
   { key: "glm", provider: "zai" },
 ];
 
+function ModelIcon({
+  model,
+  className,
+}: {
+  model: ModelProvider;
+  className?: string;
+}) {
+  if (model.includes("anthropic") || model === "opus")
+    return <AnthropicIcon className={className} />;
+  if (model.includes("google")) return <GoogleIcon className={className} />;
+  if (model.includes("openai")) return <OpenAIIcon className={className} />;
+  if (model === "minimax") return <MiniMaxIcon className={className} />;
+  if (model === "moonshot") return <MoonshotIcon className={className} />;
+  if (model === "glm") return <GLMIcon className={className} />;
+  return <div className={cn("size-4 bg-zinc-800 rounded-full", className)} />;
+}
+
 export function ModelSelector({
   selectedModel,
   onModelChange,
@@ -66,21 +89,16 @@ export function ModelSelector({
             variant="ghost"
             size="sm"
             disabled={disabled}
+            aria-label={`Select model (${MODEL_DISPLAY_NAMES[selectedModel]})`}
             className={cn(
-              "h-8 gap-2 rounded-lg px-2.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors",
+              "h-8 gap-2 rounded-full px-3 text-muted-foreground border border-transparent hover:border-white/20 hover:text-foreground transition-all duration-200",
               triggerClassName,
             )}
           >
-            {selected && (
-              <ModelSelectorLogo
-                provider={selected.provider as "anthropic"}
-                className="size-4"
-              />
-            )}
-            <span className="text-sm hidden sm:inline">
+            {selected && <ModelIcon model={selectedModel} className="size-4" />}
+            <span className="text-sm sr-only sm:not-sr-only">
               {MODEL_DISPLAY_NAMES[selectedModel]}
             </span>
-            <ChevronDown size={14} className="opacity-50" />
           </Button>
         </ModelSelectorTrigger>
         <ModelSelectorContent title="Choose Model">
@@ -100,10 +118,7 @@ export function ModelSelector({
                     }}
                     className="flex items-center gap-3 py-2.5"
                   >
-                    <ModelSelectorLogo
-                      provider={model.provider as "anthropic"}
-                      className="size-4"
-                    />
+                    <ModelIcon model={model.key} className="size-4" />
                     <div className="flex-1 min-w-0">
                       <ModelSelectorName>
                         {MODEL_DISPLAY_NAMES[model.key]}

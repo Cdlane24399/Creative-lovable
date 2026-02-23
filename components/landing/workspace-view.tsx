@@ -1,8 +1,9 @@
 "use client";
 
+import { useCallback } from "react";
 import { WorkspaceHero } from "./workspace-hero";
 import { ProjectsSection } from "./projects-section";
-import { WorkspaceShaderBackground } from "@/components/workspace-shader-background";
+import { WarpShaderBackground } from "@/components/ui/warp-shader";
 import { type ModelProvider } from "@/lib/ai/agent";
 import { motion } from "framer-motion";
 import { AppLayout } from "@/components/layout/app-layout";
@@ -20,31 +21,33 @@ export function WorkspaceView({
   onNavigateToEditor,
   user,
 }: WorkspaceViewProps) {
+  const handleHeroSubmit = useCallback(
+    (prompt: string, model: ModelProvider) => {
+      onNavigateToEditor(undefined, prompt, model);
+    },
+    [onNavigateToEditor],
+  );
+
   // Extract name for greeting
   const displayName =
     user?.user_metadata?.full_name || user?.email?.split("@")[0] || "there";
 
   return (
     <AppLayout>
-      {/* Beautiful WebGL shader background */}
-      <WorkspaceShaderBackground />
+      {/* Warp shader background */}
+      <WarpShaderBackground />
 
       <div className="relative min-h-screen flex flex-col">
         {/* Hero / Input Section - Sticky */}
-        <div className="sticky top-0 z-10 w-full pt-16 pb-12 px-8">
-          <div className="max-w-6xl mx-auto">
-            <WorkspaceHero
-              onSubmit={(prompt, model) =>
-                onNavigateToEditor(undefined, prompt, model)
-              }
-              userName={displayName}
-            />
+        <div className="sticky top-0 z-10 w-full pt-16 pb-12">
+          <div className="mx-auto flex justify-center w-full">
+            <WorkspaceHero onSubmit={handleHeroSubmit} userName={displayName} />
           </div>
         </div>
 
         {/* Projects Section - Foreground Layer */}
-        <div className="relative z-10 bg-[#111111] rounded-t-[2.5rem] pt-4 px-8 pb-20 min-h-screen border-t border-white/5 shadow-[0_-10px_40px_-5px_rgba(0,0,0,0.5)]">
-          <div className="max-w-6xl mx-auto">
+        <div className="relative z-10 bg-[#141416] rounded-t-[2.5rem] pt-4 px-8 pb-20 min-h-screen border-t border-teal-500/10 shadow-[0_-10px_40px_-5px_rgba(0,0,0,0.5)]">
+          <div className="max-w-5xl mx-auto">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}

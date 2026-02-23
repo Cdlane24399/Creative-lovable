@@ -70,7 +70,7 @@ export function AppSidebar({
   return (
     <nav
       aria-label="Main navigation"
-      className="w-[273px] flex flex-col h-screen flex-shrink-0 bg-[#0f0f0f] p-3.5"
+      className="w-[273px] flex flex-col h-screen flex-shrink-0 bg-[#0a0a0a] p-3.5"
     >
       {/* Top: Logo + Workspace Dropdown */}
       <div className="pb-2">
@@ -223,8 +223,12 @@ export function AppSidebar({
           <div className="flex items-center gap-2">
             <Gift size={20} className="text-purple-400" aria-hidden="true" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-normal text-foreground">Share Creative</p>
-              <p className="text-xs text-muted-foreground">Get 10 credits each</p>
+              <p className="text-sm font-normal text-foreground">
+                Share Creative
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Get 10 credits each
+              </p>
             </div>
           </div>
         </button>
@@ -234,7 +238,9 @@ export function AppSidebar({
           <div className="flex items-center gap-2">
             <Zap size={20} className="text-blue-400" aria-hidden="true" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-normal text-foreground">Upgrade to Pro</p>
+              <p className="text-sm font-normal text-foreground">
+                Upgrade to Pro
+              </p>
               <p className="text-xs text-muted-foreground">
                 Unlock more benefits
               </p>
