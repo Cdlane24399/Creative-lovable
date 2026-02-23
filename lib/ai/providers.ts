@@ -33,7 +33,7 @@ type ModelConfigEntry = {
 
 const MODEL_CONFIG = {
   anthropic: {
-    gatewayId: 'anthropic/claude-sonnet-4-5',
+    gatewayId: 'anthropic/claude-sonnet-4-6',
     providerOrder: ['anthropic', 'vertex', 'openrouter'] as const,
   },
   opus: {
@@ -45,7 +45,7 @@ const MODEL_CONFIG = {
     providerOrder: ['google', 'vertex', 'openrouter'] as const,
   },
   googlePro: {
-    gatewayId: 'google/gemini-3-pro-preview',
+    gatewayId: 'google/gemini-3.1-pro-preview',
     providerOrder: ['google', 'vertex', 'openrouter'] as const,
   },
   openai: {
@@ -188,8 +188,8 @@ export function getGatewayProviderOptionsWithSearch(key: ModelKey) {
     gateway: {
       order: [...MODEL_CONFIG[key].providerOrder],
       search: {
-        // Allow up to 5 searches per request to balance thoroughness with speed
-        maxSearchCalls: 5,
+        // Keep search bounded by default to control latency and provider costs.
+        maxSearchCalls: 1,
       },
     },
   }

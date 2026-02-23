@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRef, useCallback, useState } from "react";
+import { useRef, useCallback, useState, useId } from "react";
 import { Loader2, Wand2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -160,6 +160,7 @@ export function PromptInput({
   inputRef,
 }: PromptInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const promptFieldId = useId();
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
 
   // Merge refs
@@ -204,7 +205,12 @@ export function PromptInput({
       )}
     >
       <PromptInputBody>
+        <label htmlFor={promptFieldId} className="sr-only">
+          Describe what you want to build
+        </label>
         <PromptInputTextarea
+          id={promptFieldId}
+          aria-label="Describe what you want to build"
           ref={textareaRef}
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
@@ -279,10 +285,7 @@ export function PromptInput({
                       }}
                       className="flex items-center gap-3 py-2.5"
                     >
-                      <ModelSelectorLogo
-                        provider={m.provider as "anthropic"}
-                        className="size-4"
-                      />
+                      <ModelIcon model={m.key} className="size-4" />
                       <div className="flex-1 min-w-0">
                         <ModelSelectorName>
                           {MODEL_DISPLAY_NAMES[m.key]}

@@ -53,6 +53,29 @@ export const maxDuration = 300;
 
 // Default project ID for sandbox operations
 const DEFAULT_PROJECT_ID = "default";
+const ENSURED_PROJECT_TTL_MS = 5 * 60 * 1000;
+const ENSURED_PROJECT_CACHE_MAX = 1000;
+const ensuredProjectsCache = new Map<string, number>();
+
+function hasFreshProjectEnsure(projectId: string): boolean {
+  const lastEnsuredAt = ensuredProjectsCache.get(projectId);
+  if (!lastEnsuredAt) return false;
+  if (Date.now() - lastEnsuredAt > ENSURED_PROJECT_TTL_MS) {
+    ensuredProjectsCache.delete(projectId);
+    return false;
+  }
+  return true;
+}
+
+function markProjectEnsured(projectId: string): void {
+  if (ensuredProjectsCache.size >= ENSURED_PROJECT_CACHE_MAX) {
+    const oldestEntry = ensuredProjectsCache.keys().next();
+    if (!oldestEntry.done) {
+      ensuredProjectsCache.delete(oldestEntry.value);
+    }
+  }
+  ensuredProjectsCache.set(projectId, Date.now());
+}
 
 // Export type for the chat messages
 export type ChatMessage = UIMessage;
@@ -152,12 +175,17 @@ export const POST = withAuth(
       });
 
       // Ensure project exists in database BEFORE any tool calls can trigger context saves
-      if (projectId && projectId !== DEFAULT_PROJECT_ID) {
-        await projectService
-          .ensureProjectExists(projectId, defaultProjectName)
-          .catch((dbError) => {
-            log.warn("Failed to ensure project exists", { projectId }, dbError);
-          });
+      if (
+        projectId &&
+        projectId !== DEFAULT_PROJECT_ID &&
+        !hasFreshProjectEnsure(projectId)
+      ) {
+        try {
+          await projectService.ensureProjectExists(projectId, defaultProjectName);
+          markProjectEnsured(projectId);
+        } catch (dbError) {
+          log.warn("Failed to ensure project exists", { projectId }, dbError);
+        }
       }
 
       // Initialize project info if this is a new session
@@ -257,69 +285,84 @@ export const POST = withAuth(
                   log.error("Failed to save messages", { projectId }, dbError);
                 }
 
+                const persistenceTasks: Promise<void>[] = [];
+
                 // Flush token usage as a single batch write
                 if (pendingTokenUsage.length > 0) {
-                  tokenUsageService
-                    .recordTokenUsageBatch(pendingTokenUsage)
-                    .then(() => {
-                      log.debug("Token usage batch recorded", {
-                        projectId,
-                        records: pendingTokenUsage.length,
-                      });
-                    })
-                    .catch((error) => {
-                      log.error("Failed to record token usage batch", {
-                        error:
-                          error instanceof Error
-                            ? error.message
-                            : String(error),
-                      });
-                    });
+                  persistenceTasks.push(
+                    (async () => {
+                      try {
+                        await tokenUsageService.recordTokenUsageBatch(
+                          pendingTokenUsage,
+                        );
+                        log.debug("Token usage batch recorded", {
+                          projectId,
+                          records: pendingTokenUsage.length,
+                        });
+                      } catch (error) {
+                        log.error("Failed to record token usage batch", {
+                          error:
+                            error instanceof Error
+                              ? error.message
+                              : String(error),
+                        });
+                      }
+                    })(),
+                  );
                 }
 
                 // Auto-heal placeholder project names
                 if (!isPlaceholderProjectName(defaultProjectName, projectId)) {
-                  projectService
-                    .getProject(projectId)
-                    .then((projectRecord) => {
-                      if (
-                        isPlaceholderProjectName(projectRecord.name, projectId)
-                      ) {
-                        return projectService.updateProject(projectId, {
-                          name: defaultProjectName,
+                  persistenceTasks.push(
+                    (async () => {
+                      try {
+                        const projectRecord =
+                          await projectService.getProject(projectId);
+                        if (
+                          isPlaceholderProjectName(projectRecord.name, projectId)
+                        ) {
+                          await projectService.updateProject(projectId, {
+                            name: defaultProjectName,
+                          });
+                        }
+                      } catch (error) {
+                        log.warn("Failed to auto-heal placeholder project name", {
+                          projectId,
+                          error:
+                            error instanceof Error
+                              ? error.message
+                              : String(error),
                         });
                       }
-                      return null;
-                    })
-                    .catch((error) => {
-                      log.warn("Failed to auto-heal placeholder project name", {
-                        projectId,
-                        error:
-                          error instanceof Error
-                            ? error.message
-                            : String(error),
-                      });
-                    });
+                    })(),
+                  );
                 }
 
                 // Auto-sync project files to database (safety net)
                 if (sandboxRef && hasUnsyncedChanges) {
-                  quickSyncToDatabaseWithRetry(sandboxRef, projectId)
-                    .then(() => {
-                      hasUnsyncedChanges = false;
-                      log.info("Auto-synced project files", { projectId });
-                    })
-                    .catch((syncError) =>
-                      log.warn(
-                        "Session-end sync failed",
-                        { projectId },
-                        syncError,
-                      ),
-                    );
+                  persistenceTasks.push(
+                    (async () => {
+                      try {
+                        await quickSyncToDatabaseWithRetry(sandboxRef, projectId);
+                        hasUnsyncedChanges = false;
+                        log.info("Auto-synced project files", { projectId });
+                      } catch (syncError) {
+                        log.warn(
+                          "Session-end sync failed",
+                          { projectId },
+                          syncError,
+                        );
+                      }
+                    })(),
+                  );
                 } else if (!hasUnsyncedChanges) {
                   log.debug("Skipped final sync (no unsynced changes)", {
                     projectId,
                   });
+                }
+
+                if (persistenceTasks.length > 0) {
+                  await Promise.allSettled(persistenceTasks);
                 }
 
                 try {

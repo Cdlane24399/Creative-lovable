@@ -31,16 +31,6 @@ import { getProjectDir } from "@/lib/e2b/project-dir";
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
 import { createErrorResult } from "../utils";
 
-// Cached dynamic import for repositories (avoid repeated module resolution)
-let _repoModulePromise: Promise<typeof import("@/lib/db/repositories")> | null =
-  null;
-function getRepoModule() {
-  if (!_repoModulePromise) {
-    _repoModulePromise = import("@/lib/db/repositories");
-  }
-  return _repoModulePromise;
-}
-
 /**
  * Creates file operation tools for managing files in the project.
  * These tools enable reading, writing, and editing files during development.
@@ -95,24 +85,6 @@ export function createFileTools(projectId: string) {
             content,
             isNew ? "created" : "updated",
           );
-
-          // Persist just this file to the database (incremental, not full sync)
-          // Full project sync is deferred to syncProject/batchWriteFiles for efficiency
-          console.log(
-            `[writeFile] Persisting file ${filePath} to database for project ${projectId}`,
-          );
-          try {
-            const { getProjectRepository } = await getRepoModule();
-            const repo = getProjectRepository();
-            await repo.saveSingleFile(projectId, filePath, content);
-            console.log(`[writeFile] File persisted: ${filePath}`);
-          } catch (syncError) {
-            console.warn(
-              "[writeFile] Failed to persist file to database:",
-              syncError,
-            );
-            // Don't fail the tool execution if persistence fails - the file is still written to sandbox
-          }
 
           // Get project name from context for frontend parser
           const projectName =
@@ -333,23 +305,6 @@ export function createFileTools(projectId: string) {
 
           // Update context
           updateFileInContext(projectId, filePath, newContent, "updated");
-
-          // Persist just this file to the database (incremental, not full sync)
-          console.log(
-            `[editFile] Persisting file ${filePath} to database for project ${projectId}`,
-          );
-          try {
-            const { getProjectRepository } = await getRepoModule();
-            const repo = getProjectRepository();
-            await repo.saveSingleFile(projectId, filePath, newContent);
-            console.log(`[editFile] File persisted: ${filePath}`);
-          } catch (syncError) {
-            console.warn(
-              "[editFile] Failed to persist file to database:",
-              syncError,
-            );
-            // Don't fail the tool execution if persistence fails - the file is still written to sandbox
-          }
 
           // Get project name from context for frontend parser
           const projectName =

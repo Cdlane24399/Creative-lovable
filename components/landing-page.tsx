@@ -46,6 +46,17 @@ export function LandingPage() {
     [router],
   );
 
+  const handleHeroSubmit = useCallback(
+    (prompt: string, model: ModelProvider) => {
+      onNavigateToEditor(undefined, prompt, model);
+    },
+    [onNavigateToEditor],
+  );
+
+  const handleNewProject = useCallback(() => {
+    onNavigateToEditor();
+  }, [onNavigateToEditor]);
+
   // Show a loading state or just render standard layour while loading to avoid flicker?
   // Rendering standard layout might flicker if they are logged in.
   // Rendering nothing might flash white/black.
@@ -82,9 +93,7 @@ export function LandingPage() {
         <main>
           <>
             <HeroSection
-              onSubmit={(prompt, model) =>
-                onNavigateToEditor(undefined, prompt, model)
-              }
+              onSubmit={handleHeroSubmit}
             />
 
             <div className="relative">
@@ -105,7 +114,7 @@ export function LandingPage() {
             <TestimonialsSection />
 
             <div id="pricing">
-              <CTASection onNavigateToEditor={() => onNavigateToEditor()} />
+              <CTASection onNavigateToEditor={handleNewProject} />
             </div>
           </>
         </main>

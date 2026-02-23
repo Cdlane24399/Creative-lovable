@@ -35,7 +35,6 @@
 import {
   getContextRepository,
   type AgentContextData,
-  type FileInfo,
   type BuildStatus,
   type ServerState,
   type ToolExecution,
@@ -139,6 +138,11 @@ export class ContextService {
     }
   }
 
+  private touchContext(projectId: string, context: AgentContextData): void {
+    context.lastActivity = new Date()
+    contextCache.set(projectId, context)
+  }
+
   /**
    * Update project info
    */
@@ -178,27 +182,37 @@ export class ContextService {
   ): Promise<void> {
     // Get current context
     const context = await this.getContext(projectId)
+    const existing = context.files.get(path)
+    let hasChanges = false
 
     // Update files map
     if (action === "deleted") {
-      context.files.delete(path)
+      hasChanges = context.files.delete(path)
     } else {
-      context.files.set(path, {
-        path,
-        content,
-        action,
-        lastModified: new Date(),
+      hasChanges =
+        !existing ||
+        existing.content !== content ||
+        existing.action !== action
+
+      if (hasChanges) {
+        context.files.set(path, {
+          path,
+          content,
+          action,
+          lastModified: new Date(),
+        })
+      }
+    }
+
+    if (hasChanges) {
+      // Write to database only when files actually changed
+      await this.contextRepo.updateFields(projectId, {
+        files: context.files,
       })
     }
 
-    // Write to database
-    await this.contextRepo.updateFields(projectId, {
-      files: context.files,
-    })
-
-    // Update cache
-    context.lastActivity = new Date()
-    contextCache.set(projectId, context)
+    // Update cache/activity
+    this.touchContext(projectId, context)
   }
 
   /**
@@ -213,27 +227,38 @@ export class ContextService {
     }>
   ): Promise<void> {
     const context = await this.getContext(projectId)
+    let hasChanges = false
 
     for (const file of files) {
       const action = file.action ?? "updated"
       if (action === "deleted") {
-        context.files.delete(file.path)
+        hasChanges = context.files.delete(file.path) || hasChanges
       } else {
-        context.files.set(file.path, {
-          path: file.path,
-          content: file.content,
-          action,
-          lastModified: new Date(),
-        })
+        const existing = context.files.get(file.path)
+        const fileChanged =
+          !existing ||
+          existing.content !== file.content ||
+          existing.action !== action
+
+        if (fileChanged) {
+          context.files.set(file.path, {
+            path: file.path,
+            content: file.content,
+            action,
+            lastModified: new Date(),
+          })
+          hasChanges = true
+        }
       }
     }
 
-    await this.contextRepo.updateFields(projectId, {
-      files: context.files,
-    })
+    if (hasChanges) {
+      await this.contextRepo.updateFields(projectId, {
+        files: context.files,
+      })
+    }
 
-    context.lastActivity = new Date()
-    contextCache.set(projectId, context)
+    this.touchContext(projectId, context)
   }
 
   /**
@@ -245,14 +270,19 @@ export class ContextService {
     version: string
   ): Promise<void> {
     const context = await this.getContext(projectId)
+    const existingVersion = context.dependencies.get(packageName)
+    if (existingVersion === version) {
+      this.touchContext(projectId, context)
+      return
+    }
+
     context.dependencies.set(packageName, version)
 
     await this.contextRepo.updateFields(projectId, {
       dependencies: context.dependencies,
     })
 
-    context.lastActivity = new Date()
-    contextCache.set(projectId, context)
+    this.touchContext(projectId, context)
   }
 
   /**
@@ -263,17 +293,25 @@ export class ContextService {
     dependencies: Record<string, string>
   ): Promise<void> {
     const context = await this.getContext(projectId)
-    
+    let hasChanges = false
+
     for (const [pkg, version] of Object.entries(dependencies)) {
-      context.dependencies.set(pkg, version)
+      if (context.dependencies.get(pkg) !== version) {
+        context.dependencies.set(pkg, version)
+        hasChanges = true
+      }
+    }
+
+    if (!hasChanges) {
+      this.touchContext(projectId, context)
+      return
     }
 
     await this.contextRepo.updateFields(projectId, {
       dependencies: context.dependencies,
     })
 
-    context.lastActivity = new Date()
-    contextCache.set(projectId, context)
+    this.touchContext(projectId, context)
   }
 
   /**

@@ -79,10 +79,10 @@ export const MODEL_SETTINGS: Record<
 };
 
 export const MODEL_DISPLAY_NAMES = {
-  anthropic: "Claude Sonnet 4.5",
+  anthropic: "Claude Sonnet 4.6",
   opus: "Claude Opus 4.6",
   google: "Gemini 3 Flash",
-  googlePro: "Gemini 3 Pro",
+  googlePro: "Gemini 3.1 Pro",
   openai: "GPT-5.2",
   haiku: "Claude 3.5 Haiku",
   minimax: "MiniMax M2.5",

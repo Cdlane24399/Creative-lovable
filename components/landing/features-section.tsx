@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, useMotionValue, useMotionTemplate } from "framer-motion";
 import {
   Zap,
   Code2,
@@ -25,6 +25,7 @@ const features = [
     color: "text-amber-500",
     bgColor: "bg-amber-500/10",
     borderColor: "border-amber-500/20",
+    spotlight: "rgba(245, 158, 11, 0.15)",
   },
   {
     icon: Code2,
@@ -34,6 +35,7 @@ const features = [
     color: "text-emerald-500",
     bgColor: "bg-emerald-500/10",
     borderColor: "border-emerald-500/20",
+    spotlight: "rgba(16, 185, 129, 0.15)",
   },
   {
     icon: Layers,
@@ -43,6 +45,7 @@ const features = [
     color: "text-violet-500",
     bgColor: "bg-violet-500/10",
     borderColor: "border-violet-500/20",
+    spotlight: "rgba(139, 92, 246, 0.15)",
   },
   {
     icon: RefreshCw,
@@ -52,6 +55,7 @@ const features = [
     color: "text-cyan-500",
     bgColor: "bg-cyan-500/10",
     borderColor: "border-cyan-500/20",
+    spotlight: "rgba(6, 182, 212, 0.15)",
   },
   {
     icon: Palette,
@@ -61,6 +65,7 @@ const features = [
     color: "text-pink-500",
     bgColor: "bg-pink-500/10",
     borderColor: "border-pink-500/20",
+    spotlight: "rgba(236, 72, 153, 0.15)",
   },
   {
     icon: Globe,
@@ -70,6 +75,7 @@ const features = [
     color: "text-teal-500",
     bgColor: "bg-teal-500/10",
     borderColor: "border-teal-500/20",
+    spotlight: "rgba(20, 184, 166, 0.15)",
   },
 ];
 
@@ -81,6 +87,70 @@ const techStack = [
   { icon: GitBranch, label: "shadcn/ui" },
   { icon: Cpu, label: "E2B Sandbox" },
 ];
+
+function FeatureCard({ feature, index }: { feature: (typeof features)[0]; index: number }) {
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+
+  function handleMouseMove({ currentTarget, clientX, clientY }: React.MouseEvent) {
+    const { left, top } = currentTarget.getBoundingClientRect();
+    mouseX.set(clientX - left);
+    mouseY.set(clientY - top);
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 30 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: index * 0.1 }}
+      viewport={{ once: true, margin: "-50px" }}
+      className="group relative h-full flex"
+      onMouseMove={handleMouseMove}
+    >
+      {/* Outer blurred glow */}
+      <div
+        className={`absolute -inset-0.5 bg-gradient-to-r ${feature.bgColor} rounded-xl blur-xl opacity-0 group-hover:opacity-40 transition-opacity duration-500`}
+      />
+
+      {/* Main card body with spring physics on hover */}
+      <motion.div
+        whileHover={{ y: -5, scale: 1.02 }}
+        transition={{ type: "spring", stiffness: 300, damping: 20 }}
+        className="relative h-full w-full bg-zinc-900/80 backdrop-blur-xl rounded-xl p-6 border border-white/5 hover:border-white/10 transition-colors duration-300 shadow-xl overflow-hidden"
+      >
+        {/* Spotlight Effect */}
+        <motion.div
+          className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
+          style={{
+            background: useMotionTemplate`
+              radial-gradient(
+                350px circle at ${mouseX}px ${mouseY}px,
+                ${feature.spotlight},
+                transparent 80%
+              )
+            `,
+          }}
+        />
+
+        {/* Content Container */}
+        <div className="relative z-10 flex flex-col h-full">
+          <div
+            className={`inline-flex items-center justify-center w-12 h-12 rounded-xl ${feature.bgColor} ${feature.borderColor} border mb-5 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shadow-lg`}
+          >
+            <feature.icon className={`w-6 h-6 ${feature.color}`} />
+          </div>
+
+          <h3 className="text-xl font-semibold text-white mb-3 group-hover:text-zinc-100 transition-colors">
+            {feature.title}
+          </h3>
+          <p className="text-sm text-zinc-400 leading-relaxed group-hover:text-zinc-300 transition-colors">
+            {feature.description}
+          </p>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
 
 export function FeaturesSection() {
   return (
@@ -117,36 +187,7 @@ export function FeaturesSection() {
         {/* Features Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {features.map((feature, index) => (
-            <motion.div
-              key={feature.title}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
-              viewport={{ once: true }}
-              className="group relative"
-            >
-              {/* Card glow effect on hover */}
-              <div
-                className={`absolute -inset-0.5 bg-gradient-to-r ${feature.bgColor} rounded-xl blur opacity-0 group-hover:opacity-30 transition-opacity duration-500`}
-              />
-
-              <div className="relative h-full bg-zinc-900/50 backdrop-blur-sm rounded-xl p-6 border border-zinc-800/50 hover:border-zinc-700/50 transition-all duration-300 hover:shadow-xl hover:shadow-black/20 hover:-translate-y-1">
-                {/* Icon */}
-                <div
-                  className={`inline-flex items-center justify-center w-12 h-12 rounded-xl ${feature.bgColor} ${feature.borderColor} border mb-4 group-hover:scale-110 transition-transform duration-300 shadow-lg`}
-                >
-                  <feature.icon className={`w-6 h-6 ${feature.color}`} />
-                </div>
-
-                {/* Content */}
-                <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-zinc-100 transition-colors">
-                  {feature.title}
-                </h3>
-                <p className="text-sm text-zinc-400 leading-relaxed group-hover:text-zinc-300 transition-colors">
-                  {feature.description}
-                </p>
-              </div>
-            </motion.div>
+            <FeatureCard key={feature.title} feature={feature} index={index} />
           ))}
         </div>
 

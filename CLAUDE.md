@@ -127,7 +127,7 @@ const aiGateway = createGateway()
 
 const MODEL_CONFIG = {
   anthropic: {
-    gatewayId: 'anthropic/claude-sonnet-4-5',
+    gatewayId: 'anthropic/claude-sonnet-4-6',
     providerOrder: ['anthropic', 'vertex'] as const,
   },
 }

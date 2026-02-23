@@ -22,16 +22,18 @@ import {
   NoSuchToolError,
   InvalidToolInputError,
 } from "ai";
-import { getModel, getGatewayProviderOptionsWithSearch } from "../providers";
+import { getModel, getGatewayProviderOptions } from "../providers";
 import { SYSTEM_PROMPT, MODEL_SETTINGS, type ModelProvider } from "../agent";
 import { generateAgenticSystemPrompt } from "../prompt-generator";
 import { createContextAwareTools } from "../web-builder-agent";
 import { getAgentContext } from "../agent-context";
+import { normalizeProjectRelativePath } from "../utils";
 import { logger } from "@/lib/logger";
 import type { ModelKey } from "../providers";
 
 // Tool group constants (mirrored from route.ts for consistency)
-const PLANNING_TOOLS = ["planChanges", "analyzeProjectState"] as const;
+const PLANNING_TOOLS = ["planChanges", "markStepComplete"] as const;
+const STATE_TOOLS = ["analyzeProjectState"] as const;
 const FILE_TOOLS = [
   "writeFile",
   "readFile",
@@ -48,6 +50,7 @@ const RESEARCH_TOOLS = ["research"] as const;
 
 type ToolName =
   | (typeof PLANNING_TOOLS)[number]
+  | (typeof STATE_TOOLS)[number]
   | (typeof FILE_TOOLS)[number]
   | (typeof BUILD_TOOLS)[number]
   | (typeof SYNC_TOOLS)[number]
@@ -56,8 +59,21 @@ type ToolName =
   | (typeof SKILL_TOOLS)[number]
   | (typeof RESEARCH_TOOLS)[number];
 
+export const WEB_BUILDER_TOOLSETS = {
+  planning: PLANNING_TOOLS,
+  state: STATE_TOOLS,
+  file: FILE_TOOLS,
+  build: BUILD_TOOLS,
+  sync: SYNC_TOOLS,
+  code: CODE_TOOLS,
+  search: SEARCH_TOOLS,
+  skills: SKILL_TOOLS,
+  research: RESEARCH_TOOLS,
+} as const;
+
 const DEFAULT_ACTIVE_TOOLS: ToolName[] = [
   ...PLANNING_TOOLS,
+  ...STATE_TOOLS,
   ...FILE_TOOLS,
   ...BUILD_TOOLS,
   ...SYNC_TOOLS,
@@ -70,6 +86,7 @@ const DEFAULT_ACTIVE_TOOLS: ToolName[] = [
 const BOOTSTRAP_ACTIVE_TOOLS: ToolName[] = [
   "analyzeProjectState",
   "planChanges",
+  "markStepComplete",
   "getProjectStructure",
   "readFile",
   "writeFile",
@@ -82,6 +99,105 @@ const BOOTSTRAP_ACTIVE_TOOLS: ToolName[] = [
   "findSkills",
   "research",
 ];
+
+const EXECUTION_FOCUSED_TOOLS: ToolName[] = [
+  ...PLANNING_TOOLS,
+  ...STATE_TOOLS,
+  ...FILE_TOOLS,
+  ...BUILD_TOOLS,
+  ...SYNC_TOOLS,
+];
+
+const TOKEN_SOFT_CAP = 500_000;
+const TOKEN_HARD_CAP = 600_000;
+
+export const WEB_BUILDER_TOKEN_CAPS = {
+  soft: TOKEN_SOFT_CAP,
+  hard: TOKEN_HARD_CAP,
+} as const;
+
+interface ToolSelectionInput {
+  stepNumber: number;
+  maxSteps: number;
+  cumulativeTokens: number;
+  hasBuildErrors: boolean;
+  serverRunning: boolean;
+  hasTaskGraph: boolean;
+  isNewProject: boolean;
+}
+
+interface ToolSelectionResult {
+  activeTools: ToolName[];
+  reason:
+    | "token_hard_cap"
+    | "step_limit"
+    | "token_constrained"
+    | "forced_research_new_project"
+    | "bootstrap"
+    | "build_errors"
+    | "active_task_graph"
+    | "default";
+  forceToolName?: ToolName;
+}
+
+export function selectActiveToolsForStep({
+  stepNumber,
+  maxSteps,
+  cumulativeTokens,
+  hasBuildErrors,
+  serverRunning,
+  hasTaskGraph,
+  isNewProject,
+}: ToolSelectionInput): ToolSelectionResult {
+  if (cumulativeTokens > TOKEN_HARD_CAP) {
+    return { activeTools: [], reason: "token_hard_cap" };
+  }
+
+  if (stepNumber >= Math.max(1, maxSteps - 2)) {
+    return { activeTools: [], reason: "step_limit" };
+  }
+
+  if (cumulativeTokens > TOKEN_SOFT_CAP) {
+    return {
+      activeTools: EXECUTION_FOCUSED_TOOLS,
+      reason: "token_constrained",
+    };
+  }
+
+  if (stepNumber === 0) {
+    if (isNewProject) {
+      return {
+        activeTools: BOOTSTRAP_ACTIVE_TOOLS,
+        reason: "forced_research_new_project",
+        forceToolName: "research",
+      };
+    }
+
+    return {
+      activeTools: BOOTSTRAP_ACTIVE_TOOLS,
+      reason: "bootstrap",
+    };
+  }
+
+  if (hasBuildErrors) {
+    return {
+      activeTools: EXECUTION_FOCUSED_TOOLS,
+      reason: "build_errors",
+    };
+  }
+
+  if (serverRunning && hasTaskGraph) {
+    return {
+      activeTools: EXECUTION_FOCUSED_TOOLS,
+      reason: "active_task_graph",
+    };
+  }
+
+  return {
+    activeTools: DEFAULT_ACTIVE_TOOLS,
+    reason: "default",
+  };
+}
 
 const FILE_MUTATION_TOOLS = new Set([
   "writeFile",
@@ -229,7 +345,7 @@ export function createWebBuilderAgent({
 
   return new ToolLoopAgent({
     model: getModel(modelKey),
-    providerOptions: getGatewayProviderOptionsWithSearch(modelKey),
+    providerOptions: getGatewayProviderOptions(modelKey),
     instructions: systemPrompt,
     tools,
     stopWhen: stepCountIs(maxSteps),
@@ -323,20 +439,6 @@ export function createWebBuilderAgent({
         activeTools?: ToolName[];
       } = {};
 
-      // Token budget enforcement: force graceful completion at hard cap
-      const TOKEN_HARD_CAP = 600_000;
-      if (cumulativeTokens > TOKEN_HARD_CAP) {
-        config.activeTools = [];
-        log.warn(
-          "Token hard cap reached, disabling tools for graceful completion",
-          { stepNumber, cumulativeTokens, cap: TOKEN_HARD_CAP },
-        );
-        if (needsToolInputTransform && stepMessages.length > 0) {
-          config.messages = ensureToolCallInputsAreObjects(stepMessages);
-        }
-        return config;
-      }
-
       // Model-aware compression thresholds
       const isGeminiModel = model === "google" || model === "googlePro";
       const compressionThreshold = isGeminiModel ? 30 : 24;
@@ -369,62 +471,47 @@ export function createWebBuilderAgent({
         });
       }
 
-      // Force final text response near the loop limit
-      if (stepNumber >= Math.max(1, maxSteps - 2)) {
-        config.activeTools = [];
+      const selection = selectActiveToolsForStep({
+        stepNumber,
+        maxSteps,
+        cumulativeTokens,
+        hasBuildErrors: !!context.buildStatus?.hasErrors,
+        serverRunning: !!context.serverState?.isRunning,
+        hasTaskGraph: !!context.taskGraph,
+        isNewProject: !context.files || context.files.size === 0,
+      });
+
+      config.activeTools = selection.activeTools;
+
+      if (selection.forceToolName) {
+        (config as Record<string, unknown>).toolChoice = {
+          type: "tool",
+          toolName: selection.forceToolName,
+        };
+      }
+
+      if (selection.reason === "token_hard_cap") {
+        log.warn(
+          "Token hard cap reached, disabling tools for graceful completion",
+          {
+            stepNumber,
+            cumulativeTokens,
+            cap: TOKEN_HARD_CAP,
+          },
+        );
+      } else if (selection.reason === "step_limit") {
         log.debug("prepareStep: near step limit, disabling tools", {
           stepNumber,
           maxSteps,
-          reason: "step_limit",
+          reason: selection.reason,
         });
-        if (needsToolInputTransform && stepMessages.length > 0) {
-          config.messages = ensureToolCallInputsAreObjects(stepMessages);
-        }
-        return config;
-      }
-
-      // Soft token budget: restrict to essential tools
-      const TOKEN_SOFT_CAP = 500_000;
-      const isTokenConstrained = cumulativeTokens > TOKEN_SOFT_CAP;
-      let toolSelectionReason = "default";
-
-      if (isTokenConstrained) {
-        config.activeTools = [
-          ...FILE_TOOLS,
-          ...BUILD_TOOLS,
-          ...SYNC_TOOLS,
-        ] as ToolName[];
-        toolSelectionReason = "token_constrained";
-      } else if (stepNumber === 0) {
-        // Force research first for new projects (no existing files in context)
-        const isNewProject = !context.files || context.files.size === 0;
-        if (isNewProject) {
-          config.activeTools = BOOTSTRAP_ACTIVE_TOOLS;
-          // Force the model to call research before anything else
-          (config as Record<string, unknown>).toolChoice = {
-            type: "tool",
-            toolName: "research",
-          };
-          toolSelectionReason = "forced_research_new_project";
-        } else {
-          config.activeTools = BOOTSTRAP_ACTIVE_TOOLS;
-          toolSelectionReason = "bootstrap";
-        }
-      } else if (context.buildStatus?.hasErrors) {
-        config.activeTools = [...FILE_TOOLS, ...BUILD_TOOLS] as ToolName[];
-        toolSelectionReason = "build_errors";
-      } else if (context.serverState?.isRunning && context.taskGraph) {
-        config.activeTools = [...FILE_TOOLS, ...BUILD_TOOLS] as ToolName[];
-        toolSelectionReason = "active_task_graph";
-      } else {
-        config.activeTools = DEFAULT_ACTIVE_TOOLS;
       }
 
       log.debug("prepareStep: tool selection", {
         stepNumber,
         maxSteps,
         activeToolCount: config.activeTools?.length ?? 0,
-        reason: toolSelectionReason,
+        reason: selection.reason,
         hasErrors: !!context.buildStatus?.hasErrors,
         serverRunning: !!context.serverState?.isRunning,
         hasTaskGraph: !!context.taskGraph,
@@ -458,7 +545,13 @@ export function createWebBuilderAgent({
 
           // Fix common path issues
           if (typeof repairedInput.path === "string") {
-            repairedInput.path = repairedInput.path.replace(/^\/+/, "");
+            try {
+              repairedInput.path = normalizeProjectRelativePath(
+                repairedInput.path,
+              );
+            } catch {
+              delete repairedInput.path;
+            }
           }
 
           // Recover common aliases the model may use for writeFile/editFile
@@ -472,7 +565,11 @@ export function createWebBuilderAgent({
                     ? repairedInput.file
                     : undefined;
             if (pathAlias) {
-              repairedInput.path = pathAlias.replace(/^\/+/, "");
+              try {
+                repairedInput.path = normalizeProjectRelativePath(pathAlias);
+              } catch {
+                // Keep schema validation in charge if alias path is unusable
+              }
             }
           }
 
@@ -510,6 +607,15 @@ export function createWebBuilderAgent({
                   const normalized = { ...value };
                   if (typeof normalized.path !== "string") {
                     normalized.path = path;
+                  }
+                  if (typeof normalized.path === "string") {
+                    try {
+                      normalized.path = normalizeProjectRelativePath(
+                        normalized.path,
+                      );
+                    } catch {
+                      normalized.path = path;
+                    }
                   }
                   if (
                     typeof normalized.content !== "string" &&

@@ -17,6 +17,84 @@ import { ToolLoopAgent, tool, stepCountIs } from "ai";
 import { z } from "zod";
 import { tavilySearch } from "@tavily/ai-sdk";
 
+interface NpmSearchResponse {
+  objects?: Array<{
+    package?: {
+      name?: string;
+      version?: string;
+      description?: string;
+      links?: {
+        npm?: string;
+        homepage?: string;
+        repository?: string;
+      };
+    };
+    score?: {
+      final?: number;
+    };
+  }>;
+}
+
+interface SkillSearchResult {
+  name: string;
+  version: string;
+  description: string;
+  npmUrl?: string;
+  homepage?: string;
+  repository?: string;
+  score: number;
+}
+
+export async function searchSkillPackages(
+  query: string,
+): Promise<SkillSearchResult[]> {
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) return [];
+
+  const searchTerms = `${trimmedQuery} ai agent skill vercel`;
+  const url = `https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(searchTerms)}&size=10`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`npm registry search failed: ${response.status}`);
+    }
+
+    const data = (await response.json()) as NpmSearchResponse;
+    const results =
+      data.objects
+        ?.map((entry): SkillSearchResult | null => {
+          const pkg = entry.package;
+          if (!pkg?.name || !pkg.version) return null;
+
+          return {
+            name: pkg.name,
+            version: pkg.version,
+            description: pkg.description || "No description provided",
+            npmUrl: pkg.links?.npm,
+            homepage: pkg.links?.homepage,
+            repository: pkg.links?.repository,
+            score: entry.score?.final ?? 0,
+          };
+        })
+        .filter((entry): entry is SkillSearchResult => Boolean(entry))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5) || [];
+
+    return results;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 /**
  * Create a research agent instance.
  *
@@ -26,7 +104,7 @@ import { tavilySearch } from "@tavily/ai-sdk";
  */
 export function createResearchAgent() {
   return new ToolLoopAgent({
-    model: "anthropic/claude-sonnet-4-5",
+    model: "anthropic/claude-sonnet-4-6",
     instructions: `You are a research agent for a web builder. Your job is to:
 1. Search the web for design inspiration, UI patterns, and relevant APIs
 2. Search for reusable skills or packages matching the task
@@ -57,12 +135,28 @@ Focus on unique, distinctive design choices — avoid generic suggestions.`,
             ),
         }),
         execute: async ({ query }) => {
-          // This is a lightweight search — the main agent has full sandbox access
-          // for installing packages. This just discovers what's available.
-          return {
-            query,
-            note: `Skills search for "${query}" completed. The main agent can install discovered packages using installPackage.`,
-          };
+          try {
+            const results = await searchSkillPackages(query);
+            return {
+              query,
+              count: results.length,
+              results,
+              message:
+                results.length > 0
+                  ? `Found ${results.length} package candidates for "${query}".`
+                  : `No package candidates found for "${query}".`,
+            };
+          } catch (error) {
+            return {
+              query,
+              count: 0,
+              results: [],
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Skill package search failed",
+            };
+          }
         },
       }),
     },

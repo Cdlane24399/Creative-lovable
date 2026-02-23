@@ -149,7 +149,7 @@ export function PlanProgress({ plan, isWorking }: PlanProgressProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const dismissTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const [prevPlanGoal, setPrevPlanGoal] = useState<string | null>(null);
+  const prevPlanGoalRef = useRef<string>(plan.goal);
 
   const completedCount = plan.steps.filter((s) => s.completed).length;
   const totalCount = plan.steps.length;
@@ -157,12 +157,14 @@ export function PlanProgress({ plan, isWorking }: PlanProgressProps) {
   const progressPercent =
     totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
-  // Reset dismissed state when a new plan arrives (render-time state adjustment)
-  if (plan.goal !== prevPlanGoal) {
-    setPrevPlanGoal(plan.goal);
-    setDismissed(false);
-    setIsExpanded(false);
-  }
+  // Reset local UI state when the plan goal changes.
+  useEffect(() => {
+    if (prevPlanGoalRef.current !== plan.goal) {
+      prevPlanGoalRef.current = plan.goal;
+      setDismissed(false);
+      setIsExpanded(false);
+    }
+  }, [plan.goal]);
 
   // Auto-dismiss after all steps complete and agent stops working
   useEffect(() => {

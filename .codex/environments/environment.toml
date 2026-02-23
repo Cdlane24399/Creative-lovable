@@ -9,3 +9,13 @@ script = ""
 name = "Run"
 icon = "run"
 command = "pnpm dev"
+
+[[actions]]
+name = "Preview"
+icon = "run"
+command = '''
+killport 3000
+killport 3001
+pnpm build
+pnpm start
+'''

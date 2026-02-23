@@ -12,6 +12,7 @@ import {
   recordToolExecution,
 } from "../agent-context";
 import { isPlaceholderProjectName } from "../project-naming";
+import { normalizeProjectRelativePath } from "../utils";
 import {
   executeCommand,
   writeFile as writeFileToSandbox,
@@ -74,6 +75,8 @@ const batchFileSchema = z.object({
   path: z
     .string()
     .min(1)
+    .max(256)
+    .refine((value) => !value.includes(".."), "Path cannot contain '..'")
     .describe("File path relative to project root (e.g., 'app/page.tsx')"),
   content: z.string().describe("Complete file content"),
   action: z
@@ -82,6 +85,11 @@ const batchFileSchema = z.object({
     .default("create")
     .describe("Whether to create new or update existing"),
 });
+
+const batchBaseDirSchema = z
+  .enum(["app", "src/app"])
+  .optional()
+  .default("app");
 
 interface ResolvedBatchFile {
   originalPath: string;
@@ -132,6 +140,30 @@ function resolveRuntimeRelativePath(
   return normalized;
 }
 
+export function resolveBatchFileRelativePath(
+  rawPath: string,
+  requestedBaseDir: "app" | "src/app",
+  runtimeAppDir: "app" | "src/app",
+): string {
+  const normalizedInputPath = normalizeProjectRelativePath(rawPath);
+  const firstSegment = normalizedInputPath.split("/")[0] || "";
+  const isRootRelative = normalizedInputPath.includes("/")
+    ? ROOT_LEVEL_DIRS.has(firstSegment)
+    : ROOT_LEVEL_FILES.has(normalizedInputPath) || normalizedInputPath.startsWith(".");
+
+  const effectiveBaseDir =
+    requestedBaseDir === "app" ? runtimeAppDir : requestedBaseDir;
+  const unresolvedPath = isRootRelative
+    ? normalizedInputPath
+    : `${effectiveBaseDir}/${normalizedInputPath}`;
+
+  const runtimeRelativePath = resolveRuntimeRelativePath(
+    unresolvedPath,
+    runtimeAppDir,
+  );
+  return normalizeProjectRelativePath(runtimeRelativePath);
+}
+
 /**
  * Creates batch file operation tools.
  *
@@ -159,11 +191,9 @@ export function createBatchFileTools(projectId: string) {
           .min(1)
           .max(50)
           .describe("Files to write (max 50 per batch)"),
-        baseDir: z
-          .string()
-          .optional()
-          .default("app")
-          .describe("Base directory for relative paths ('app' or 'src/app')"),
+        baseDir: batchBaseDirSchema.describe(
+          "Base directory for relative paths ('app' or 'src/app')",
+        ),
       }),
 
       execute: async ({ files, baseDir }) => {
@@ -195,35 +225,68 @@ export function createBatchFileTools(projectId: string) {
           const appDir: "app" | "src/app" =
             hasSrcApp && !hasRootApp ? "src/app" : "app";
 
-          const normalizedBaseDir = (baseDir || "app")
-            .replace(/^\/+/, "")
-            .replace(/\/+$/, "");
-          const effectiveBaseDir =
-            normalizedBaseDir === "app" ? appDir : normalizedBaseDir;
+          const resolvedFiles: ResolvedBatchFile[] = [];
+          const seenTargets = new Set<string>();
 
-          const resolvedFiles: ResolvedBatchFile[] = files.map((file) => {
-            const rawPath = file.path.trim().replace(/^\/+/, "");
-            const firstSegment = rawPath.split("/")[0] || "";
-            const isRootRelative = rawPath.includes("/")
-              ? ROOT_LEVEL_DIRS.has(firstSegment)
-              : ROOT_LEVEL_FILES.has(rawPath) || rawPath.startsWith(".");
+          for (const file of files) {
+            try {
+              const relativePath = resolveBatchFileRelativePath(
+                file.path,
+                baseDir,
+                appDir,
+              );
 
-            const unresolvedPath = isRootRelative
-              ? rawPath
-              : `${effectiveBaseDir}/${rawPath}`;
-            const relativePath = resolveRuntimeRelativePath(
-              unresolvedPath,
-              appDir,
-            );
+              if (seenTargets.has(relativePath)) {
+                results.failed.push({
+                  path: file.path,
+                  error: `Duplicate target path in batch: ${relativePath}`,
+                });
+                continue;
+              }
+              seenTargets.add(relativePath);
 
-            return {
-              originalPath: file.path,
-              relativePath,
-              fullPath: `${projectDir}/${relativePath}`,
-              content: file.content,
-              requestedAction: file.action ?? "create",
+              resolvedFiles.push({
+                originalPath: file.path,
+                relativePath,
+                fullPath: `${projectDir}/${relativePath}`,
+                content: file.content,
+                requestedAction: file.action ?? "create",
+              });
+            } catch (error) {
+              const errorMsg =
+                error instanceof Error ? error.message : "Invalid file path";
+              results.failed.push({
+                path: file.path,
+                error: errorMsg,
+              });
+            }
+          }
+
+          if (resolvedFiles.length === 0) {
+            const projectName = ctx.projectName || "project";
+            const invalidOnlyResult = {
+              success: false,
+              totalFiles: files.length,
+              processed: 0,
+              created: results.created,
+              updated: results.updated,
+              skipped: results.skipped,
+              failed: results.failed,
+              filesReady: false,
+              projectName,
+              message: "No valid files to write. All file paths were rejected.",
             };
-          });
+            recordToolExecution(
+              projectId,
+              "batchWriteFiles",
+              { fileCount: files.length },
+              { failed: results.failed.length },
+              false,
+              "All file paths were invalid",
+              startTime,
+            );
+            return invalidOnlyResult;
+          }
 
           const uniqueDirs = Array.from(
             new Set(

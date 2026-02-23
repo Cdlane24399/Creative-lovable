@@ -12,6 +12,19 @@ import { z } from "zod";
 import { recordToolExecution } from "../agent-context";
 import { getCurrentSandbox } from "@/lib/e2b/sandbox-provider";
 
+function buildSkillsCommand(query: string): string {
+  const escapedQuery = JSON.stringify(query);
+  return [
+    "if command -v skills >/dev/null 2>&1; then",
+    `skills find ${escapedQuery}`,
+    "elif command -v pnpm >/dev/null 2>&1; then",
+    `pnpm dlx --prefer-offline skills find ${escapedQuery}`,
+    "else",
+    `npx -y skills find ${escapedQuery}`,
+    "fi",
+  ].join(" ");
+}
+
 /**
  * Creates skill discovery tools for the web builder agent.
  *
@@ -47,10 +60,9 @@ Returns matching skills with descriptions and install instructions.`,
       }
 
       try {
-        const result = await sandbox.commands.run(
-          `npx -y skills find ${JSON.stringify(query)}`,
-          { timeoutMs: 30_000 },
-        );
+        const result = await sandbox.commands.run(buildSkillsCommand(query), {
+          timeoutMs: 30_000,
+        });
 
         const success = result.exitCode === 0;
         recordToolExecution(projectId, "findSkills", { query }, undefined, success);

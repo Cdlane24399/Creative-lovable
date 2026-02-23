@@ -28,8 +28,18 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [scrolled, setScrolled] = useState(false);
   const [supabase] = useState(() => createClient());
   const showProfileMenu = Boolean(user && profileOpen);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 20);
+    };
+    window.addEventListener("scroll", handleScroll);
+    handleScroll(); // Check on initial load
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -51,14 +61,25 @@ export function Header() {
   }, [supabase]);
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50">
-      {/* Gradient background with glassmorphism */}
-      <div className="absolute inset-0 bg-[#111111]/90 backdrop-blur-xl border-b border-zinc-800/50" />
+    <header
+      className={cn(
+        "fixed z-50 transition-all duration-500 ease-in-out",
+        scrolled
+          ? "top-4 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:w-[calc(100%-2rem)] md:max-w-4xl rounded-2xl border border-white/10 bg-[#0a0a0c]/80 backdrop-blur-xl shadow-2xl shadow-emerald-500/5 mx-auto"
+          : "top-0 left-0 right-0 w-full bg-[#111111]/90 backdrop-blur-xl border-b border-zinc-800/50"
+      )}
+    >
+      {/* Subtle top glare when floating */}
+      <div
+        className={cn(
+          "absolute top-0 left-0 right-0 h-px transition-opacity duration-500",
+          scrolled
+            ? "bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-100"
+            : "bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent opacity-100"
+        )}
+      />
 
-      {/* Subtle gradient accent on top */}
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent" />
-
-      <nav className="relative">
+      <nav className="relative w-full">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             {/* Logo */}

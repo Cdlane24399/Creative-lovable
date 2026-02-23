@@ -46,3 +46,24 @@ export function normalizeSandboxRelativePath(rawPath: string, stripPrefix?: stri
 
   return normalized
 }
+
+/**
+ * Normalizes and validates a project-relative path without stripping semantic
+ * prefixes like `app/` or `components/`.
+ */
+export function normalizeProjectRelativePath(rawPath: string): string {
+  const raw = rawPath.trim().replaceAll("\\", "/")
+  const cleaned = raw.replace(/^\/+/, "").replace(/^\.\//, "")
+  const normalized = path.posix.normalize(cleaned)
+
+  if (
+    !normalized ||
+    normalized === "." ||
+    normalized.startsWith("..") ||
+    path.posix.isAbsolute(normalized)
+  ) {
+    throw new InvalidPathError(rawPath)
+  }
+
+  return normalized
+}

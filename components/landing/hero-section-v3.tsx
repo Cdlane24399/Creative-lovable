@@ -16,7 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { type ModelProvider } from "@/lib/ai/agent";
 import { cn } from "@/lib/utils";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useTransform, motionValue, animate } from "framer-motion";
 import { ModelSelector } from "@/components/shared/model-selector";
 
 interface HeroSectionProps {
@@ -31,6 +31,17 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
   const [showImproveEffect, setShowImproveEffect] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Mouse tracking for ambient background
+  const mouseX = motionValue(0);
+  const mouseY = motionValue(0);
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    const { clientX, clientY } = e;
+    // Animate the motion values slightly behind the actual mouse
+    animate(mouseX, clientX, { type: "tween", duration: 0.8, ease: "easeOut" });
+    animate(mouseY, clientY, { type: "tween", duration: 0.8, ease: "easeOut" });
+  };
 
   const handleSubmit = () => {
     // Allow starting with an empty prompt (opens editor with no initialPrompt).
@@ -101,13 +112,34 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
   ];
 
   return (
-    <div className="min-h-[calc(100vh-80px)] flex flex-col items-center justify-center px-4 sm:px-6 lg:px-8 pt-16 pb-24 relative overflow-hidden">
+    <div
+      className="min-h-[calc(100vh-80px)] flex flex-col items-center justify-center px-4 sm:px-6 lg:px-8 pt-16 pb-24 relative overflow-hidden"
+      onMouseMove={handleMouseMove}
+    >
       {/* Sophisticated grid pattern background */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:72px_72px] [mask-image:radial-gradient(ellipse_at_center,black_20%,transparent_70%)]" />
 
-      {/* Subtle mesh gradient */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1200px] h-[800px] bg-gradient-to-b from-blue-600/[0.07] via-transparent to-transparent rounded-full blur-[100px] pointer-events-none" />
-      <div className="absolute bottom-0 right-0 w-[600px] h-[600px] bg-gradient-to-tl from-indigo-600/[0.05] via-transparent to-transparent rounded-full blur-[80px] pointer-events-none" />
+      {/* Mouse-reactive Ambient Orbs */}
+      <motion.div
+        className="absolute w-[800px] h-[800px] rounded-full blur-[120px] pointer-events-none opacity-40 mix-blend-screen"
+        style={{
+          background: "radial-gradient(circle, rgba(56,189,248,0.15) 0%, transparent 70%)",
+          x: useTransform(mouseX, (val) => val - 400),
+          y: useTransform(mouseY, (val) => val - 400),
+        }}
+      />
+      <motion.div
+        className="absolute w-[600px] h-[600px] rounded-full blur-[100px] pointer-events-none opacity-30 mix-blend-screen"
+        style={{
+          background: "radial-gradient(circle, rgba(139,92,246,0.15) 0%, transparent 70%)",
+          x: useTransform(mouseX, (val) => val - 100),
+          y: useTransform(mouseY, (val) => val - 100),
+        }}
+      />
+
+      {/* Subtle mesh gradient fallbacks */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1200px] h-[800px] bg-gradient-to-b from-blue-600/[0.04] via-transparent to-transparent rounded-full blur-[100px] pointer-events-none" />
+      <div className="absolute bottom-0 right-0 w-[600px] h-[600px] bg-gradient-to-tl from-indigo-600/[0.03] via-transparent to-transparent rounded-full blur-[80px] pointer-events-none" />
 
       <div className="w-full max-w-5xl mx-auto relative z-10">
         {/* Enterprise Badge */}
@@ -138,10 +170,12 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
           transition={{ duration: 0.6, delay: 0.1 }}
           className="text-center mb-6"
         >
-          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-semibold tracking-tight text-white leading-[1.1]">
-            Ship production apps
+          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-semibold tracking-tight leading-[1.1]">
+            <span className="text-white">Ship production apps</span>
             <br />
-            <span className="text-zinc-500">in minutes, not months</span>
+            <span className="bg-gradient-to-r from-zinc-400 via-zinc-200 to-zinc-500 bg-[length:200%_auto] animate-shimmer bg-clip-text text-transparent">
+              in minutes, not months
+            </span>
           </h1>
         </motion.div>
 
@@ -326,19 +360,35 @@ export function HeroSectionV3({ onSubmit }: HeroSectionProps) {
                     Enter to submit
                   </span>
 
-                  <Button
-                    onClick={handleSubmit}
-                    disabled={isImproving}
-                    className={cn(
-                      "h-10 px-6 gap-2 rounded-lg font-medium transition-all",
-                      !isImproving
-                        ? "bg-white text-black hover:bg-zinc-200 shadow-lg shadow-white/10"
-                        : "bg-zinc-800 text-zinc-600 cursor-not-allowed",
-                    )}
+                  <motion.div
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="relative group cursor-pointer"
                   >
-                    <span>Build Application</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </Button>
+                    {/* Animated gradient border glow */}
+                    <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500/50 to-blue-500/50 rounded-lg blur opacity-30 group-hover:opacity-100 transition duration-500 group-hover:duration-200" />
+
+                    <Button
+                      onClick={handleSubmit}
+                      disabled={isImproving}
+                      className={cn(
+                        "relative h-10 px-6 gap-2 rounded-lg font-medium transition-all w-full sm:w-auto",
+                        !isImproving
+                          ? "bg-white text-black hover:bg-zinc-100 ring-1 ring-white/20 hover:ring-white/40 shadow-xl shadow-white/5"
+                          : "bg-zinc-800 text-zinc-600 cursor-not-allowed",
+                      )}
+                    >
+                      <span className="relative z-10">Build Application</span>
+                      <ArrowRight className="w-4 h-4 relative z-10" />
+
+                      {/* Sweeping shine effect */}
+                      {!isImproving && (
+                        <div className="absolute inset-0 overflow-hidden rounded-lg">
+                          <div className="absolute inset-0 translate-x-[-100%] group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+                        </div>
+                      )}
+                    </Button>
+                  </motion.div>
                 </div>
               </div>
             </div>

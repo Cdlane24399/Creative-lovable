@@ -159,7 +159,13 @@ export const MessageList = React.memo(
       onSelectSuggestion;
 
     return (
-      <div className="flex flex-col gap-6 pb-4">
+      <div
+        className="flex flex-col gap-6 pb-4"
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
+        aria-busy={isWorking}
+      >
         {uniqueMessages.map((message) => (
           <Message
             key={message.id}

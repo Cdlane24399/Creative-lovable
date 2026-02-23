@@ -87,10 +87,10 @@ All models are configured in `lib/ai/providers.ts` using `createGateway()` from 
 
 | Key         | Model             | Gateway ID                            | Provider Order    | Notes                                   |
 | ----------- | ----------------- | ------------------------------------- | ----------------- | --------------------------------------- |
-| `anthropic` | Claude Sonnet 4.5 | `anthropic/claude-sonnet-4-5`         | anthropic, vertex | Default model                           |
+| `anthropic` | Claude Sonnet 4.6 | `anthropic/claude-sonnet-4-6`         | anthropic, vertex | Default model                           |
 | `opus`      | Claude Opus 4.6   | `anthropic/claude-opus-4-6`           | anthropic, vertex | Best reasoning                          |
 | `google`    | Gemini 3 Flash    | `google/gemini-3-flash-preview`       | google, vertex    | Fast, maxTokens: 8192                   |
-| `googlePro` | Gemini 3 Pro      | `google/gemini-3-pro-preview`         | google, vertex    | Best multimodal, maxTokens: 8192        |
+| `googlePro` | Gemini 3.1 Pro    | `google/gemini-3.1-pro-preview`       | google, vertex    | Best multimodal, maxTokens: 8192        |
 | `openai`    | GPT-5.2           | `openai/gpt-5.2`                      | openai            |                                         |
 | `haiku`     | Claude 3.5 Haiku  | `anthropic/claude-3-5-haiku-20241022` | anthropic, vertex | (Not in MODEL_SETTINGS, used elsewhere) |
 | `minimax`   | MiniMax M2.1      | `minimax/minimax-m2.1`                | minimax           |                                         |
