@@ -83,7 +83,7 @@ export const MODEL_DISPLAY_NAMES = {
   opus: "Claude Opus 4.6",
   google: "Gemini 3 Flash",
   googlePro: "Gemini 3.1 Pro",
-  openai: "GPT-5.2",
+  openai: "GPT-5.3 Codex",
   haiku: "Claude 3.5 Haiku",
   minimax: "MiniMax M2.5",
   moonshot: "Kimi K2.5",

@@ -49,7 +49,7 @@ const MODEL_CONFIG = {
     providerOrder: ['google', 'vertex', 'openrouter'] as const,
   },
   openai: {
-    gatewayId: 'openai/gpt-5.2',
+    gatewayId: 'openai/gpt-5.3-codex',
     providerOrder: ['openai', 'openrouter'] as const,
   },
   haiku: {
@@ -58,15 +58,15 @@ const MODEL_CONFIG = {
   },
   minimax: {
     gatewayId: 'minimax/minimax-m2.5',
-    providerOrder: ['minimax'] as const,
+    providerOrder: ['minimax', 'openrouter'] as const,
   },
   moonshot: {
     gatewayId: 'moonshotai/kimi-k2.5',
-    providerOrder: ['moonshotai'] as const,
+    providerOrder: ['moonshotai', 'openrouter'] as const,
   },
   glm: {
     gatewayId: 'zai/glm-5',
-    providerOrder: ['zai'] as const,
+    providerOrder: ['zai', 'openrouter'] as const,
     openRouterId: 'z-ai/glm-5',
   },
 } as const satisfies Record<string, ModelConfigEntry>

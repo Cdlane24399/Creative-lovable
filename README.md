@@ -31,7 +31,7 @@ An AI-powered web development assistant that builds real, working applications i
 - 🤖 Claude Sonnet 4.5 (Anthropic) - Complex applications and reasoning
 - ⚡ Gemini 3 Flash Preview (Google) - Fast, cost-effective responses
 - 🧠 Gemini 3 Pro Preview (Google) - Advanced reasoning capabilities
-- 🎯 GPT-5.2 (OpenAI) - Alternative OpenAI option
+- 🎯 GPT-5.3 Codex (OpenAI) - Alternative OpenAI option
 - 🚀 Claude Haiku (Anthropic) - Fast title generation
 - 🔀 Switch models on-the-fly
 
