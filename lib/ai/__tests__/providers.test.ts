@@ -43,6 +43,11 @@ describe("providers", () => {
 
     getOpenRouterModel("openai");
 
+    expect(mockCreateOpenAI).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "openrouter",
+      }),
+    );
     expect(mockOpenRouterModel).toHaveBeenCalledWith("openai/gpt-5.3-codex");
   });
 });
