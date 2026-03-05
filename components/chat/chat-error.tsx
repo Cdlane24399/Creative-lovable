@@ -34,14 +34,35 @@ function parseError(error: Error | string): {
     }
   }
 
-  // Auth errors
+  // Auth errors — check for provider-specific messages first for better guidance
   if (
     errorMessage.includes("401") ||
     errorMessage.includes("403") ||
     errorMessage.includes("unauthorized") ||
     errorMessage.includes("Unauthorized") ||
-    errorMessage.includes("API key")
+    errorMessage.includes("API key") ||
+    errorMessage.includes("API_KEY") ||
+    errorMessage.includes("authentication") ||
+    errorMessage.includes("Authentication") ||
+    errorMessage.includes("PERMISSION_DENIED")
   ) {
+    // Detect Google / Gemini specific auth errors
+    const lowerMessage = errorMessage.toLowerCase()
+    const isGoogleError =
+      lowerMessage.includes("google") ||
+      lowerMessage.includes("gemini") ||
+      errorMessage.includes("GOOGLE_GENERATIVE_AI_API_KEY")
+
+    if (isGoogleError) {
+      return {
+        type: "auth",
+        title: "Gemini Authentication Error",
+        message:
+          "The Google Gemini API key is missing or invalid. Set the GOOGLE_GENERATIVE_AI_API_KEY environment variable, or configure Google in the Vercel AI Gateway dashboard.",
+        icon: Key,
+      }
+    }
+
     return {
       type: "auth",
       title: "Authentication Error",
