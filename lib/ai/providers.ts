@@ -1,25 +1,29 @@
-import { createGateway } from 'ai'
+import { createGateway, wrapLanguageModel, type LanguageModelMiddleware } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 
 /**
- * AI SDK v6 Gateway Pattern
+ * AI SDK v6 Gateway + Fallback Pattern
  *
- * Uses createGateway() for unified model routing with automatic fallback.
+ * The AI Gateway is always the **default and primary** provider for every model.
+ * Direct provider SDKs (e.g. @ai-sdk/google) are used as **runtime fallbacks**
+ * that activate automatically when the gateway returns an authentication error
+ * for a specific provider.
+ *
  * Gateway authenticates via:
- * - AI_GATEWAY_API_KEY (local development)
- * - Vercel OIDC (production)
+ * - AI_GATEWAY_API_KEY (explicit API key, local dev or self-hosted)
+ * - Vercel OIDC (automatic in Vercel deployments)
  *
- * Direct Provider Fallback:
- * - When AI_GATEWAY_API_KEY is not explicitly set, individual provider API keys
- *   (e.g. GOOGLE_GENERATIVE_AI_API_KEY) are used directly via their SDKs.
- * - This resolves "Authentication Error" in production when a provider is not
- *   configured in the Vercel AI Gateway but its API key is set as an env var.
+ * Runtime fallback for Google / Gemini:
+ * - If the gateway request fails with a 401 / 403 / auth error AND
+ *   GOOGLE_GENERATIVE_AI_API_KEY is set as an env var, the call is retried
+ *   transparently via @ai-sdk/google without changing the caller's code.
+ * - This resolves "Authentication Error" in production when Google is not yet
+ *   configured in the Vercel AI Gateway dashboard but a raw API key is present.
  *
- * Priority:
- * 1. AI_GATEWAY_API_KEY set → always use gateway (explicit gateway config)
- * 2. GOOGLE_GENERATIVE_AI_API_KEY set (no gateway key) → use @ai-sdk/google
- * 3. Otherwise → use gateway via Vercel OIDC (may fail if provider not configured)
+ * Priority (always):
+ * 1. AI Gateway (AI_GATEWAY_API_KEY or Vercel OIDC)       ← default
+ * 2. @ai-sdk/google direct (GOOGLE_GENERATIVE_AI_API_KEY) ← automatic fallback
  *
  * Web Search:
  * - Enable via providerOptions.gateway.search in streamText()
@@ -35,7 +39,11 @@ type ModelConfigEntry = {
   gatewayId: string
   providerOrder: readonly string[]
   openRouterId?: string
-  /** Direct @ai-sdk/google model ID used when GOOGLE_GENERATIVE_AI_API_KEY is set without AI_GATEWAY_API_KEY */
+  /**
+   * Direct @ai-sdk/google model ID.
+   * When set AND GOOGLE_GENERATIVE_AI_API_KEY is available, this model is used
+   * as a runtime fallback if the gateway call fails with an auth error.
+   */
   directGoogleModelId?: string
 }
 
@@ -51,13 +59,11 @@ const MODEL_CONFIG = {
   google: {
     gatewayId: 'google/gemini-3-flash-preview',
     providerOrder: ['google', 'vertex', 'openrouter'] as const,
-    // Direct model ID used by @ai-sdk/google when not routing through AI Gateway
     directGoogleModelId: 'gemini-2.0-flash',
   },
   googlePro: {
     gatewayId: 'google/gemini-3.1-pro-preview',
     providerOrder: ['google', 'vertex', 'openrouter'] as const,
-    // Direct model ID used by @ai-sdk/google when not routing through AI Gateway
     directGoogleModelId: 'gemini-1.5-pro',
   },
   openai: {
@@ -136,14 +142,10 @@ export function getOpenRouterModel(key: ModelKey) {
   return openRouter(getOpenRouterModelId(key))
 }
 
-// ── Direct Google provider (bypasses AI Gateway) ──────────────────────────────
-// Used when GOOGLE_GENERATIVE_AI_API_KEY is set and AI_GATEWAY_API_KEY is not.
-// This fixes "Authentication Error" in production when Gemini isn't configured
-// in the Vercel AI Gateway but the raw API key is present as an env var.
-//
-// The singleton is intentional: env vars are read once per process/module
-// lifecycle, so the API key never changes between requests. This mirrors the
-// existing openRouterClient pattern in this file.
+// ── Direct Google provider client (fallback only) ─────────────────────────────
+// This client is created lazily and used only when the AI Gateway returns an
+// authentication error for a Google model.
+// Singleton pattern is safe here: env vars don't change between requests.
 let googleDirectClient: ReturnType<typeof createGoogleGenerativeAI> | null = null
 
 function getGoogleDirectClient() {
@@ -157,71 +159,109 @@ function getGoogleDirectClient() {
 }
 
 /**
- * Returns true when the AI Gateway is explicitly configured via API key.
- * On Vercel without AI_GATEWAY_API_KEY the gateway uses OIDC, but only works
- * if the provider (e.g. Google) is configured in the Vercel AI Gateway dashboard.
+ * Returns true if the AI Gateway returned an authentication / authorisation error.
+ * These error patterns are used to trigger the direct-provider fallback.
  */
-function isGatewayExplicitlyConfigured(): boolean {
-  return Boolean(process.env.AI_GATEWAY_API_KEY?.trim())
+function isGatewayAuthError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const msg = error.message.toLowerCase()
+  return (
+    msg.includes('401') ||
+    msg.includes('403') ||
+    msg.includes('unauthorized') ||
+    msg.includes('api key') ||
+    msg.includes('api_key') ||
+    msg.includes('authentication') ||
+    msg.includes('permission_denied')
+  )
+}
+
+/** Language model instance returned by @ai-sdk/google provider factory. */
+type GoogleLanguageModel = ReturnType<ReturnType<typeof createGoogleGenerativeAI>>
+
+/**
+ * Creates AI SDK middleware that retries a failed gateway call with a direct
+ * provider model when the failure is an authentication / authorisation error.
+ *
+ * This lets the AI Gateway remain the primary (default) path while still
+ * recovering gracefully when a provider (e.g. Google) is not yet configured
+ * in the gateway dashboard but its API key is present in the environment.
+ *
+ * Both doGenerate (non-streaming) and doStream (streaming) are covered so the
+ * fallback fires regardless of the call mode.
+ */
+function createGatewayAuthFallbackMiddleware(
+  fallbackModel: GoogleLanguageModel,
+): LanguageModelMiddleware {
+  return {
+    specificationVersion: 'v3',
+
+    wrapGenerate: async ({ doGenerate, params }) => {
+      try {
+        return await doGenerate()
+      } catch (error) {
+        if (isGatewayAuthError(error)) {
+          return await fallbackModel.doGenerate(params)
+        }
+        throw error
+      }
+    },
+
+    wrapStream: async ({ doStream, params }) => {
+      try {
+        return await doStream()
+      } catch (error) {
+        if (isGatewayAuthError(error)) {
+          return await fallbackModel.doStream(params)
+        }
+        throw error
+      }
+    },
+  }
 }
 
 /**
- * Returns true when a Google model should use the direct @ai-sdk/google SDK
- * instead of routing through the AI Gateway.
+ * Get a model instance.
  *
- * Condition: GOOGLE_GENERATIVE_AI_API_KEY is set AND AI_GATEWAY_API_KEY is not
- * explicitly set (i.e. gateway is not the preferred path for this deployment).
- */
-export function isUsingDirectGoogleProvider(key: ModelKey): boolean {
-  const config = MODEL_CONFIG[key] as ModelConfigEntry
-  if (!config.directGoogleModelId) return false
-  if (isGatewayExplicitlyConfigured()) return false
-  return Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim())
-}
-
-/**
- * Get a model instance via AI Gateway, or fall back to a direct provider SDK.
- *
- * Priority:
- * 1. AI_GATEWAY_API_KEY set → always use AI Gateway (explicit gateway config).
- * 2. GOOGLE_GENERATIVE_AI_API_KEY set (no gateway key) → use @ai-sdk/google
- *    directly for `google` / `googlePro` models.
- * 3. Otherwise → use AI Gateway via Vercel OIDC.
- *
- * This resolves "Authentication Error" in production when a provider (e.g.
- * Google) is not configured in the Vercel AI Gateway but its API key is set
- * as a plain environment variable.
+ * The AI Gateway is **always the primary provider**.
+ * For Google / Gemini models, if GOOGLE_GENERATIVE_AI_API_KEY is available
+ * the returned model is wrapped with fallback middleware: if the gateway call
+ * fails with an authentication error the request is automatically retried
+ * using @ai-sdk/google directly, without any change to the calling code.
  *
  * @param key - Model identifier from MODEL_CONFIG
- * @returns Language model instance
+ * @returns Language model instance (gateway with optional direct-SDK fallback)
  */
 export function getModel(key: ModelKey) {
   const config = MODEL_CONFIG[key] as ModelConfigEntry
 
-  // For Google models: prefer direct @ai-sdk/google when key is available
-  // and the user hasn't explicitly opted into AI Gateway.
-  if (config.directGoogleModelId && !isGatewayExplicitlyConfigured()) {
+  // AI Gateway is always the primary model for every key.
+  const gatewayModel = aiGateway(config.gatewayId)
+
+  // For Google models: attach a fallback so that auth errors from the gateway
+  // automatically retry via @ai-sdk/google if the API key is configured.
+  if (config.directGoogleModelId) {
     const googleClient = getGoogleDirectClient()
     if (googleClient) {
-      return googleClient(config.directGoogleModelId)
+      const directFallback = googleClient(config.directGoogleModelId)
+      return wrapLanguageModel({
+        model: gatewayModel,
+        middleware: createGatewayAuthFallbackMiddleware(directFallback),
+      })
     }
   }
 
-  // Default: route through AI Gateway (requires AI_GATEWAY_API_KEY or Vercel OIDC)
-  return aiGateway(config.gatewayId)
+  return gatewayModel
 }
 
 /**
  * Get Gateway provider options for a model.
  *
- * Returns empty options when the model is being served directly (not via
- * gateway), so that provider-specific options don't bleed into direct calls.
- *
- * AI SDK v6: Provider fallback order configuration
- * Defines which providers to try in sequence when primary fails
+ * Since the AI Gateway is always the primary provider, these options are
+ * returned for every model key to configure provider routing and fallback order.
  *
  * @param key - Model identifier from MODEL_CONFIG
- * @returns Provider options with fallback order, or empty object for direct providers
+ * @returns Provider options with fallback order
  *
  * @example
  * ```ts
@@ -233,12 +273,6 @@ export function getModel(key: ModelKey) {
  * ```
  */
 export function getGatewayProviderOptions(key: ModelKey) {
-  // When using a direct provider SDK, gateway-specific options are not needed
-  // and passing them could confuse the underlying SDK.
-  if (isUsingDirectGoogleProvider(key)) {
-    return undefined
-  }
-
   return {
     gateway: {
       order: [...MODEL_CONFIG[key].providerOrder],
@@ -247,13 +281,10 @@ export function getGatewayProviderOptions(key: ModelKey) {
 }
 
 /**
- * Get Gateway provider options with web search enabled
+ * Get Gateway provider options with web search enabled.
  *
- * AI SDK v6: Enables AI Gateway's built-in web search capability
- * The model can use search to look up documentation, APIs, and more
- *
- * Falls back to plain provider options (no search) when using a direct
- * provider SDK, since search is a gateway-only feature.
+ * AI SDK v6: Enables AI Gateway's built-in web search capability.
+ * The model can use search to look up documentation, APIs, and more.
  *
  * @param key - Model identifier from MODEL_CONFIG
  * @returns Provider options with web search enabled
@@ -269,11 +300,6 @@ export function getGatewayProviderOptions(key: ModelKey) {
  * @see https://vercel.com/docs/ai-gateway/capabilities/web-search
  */
 export function getGatewayProviderOptionsWithSearch(key: ModelKey) {
-  // Direct Google SDK doesn't support gateway search — return undefined (no provider options).
-  if (isUsingDirectGoogleProvider(key)) {
-    return undefined
-  }
-
   return {
     gateway: {
       order: [...MODEL_CONFIG[key].providerOrder],
